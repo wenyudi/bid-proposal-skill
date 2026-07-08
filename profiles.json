@@ -1,0 +1,26 @@
+{
+  "quick": {
+    "label": "快速应标",
+    "scene": "小额/时间紧/竞争弱的标，或初稿快评",
+    "min_chapters": 6,
+    "min_paragraphs": 4,
+    "min_differentiators": 2,
+    "max_chars": 15000
+  },
+  "standard": {
+    "label": "标准投标",
+    "scene": "常规政企传媒标，评分项 8-12 项",
+    "min_chapters": 8,
+    "min_paragraphs": 5,
+    "min_differentiators": 3,
+    "max_chars": 28000
+  },
+  "deep": {
+    "label": "大标/重点项目",
+    "scene": "预算大/多轮答辩/强竞争的核心标",
+    "min_chapters": 11,
+    "min_paragraphs": 6,
+    "min_differentiators": 5,
+    "max_chars": 50000
+  }
+}
