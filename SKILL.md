@@ -1,7 +1,7 @@
 ---
 name: proposal
 description: "政企传媒投标方案生成 — 多 agent 协作：标书解读拆评分项、按标选叙事（逻辑征服/故事打动/愿景共创/数据实证）、联网调研甲方/行业/竞品/案例、并行分章撰写、方案综述、红队四视角评审、应标响应对照表零遗漏校验。两道人工关卡（策略确认 / 红队定稿）把 AI 不该替人决定的判断交回投标人。"
-version: 1.3.0
+version: 2.0.0
 updated: 2026-07-08
 risk: medium
 ---
@@ -14,7 +14,12 @@ risk: medium
 - **架构**：主 agent 调度 —— Task1 标书解读+投标策略（含叙事判定） → **⛳ Gate 1 策略确认（人）** → Task2 联网情报 → Task3 并行分章撰写（按叙事指令）→ Task3.5 方案综述 → Task4 装配+合规校验+自评+红队四视角+人工待办 → **⛳ Gate 2 红队定稿（人）**
 - **人机分工**：AI 负责拆解、调研、撰写、校验；**人负责 AI 不可能知道的判断**——我司真实能力边界、报价心理价位、竞争对手、与甲方的关系、领导偏好。两道关卡就是把这些交回给人。`-auto` 可跳过关卡
 - **情报来源**：联网为主（甲方画像/行业趋势/竞品打法/标杆案例）+ 标书 + 用户素材
-- **输出**：正式投标方案文档（Markdown，可转 Word/PDF），保存到 `{SKILLDIR}/reports/{LANG}/`
+- **输出**：**技术标卷册目录** `{SKILLDIR}/reports/{LANG}/<方案标题>-<时间戳>/`
+  - `技术方案-完整版.md` — 递交稿（合并版，拼 Word 用）
+  - `分册/NN-*.md` — 递交稿分册（目录 / 对照表 / 方案综述 / 各章，便于单章重写）
+  - `_内部研判.md` — ⚠️ **不递交**：生成参数、叙事策略、情报 URL、竞争力信号
+  - `_人工待办.md` — ⚠️ **不递交**：AI 不该替你编造的内容清单
+  - 范围只到**技术标**。投标函/授权书/承诺函/报价一览表等格式文本按标书模板自行套用
 - **中间数据**：走带时间戳的临时目录 TMPDIR（requirements.json / strategy.json / intel-pool.json / sections/）
 - **参考文件**：`RULES.md`（红线/废标陷阱）、`TYPES.md`（提案类型/评标维度/叙事策略库）、`profiles.json`（三档参数，修改后重启软件生效）
 - **容错原则**：生成不阻塞。脚本/命令调用有兜底路径，主路径失败 → 换 `sys.executable`/检查路径/直接实现 → 三次失败后向用户报告具体问题。
@@ -33,16 +38,16 @@ risk: medium
 | 5 | **创意配落地** | 每个创意/亮点配「执行路径 + 资源 + 排期」，不空谈 |
 | 6 | **差异化惊喜** | ≥ `min_differentiators` 个增值点，标注"甲方未要求但加分"及其对应评分项 |
 | 7 | **报价最优解** | 单一推荐报价方案，卡预算带内，价值-成本一一对应（不分档） |
-| 8 | **来源可追溯** | 引用行业/案例数据标注来源（机构/年份），情报有 url |
+| 8 | **来源可追溯** | 正文数据**行内标注**来源（「据XX研究院2026年报告」）。URL 清单只进 `_内部研判.md`，**递交稿不带网址书目**（那是研报，不是投标文件） |
 | 9 | **真实不虚构** | 业绩/资质/团队真实；无把握处写"拟"或留占位符，不编造 |
 | 10 | **标题含主张** | "3个月引爆城市声量"✅ \| "传播方案"❌ |
 | 11 | **风险有预案** | 关键风险配应对措施 |
 | 12 | **零套话** | 无"我们将竭诚服务""众所周知"等填充词 |
-| 13 | **强制结构** | 四段式：标题 → 元数据块 → `## 目录` → `## 应标响应与评分对照表` → 正文各章 → 尾部（声明） |
-| 14 | **时间戳正确** | 文件名和文末时间用 `date` 命令获取 |
+| 13 | **卷册结构** | 递交稿：标题 → 项目信息头 → `## 目录`（纯文本，无锚点）→ `## 应标响应与评分对照表` → `## 方案综述` → 正文各章。**没有元数据块、没有参考来源书目、没有研报式声明** |
+| 14 | **零内部泄露** ⚡ | 递交稿不得出现：叙事策略、深度模式、工具版本、生成时间、阅读时间、字数、URL。这些一律进 `_内部研判.md`。`qa-proposal` 的 `no_internal_leak` 是**硬阻断** |
 | 15 | **编码洁净** | 所有中间文件与最终稿 UTF-8 无 BOM，无替换字符（�）/Mojibake/`???` |
 | 16 | **纯文本公式** | 不用 LaTeX（`$...$`）；货币 `$` 写 `\$` |
-| 17 | **方案综述前置** | 目录+对照表之后有一页 `## 方案综述`（Task3.5 在各章写完后提炼），评委只精读前两页 |
+| 17 | **方案综述前置** | 对照表之后有一页 `## 方案综述`（Task3.5 在各章写完后提炼），评委只精读前两页 |
 | 18 | **甲方导向** | `qa-proposal` 的 `buyer_focus.ratio` ≥ 0.8（甲方提及数 / 我方提及数）。低于此值说明在自夸而非解决甲方问题 |
 | 19 | **引用可公开** | 只引标书原文/答疑澄清文件/公开政策/公开报道。**私下沟通、售前会议中的甲方个人表述绝不进正文**（不正当接触嫌疑） |
 | 20 | **无销售话术** | 投标是密封递交，**没有 CTA**。禁止"下一步行动/期待沟通/签约条款"；禁止"排除项"式免责（易认定负偏离） |
@@ -177,9 +182,12 @@ risk: medium
  6. ══ Task 4 — 装配 + 合规校验 + 自评分 + 红队 + QA（主 agent 直接执行）══
     → **Step 0 清理**：删除 {SKILLDIR}/reports/ 下 0 字节文件；确保 {SKILLDIR}/reports/$LANG/ 存在
     → **Step 1 装配**：
-      `python {TOOLSDIR}/prop_tools.py assemble-proposal --strategy {TMPDIR}/strategy.json --requirements {TMPDIR}/requirements.json --intel {TMPDIR}/intel-pool.json --sections-dir {TMPDIR}/sections/ --mode {depth_mode} --output {SKILLDIR}/reports/$LANG/ --lang $LANG`
-      → 从输出 `Proposal assembled: <路径>` 提取路径设为 $REPORT
-      → 装配会自动生成：封面标题、元数据块、目录、**应标响应与评分对照表**（从 strategy 的 section→addresses 映射反查生成）、正文各章（汉字编号）、参考来源、声明
+      `python {TOOLSDIR}/prop_tools.py assemble-proposal --strategy {TMPDIR}/strategy.json --requirements {TMPDIR}/requirements.json --intel {TMPDIR}/intel-pool.json --sections-dir {TMPDIR}/sections/ --mode {depth_mode} --output {SKILLDIR}/reports/$LANG --lang $LANG`
+      → 从 `Proposal assembled: <路径>` 取 $REPORT（合并版递交稿，后续校验都跑它）
+      → 从 `BundleDir: <路径>` 取 $BUNDLE；从 `InternalBrief: <路径>` 取 $BRIEF
+      → 装配自动生成：标题、项目信息头、纯文本目录、**应标响应与评分对照表**（从 strategy 的
+        section→addresses 映射反查）、方案综述、正文各章（汉字编号）、`分册/` 各文件、`_内部研判.md`
+      → ⚠️ 递交稿里**没有**元数据块 / URL 书目 / 研报声明——这些是研报残留，一律在 `_内部研判.md`
     → **Step 2 ⚡ 合规校验（阻断点）**：
       `python {TOOLSDIR}/prop_tools.py check-compliance --requirements {TMPDIR}/requirements.json --strategy {TMPDIR}/strategy.json --report "$REPORT"`
       → 解析 JSON：`missing_mandatory`（未响应的强制项）、`missing_scoring`（未覆盖的评分项）、`coverage_pct`
@@ -195,6 +203,8 @@ risk: medium
     → **Step 4 货币转义**：`python {TOOLSDIR}/prop_tools.py escape-currency "$REPORT"`
     → **Step 5 QA**：`python {TOOLSDIR}/prop_tools.py qa-proposal "$REPORT" --mode {depth_mode} --strategy {TMPDIR}/strategy.json --requirements {TMPDIR}/requirements.json --lang $LANG`
       → 解析 JSON，passed=true 则机械检查通过；不通过项局部补刀（单章重写最多 1 次）
+      → ⚡ **`no_internal_leak` 失败必须修**：递交稿混进了叙事策略/模式/版本/生成时间/URL 等内部信息。
+        定位到具体章节（多半是某章正文写了 URL 或"本方案采用故事化叙事"之类的自我描述）→ 重写该章 → 重装配
       → 警告级信号（`buyer_focus` / `exec_summary` / `no_sales_cta` / `no_latex` / `no_id_leak`）不阻断，
         但**必须带进 Gate 2 给人看**。`buyer_focus.ratio < 0.8` 说明方案在自夸 → 建议人工复看各章开篇
     → **Step 6 🔴 红队评审（四视角并行）**：
@@ -207,10 +217,12 @@ risk: medium
       → 汇总：按 severity 归并（致命 → 重要 → 次要），同一 target 的重复质疑合并
       → **致命项（废标风险 / 高权重评分项实质未答）不进 Gate 2 等人——先自动补**：
         定位归属章节 → 重新派发该章 agent 补写 → 重新装配 → 重跑 check-compliance → 最多 2 轮
-    → **Step 7 人工待办清单**：
-      设 $TODO = "${REPORT%.md}-human-todo.md"（与报告同名同目录，避免多个标互相覆盖）
+    → **Step 7 人工待办清单 + 内部研判归档**：
+      设 $TODO = "$BUNDLE/_人工待办.md"（下划线前缀 = 不递交）
       `python {TOOLSDIR}/prop_tools.py human-todo --requirements {TMPDIR}/requirements.json --strategy {TMPDIR}/strategy.json --report "$REPORT" --mode {depth_mode} --output "$TODO" --lang $LANG`
       → 解析 `HUMANTODO:` 行：blocking_count / scoring_count / weak_count
+      → 用 write 把 **Step 3/3b 的竞争力自评 + Step 6 的红队结论**追加进 $BRIEF（`_内部研判.md`），
+        这样卷册自带一份完整的内部备忘，TMPDIR 删掉也不丢
     → **Step 8 ⛳ Gate 2 — 红队定稿（人工关卡）**  【$GATES=off 或 quick 模式时跳过，直接 Step 9】
 
       **为什么停在这里**：红队只提质疑，不改稿。哪些必须补、哪些是红队想多了、哪些暴露了真实能力缺口
@@ -231,14 +243,14 @@ risk: medium
       🛡️ 方案最能打的地方：{各视角 strongest_point 归并}
 
       【重要级质疑】逐条：target · quote · issue · why_it_costs · fix
-      【机械信号】甲方导向比 {buyer_focus.ratio}（阈值 0.8）· 综述 {有/无} · 销售话术残留 {…}
-      【人工待办】废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 → {human-todo.md 路径}
+      【机械信号】甲方导向比 {buyer_focus.ratio}（阈值 0.8）· 综述 {有/无} · 销售话术残留 {…} · 内部泄露 {无/已修}
+      【人工待办】废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 → {$TODO 路径}
       ```
       → 用 AskUserQuestion（若可用）让用户挑要补的质疑；或结束 response 等回复
       → 用户选定后：局部补写对应章节 → 重新装配 → 重跑 check-compliance + qa → 再报告
       → 用户说"可以了" → 进 Step 9
     → **Step 9 清理**：删除 TMPDIR（Unix `rm -rf`，Windows `Remove-Item -Recurse -Force`）
-      ⚠️ human-todo.md 在报告目录，不在 TMPDIR，不会被删
+      ⚠️ `_人工待办.md` 与 `_内部研判.md` 在卷册目录 $BUNDLE 内，不在 TMPDIR，不会被删
     → todowrite 全部完成
     → ⏱ 计算总耗时（start_time.txt vs 当前）
     → 用 $LANG 向用户汇报最终结果（见下方汇报格式）
@@ -261,13 +273,17 @@ risk: medium
 | ✅ 合规 | 强制项 {addressed_mandatory}/{total_mandatory} · 评分项覆盖 {coverage_pct}% |
 | 📊 竞争力自评 | 预估 {estimated_score} 分档 · 预算{within_budget ? "带内" : "⚠超预算"} · 甲方导向比 {buyer_focus.ratio} → {llm_verdict} |
 | 🔴 红队 | 致命 {已补 n} · 重要 {n}（{已采纳 m}）· 对手威胁：{if_i_were_competitor 摘要} |
-| 📝 人工待办 | 废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 → {human-todo.md 路径} |
-| 📄 文档 | {REPORT} |
-| ⏱ 耗时 | {totalMin} 分钟 · 生成 {gen_time} |
+| 📝 人工待办 | 废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 |
+| 📁 卷册 | {BUNDLE} |
+| 📄 递交稿 | 技术方案-完整版.md · 分册/ {part_count} 个文件 |
+| 🔒 不递交 | _内部研判.md · _人工待办.md |
+| ⏱ 耗时 | {totalMin} 分钟 |
 ```
 
 > 竞争力自评是**机械信号 + LLM 研判**，非评委真实打分，仅供投标决策参考。
-> **交付前请务必过一遍 `human-todo.md`**——里面是 AI 不该替你决定或编造的内容（真实业绩、报价数字、团队人员、可承诺的 KPI）。废标风险项没填完就递交，方案再好也是零分。
+> ⚠️ **下划线开头的两个文件不要递交**——`_内部研判.md` 里有你的叙事策略和情报 URL，给评委看等于亮底牌。
+> **交付前请务必过一遍 `_人工待办.md`**——里面是 AI 不该替你决定或编造的内容（真实业绩、报价数字、团队人员、可承诺的 KPI）。废标风险项没填完就递交，方案再好也是零分。
+> 本 skill 只产出**技术标**。投标函、法定代表人授权书、承诺函、报价一览表等格式文本请按标书模板自行套用。
 
 ---
 
@@ -314,23 +330,23 @@ risk: medium
 
 主 agent 通过 bash 直接调用 `{TOOLSDIR}/prop_tools.py`，红队部分派 4 个 agent：
 
-1. `assemble-proposal` → 生成方案文档（含应标响应与评分对照表 + 方案综述）
+1. `assemble-proposal` → 生成**技术标卷册目录**：递交稿（合并版 + 分册）+ `_内部研判.md`（不递交）
 2. `check-compliance` → ⚡ 合规校验（强制项/评分项零遗漏，**唯一硬阻断点**）
 3. `self-score` → 竞争力机械自评（预估得分/覆盖率/薄弱项/预算合规）
 4. `escape-currency` → 货币符号转义
-5. `qa-proposal --requirements ...` → 全量质量检查（编码/结构/目录/对照表/差异化下限/字数 + **甲方导向词频/综述存在/销售话术残留**，后三项警告级）
+5. `qa-proposal --requirements ...` → 全量质量检查（编码/卷册结构/对照表/差异化下限/字数 + ⚡**内部信息泄露（硬阻断）** + 甲方导向词频/综述存在/销售话术残留（警告级））
 6. **红队四视角**（`prompts/task4_redteam.md` × 4 并行，角色见 TYPES.md）→ `{TMPDIR}/redteam/{role}.json`；致命项自动补，其余进 Gate 2
-7. `human-todo` → 汇总正文占位符 + 薄弱项，按「不处理的后果」排序，产出 `human-todo.md`（与报告同目录，**不随 TMPDIR 删除**）
+7. `human-todo` → 汇总正文占位符 + 薄弱项，按「不处理的后果」排序，产出 `_人工待办.md`（卷册目录内，**不随 TMPDIR 删除**）
 
 ---
 
 ## 6. 输出文件管理
 
 - **路径优先级**：① 用户显式指定的输出目录 ② 默认 `{SKILLDIR}/reports/{LANG}/`
-- **文件名**：`<方案标题>-YYYYMMDD-HHmmss.md`，日期用 `date` 命令
-- **附带产物**：`human-todo.md`（与报告同目录）——AI 不该替人决定的待办清单，**交付前必须过一遍**
-- **清理**：QA 通过后删除 TMPDIR（红队 JSON 随之删除；结论已进 Gate 2 报告）
-- **路径核验**：QA 确认报告在默认目录或用户指定目录，否则标"路径异常"
+- **卷册目录名**：`<方案标题>-YYYYMMDD-HHmmss/`，同名旧卷册自动删除（装配时按 title 去重）
+- **递交 vs 不递交**：下划线 `_` 开头的文件**一律不递交**（`_内部研判.md` / `_人工待办.md`）
+- **清理**：QA 通过后删除 TMPDIR（红队 JSON 随之删除；结论已追加进 `_内部研判.md`）
+- **路径核验**：QA 确认递交稿在卷册目录内，否则标"路径异常"
 
 ---
 

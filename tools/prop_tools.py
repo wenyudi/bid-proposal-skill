@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import datetime
 import unicodedata
@@ -27,16 +28,21 @@ def _init_stdout():
 # ── 语言标签（zh 默认，其余回退 en）────────────────────────────────────────
 LABELS = {
     'zh': {
-        'doc_kind': '投标方案', 'project': '项目', 'buyer': '采购人',
-        'budget_resp': '预算响应', 'chars': '字', 'reading': '阅读',
-        'minutes': '分钟', 'gen': '生成', 'mode': '模式', 'version': '版本',
-        'refs_label': '**参考来源**：', 'refs_count': '共引用 {n} 个来源',
+        'project': '项目名称', 'project_no': '项目编号', 'buyer': '采购人',
+        'bidder': '投标人', 'tbd_bidder': '【待填写：投标人全称并加盖公章】',
+        'bid_date': '投标日期', 'tbd_date': '【待填写】',
+        'budget_resp': '预算响应', 'chars': '字数', 'gen': '生成时间',
+        'mode': '深度模式', 'version': '工具版本', 'through_line': '叙事主线',
         'toc': '## 目录', 'matrix': '## 应标响应与评分对照表',
-        'refs': '## 参考来源', 'disclaimer': '## 声明',
-        'disclaimer_text': ('本方案为投标响应文件，所含创意、数据与案例基于公开信息与专业判断编制，'
-                            '最终执行以合同约定为准。引用的第三方数据版权归原机构所有。'),
-        'gen_time': '生成时间：{time}',
-        'narrative': '叙事',
+        'toc_label_file': '目录', 'matrix_label_file': '应标响应与评分对照表',
+        'combined_name': '技术方案-完整版.md', 'parts_dir': '分册',
+        'brief_name': '_内部研判.md', 'brief_title': '# 内部研判（⚠️ 不随投标文件递交）',
+        'brief_warn': ('> 本文件仅供投标人内部使用。生成参数、叙事策略、情报来源等信息**绝不能**'
+                       '出现在递交给评委的投标文件里——那等于把说服策略和工具痕迹亮给对方。'),
+        'brief_params': '生成参数', 'brief_sources': '情报来源（供投标人自行核验）',
+        'brief_sources_note': ('> 正文中的数据均以行内方式标注来源（如「据XX研究院2026年报告」）。'
+                               '下列 URL 清单供你核验，**不要**附进投标文件——投标文件不带网址书目。'),
+        'narrative': '叙事策略',
         'exec_summary': '## 方案综述', 'exec_summary_label': '方案综述',
         'todo_title': '# 人工待办清单', 'todo_note': ('> 下列内容 AI 不应替你决定或编造，需投标人本人填写/核实后再定稿。'
                                                  '按「不填会丢多少分」排序，废标风险项排最前。'),
@@ -50,15 +56,20 @@ LABELS = {
         'matrix_note': '> 下表逐条对应标书的资格/实质性/格式条款与评分办法，确保应标零遗漏。',
     },
     'en': {
-        'doc_kind': 'Bid Proposal', 'project': 'Project', 'buyer': 'Buyer',
-        'budget_resp': 'Budget', 'chars': 'chars', 'reading': 'Reading',
-        'minutes': 'min', 'gen': 'Generated', 'mode': 'Mode', 'version': 'Version',
-        'refs_label': '**References**: ', 'refs_count': 'Total {n} sources',
+        'project': 'Project', 'project_no': 'Project No.', 'buyer': 'Buyer',
+        'bidder': 'Bidder', 'tbd_bidder': '[TBD: bidder full name + official seal]',
+        'bid_date': 'Bid date', 'tbd_date': '[TBD]',
+        'budget_resp': 'Budget', 'chars': 'Characters', 'gen': 'Generated',
+        'mode': 'Depth mode', 'version': 'Tool version', 'through_line': 'Through-line',
         'toc': '## Table of Contents', 'matrix': '## Compliance & Scoring Matrix',
-        'refs': '## References', 'disclaimer': '## Disclaimer',
-        'disclaimer_text': ('This is a bid response document. Ideas, data and cases are compiled from '
-                            'public information and professional judgment; execution follows the contract.'),
-        'gen_time': 'Generated: {time}',
+        'toc_label_file': 'Table of Contents', 'matrix_label_file': 'Compliance Matrix',
+        'combined_name': 'Technical-Proposal-Full.md', 'parts_dir': 'parts',
+        'brief_name': '_internal-brief.md', 'brief_title': '# Internal Brief (DO NOT SUBMIT)',
+        'brief_warn': ('> For the bidder only. Generation params, narrative strategy and intel sources '
+                       'must never appear in the submitted bid document.'),
+        'brief_params': 'Generation parameters', 'brief_sources': 'Intel sources (for your own verification)',
+        'brief_sources_note': ('> Body text cites sources inline. This URL list is for your verification only — '
+                               'do not attach it to the bid document.'),
         'narrative': 'Narrative',
         'exec_summary': '## Executive Summary', 'exec_summary_label': 'Executive Summary',
         'todo_title': '# Human To-Do', 'todo_note': ('> The items below must be filled or verified by the bidder. '
@@ -254,6 +265,15 @@ def extract_refs(intel):
 # ── 装配 ─────────────────────────────────────────────────────────────────
 def assemble_proposal(strategy_path, requirements_path, intel_path,
                       sections_dir, mode, output_path, lang):
+    """产出技术标卷册目录：
+        <dir>/技术方案-完整版.md      递交稿（合并版）
+        <dir>/分册/NN-*.md            递交稿（分册，便于拼 Word / 单章重写）
+        <dir>/_内部研判.md            ⚠️ 不递交：生成参数 / 情报来源 / 竞争力信号
+
+    递交稿里**不得出现任何内部信息**（模式、叙事策略、工具版本、生成时间、
+    字数、阅读时间、URL 书目）——那是研报的东西，写进投标文件等于把底牌
+    亮给评委。所有这些一律进 _内部研判.md。
+    """
     issues = []
     strategy = read_json(strategy_path)
     req = read_json(requirements_path)
@@ -269,10 +289,11 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     gen_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
     safe_title = re.sub(r'[<>:"/\\|?*]', '-', title).rstrip('. ')
-    if not output_path:
-        output_path = f"reports/{safe_title}-{now.strftime('%Y%m%d-%H%M%S')}.md"
-    elif os.path.isdir(output_path) or not output_path.endswith('.md'):
-        output_path = os.path.join(output_path, f"{safe_title}-{now.strftime('%Y%m%d-%H%M%S')}.md")
+    stamp = now.strftime('%Y%m%d-%H%M%S')
+    base_dir = output_path or 'reports'
+    bundle_dir = os.path.join(base_dir, f"{safe_title}-{stamp}")
+    parts_dir = os.path.join(bundle_dir, L['parts_dir'])
+    output_path = os.path.join(bundle_dir, L['combined_name'])
 
     # 执行摘要（section-0.md，可选；不参与章节编号）
     exec_text = ''
@@ -296,14 +317,12 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         heading = chapter_heading(lang, n, sec.get('title', ''))
         chapter_texts.append(f"{heading}\n\n{body}")
 
-    # 目录
+    # 目录（纯文本，无锚点——投标文件要转 Word/PDF，锚点链接是研报的产物）
     toc_lines = []
     if exec_text:
-        toc_lines.append(f"- [{L['exec_summary_label']}](#{github_anchor(L['exec_summary_label'])})")
+        toc_lines.append(f"- {L['exec_summary_label']}")
     for sec in sections:
-        n = sec.get('n')
-        label = toc_label(lang, n, sec.get('title', ''))
-        toc_lines.append(f"- [{label}](#{github_anchor(chapter_heading(lang, n, sec.get('title','')).replace('## ',''))})")
+        toc_lines.append(f"- {toc_label(lang, sec.get('n'), sec.get('title', ''))}")
     toc_text = '\n'.join(toc_lines)
 
     # 应标响应与评分对照表
@@ -335,74 +354,87 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         matrix_rows.append(f"| {item} | {cat_txt} | {wt} | {sec_refs(s.get('id'))} |")
     matrix_text = '\n'.join(matrix_rows)
 
-    # 参考来源
-    entries, top_sources = extract_refs(intel)
-    ref_lines = [L['refs'], '']
+    # 项目信息头（投标文件该有的；字数/阅读时间/生成时间/模式/叙事/版本一概不写）
+    cap = req.get('budget_cap') or {}
+    info_rows = [f"{L['project']}：{req.get('project_name','')}"]
+    if req.get('project_no'):
+        info_rows.append(f"{L['project_no']}：{req.get('project_no')}")
+    info_rows.append(f"{L['buyer']}：{req.get('buyer','')}")
+    info_rows.append(f"{L['bidder']}：{L['tbd_bidder']}")
+    info_rows.append(f"{L['bid_date']}：{L['tbd_date']}")
+    info_text = '\n'.join(info_rows)
+
+    # 递交稿：标题 → 项目信息 → 目录 → 应标响应对照表 → 方案综述 → 正文各章
+    full = "\n".join([
+        f"# {title}\n",
+        info_text, "",
+        f"{L['toc']}\n",
+        toc_text, "",
+        f"{L['matrix']}\n",
+        L['matrix_note'], "",
+        matrix_text, "",
+        *([exec_text, ""] if exec_text else []),
+        "\n\n".join(chapter_texts),
+    ]) + "\n"
+
+    wc = word_count_text(full)
+
+    # 去重同名旧卷册目录
+    os.makedirs(base_dir, exist_ok=True)
+    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}$')
+    for fn in os.listdir(base_dir):
+        p = os.path.join(base_dir, fn)
+        if pat.match(fn) and p != bundle_dir and os.path.isdir(p):
+            shutil.rmtree(p, ignore_errors=True)
+
+    os.makedirs(parts_dir, exist_ok=True)
+    write_text_atomic(output_path, full)
+
+    # 分册（便于拼 Word / 单章重写）
+    idx = 0
+    part_files = []
+
+    def _emit(name, body):
+        nonlocal idx
+        fn = f"{idx:02d}-{re.sub(r'[<>:\"/\\\\|?*]', '-', name)}.md"
+        write_text_atomic(os.path.join(parts_dir, fn), body.rstrip() + "\n")
+        part_files.append(fn)
+        idx += 1
+
+    _emit(L['toc_label_file'], f"{L['toc']}\n\n{toc_text}")
+    _emit(L['matrix_label_file'], f"{L['matrix']}\n\n{L['matrix_note']}\n\n{matrix_text}")
+    if exec_text:
+        _emit(L['exec_summary_label'], exec_text)
+    for sec, body in zip(sections, chapter_texts):
+        _emit(toc_label(lang, sec.get('n'), sec.get('title', '')), body)
+
+    # ⚠️ 内部研判（不递交）：把所有会暴露底牌的东西关在这里
+    nar = strategy.get('narrative') or {}
+    entries, _ = extract_refs(intel)
+    budget_str = (L['budget_within'].format(v=cap.get('value'), u=cap.get('unit', ''))
+                  if cap.get('value') is not None else L['budget_range'])
+    brief = [
+        L['brief_title'], '', L['brief_warn'], '',
+        f"## {L['brief_params']}", '',
+        f"- {L['gen']}：{gen_time}",
+        f"- {L['mode']}：{mode}",
+        f"- {L['narrative']}：{nar.get('mode', '-')}"
+        + (f" + {nar.get('secondary')}" if nar.get('secondary') else ''),
+        f"- {L['through_line']}：{nar.get('through_line', '-')}",
+        f"- {L['budget_resp']}：{budget_str}",
+        f"- {L['chars']}：{wc}",
+        f"- {L['version']}：v{read_version()}",
+        '', f"## {L['brief_sources']}", '', L['brief_sources_note'], '',
+    ]
     if entries:
         for name, src, yr, url in entries:
             label = name if not src or src == name else f"{name} · {src}"
             if yr:
                 label += f" · {yr}"
-            ref_lines.append(f"- [{label}]({url})")
+            brief.append(f"- [{label}]({url})")
     else:
-        ref_lines.append(L['no_src'])
-    ref_text = '\n'.join(ref_lines)
-
-    # 预算响应串
-    cap = req.get('budget_cap') or {}
-    if cap.get('value') is not None:
-        budget_str = L['budget_within'].format(v=cap.get('value'), u=cap.get('unit', ''))
-    else:
-        budget_str = L['budget_range']
-
-    version = read_version()
-
-    narrative_mode = (strategy.get('narrative') or {}).get('mode') or ''
-    narrative_str = f" · {L['narrative']} {narrative_mode}" if narrative_mode else ''
-
-    # 先拼一次算字数
-    def build(wc, rt):
-        meta1 = (f"> **{L['doc_kind']}** · {L['project']}：{req.get('project_name','')} · "
-                 f"{L['buyer']}：{req.get('buyer','')} · {L['budget_resp']}：{budget_str} · "
-                 f"{wc} {L['chars']} · {L['reading']} {rt} {L['minutes']} · "
-                 f"{L['gen']} {gen_time} · {L['mode']} {mode}{narrative_str} · {L['version']} v{version}")
-        sep = "、" if lang == 'zh' else ", "
-        src_join = sep.join(top_sources) if top_sources else ("公开信息" if lang == 'zh' else "public sources")
-        meta2 = f"> {L['refs_label']}{src_join} {'等' if lang=='zh' else 'et al.'} · {L['refs_count'].format(n=len(entries))}"
-        parts = [
-            f"# {title}\n",
-            f"{meta1}\n>\n{meta2}\n",
-            f"{L['toc']}\n",
-            toc_text, "",
-            f"{L['matrix']}\n",
-            L['matrix_note'], "",
-            matrix_text, "",
-            *([exec_text, ""] if exec_text else []),
-            "\n\n".join(chapter_texts),
-            "\n---\n",
-            ref_text,
-            f"\n{L['disclaimer']}\n\n{L['disclaimer_text']}\n",
-            f"\n{L['gen_time'].format(time=gen_time)}\n",
-        ]
-        return "\n".join(parts)
-
-    draft = build(0, 1)
-    wc = word_count_text(draft)
-    rt = max(1, round(wc / 500))
-    full = build(wc, rt)
-
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    # 去重同名旧稿（含其配套的 -human-todo.md）
-    out_dir = os.path.dirname(output_path)
-    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}(?:-human-todo)?\.md$')
-    for fn in os.listdir(out_dir):
-        if pat.match(fn) and fn != os.path.basename(output_path):
-            try:
-                os.remove(os.path.join(out_dir, fn))
-            except OSError:
-                pass
-
-    write_text_atomic(output_path, full)
+        brief.append(L['no_src'])
+    write_text_atomic(os.path.join(bundle_dir, L['brief_name']), '\n'.join(brief) + '\n')
     enc = check_encoding(output_path)
     if not enc['passed']:
         issues.append(f"Encoding issue: {enc['issues']}")
@@ -410,6 +442,10 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     return {
         "passed": len(issues) == 0,
         "output_path": output_path,
+        "bundle_dir": bundle_dir,
+        "parts_dir": parts_dir,
+        "part_count": len(part_files),
+        "internal_brief": os.path.join(bundle_dir, L['brief_name']),
         "line_count": full.count('\n') + 1,
         "chapter_count": len(chapter_texts),
         "exec_summary": bool(exec_text),
@@ -665,21 +701,33 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
     enc = check_encoding(report_path)
     checks['encoding'] = enc
 
-    # 四段式结构
+    # 卷册结构：标题 → 项目信息 → 目录 → 应标响应对照表 → 方案综述 → 正文各章
     struct_issues = []
     if not lines or not lines[0].startswith('# '):
         struct_issues.append("第 1 行不是 # 标题")
-    if not any(l.startswith('> ') for l in lines[1:8]):
-        struct_issues.append("标题后缺元数据块（> 开头）")
+    if L['project'] not in report:
+        struct_issues.append(f"缺项目信息头（{L['project']}）")
     if L['toc'] not in report:
         struct_issues.append(f"缺目录标题 {L['toc']}")
     if L['matrix'] not in report:
         struct_issues.append(f"缺应标响应与评分对照表 {L['matrix']}")
-    if L['refs'] not in report:
-        struct_issues.append(f"缺参考来源 {L['refs']}")
-    if L['disclaimer'] not in report:
-        struct_issues.append(f"缺声明 {L['disclaimer']}")
     checks['structure'] = {"passed": len(struct_issues) == 0, "issues": struct_issues}
+
+    # ⚡ 内部信息泄露（硬阻断）——递交稿绝不能带工具痕迹与说服策略底牌
+    leaks = []
+    for pat, why in [
+        (r'叙事\s*[:：]?\s*(logic|story|vision|evidence|custom)', '叙事策略（等于把说服底牌给评委）'),
+        (r'(模式|深度模式)\s*[:：]?\s*(quick|standard|deep)', '内部深度模式'),
+        (r'(版本|工具版本)\s*[:：]?\s*v?\d+\.\d+\.\d+', '工具版本号'),
+        (r'阅读\s*\d+\s*分钟', '研报式阅读时间'),
+        (r'生成时间\s*[:：]', '生成时间戳'),
+        (r'^>\s*\*\*投标方案\*\*\s*·', '研报式元数据块'),
+        (r'https?://', 'URL（投标文件不带网址书目，来源改行内标注）'),
+    ]:
+        if re.search(pat, report, re.MULTILINE | re.IGNORECASE):
+            leaks.append(why)
+    checks['no_internal_leak'] = {"passed": len(leaks) == 0, "leaked": leaks,
+                                  "hint": "这些只能进 _内部研判.md，不能进递交稿"}
 
     # 章节数
     chapter_headings = re.findall(r'^## (?:[一二三四五六七八九十]+、|\d+\. )', report, re.MULTILINE)
@@ -912,9 +960,11 @@ def main():
         r = assemble_proposal(args.strategy, args.requirements, args.intel,
                               args.sections_dir, args.mode, args.output, args.lang)
         if r['passed']:
-            print(f"Proposal assembled: {r['output_path']} "
-                  f"({r['line_count']} lines, {r['chapter_count']} chapters, {r['word_count']} chars, "
-                  f"exec_summary={'yes' if r['exec_summary'] else 'no'})")
+            print(f"Proposal assembled: {r['output_path']}")
+            print(f"BundleDir: {r['bundle_dir']}")
+            print(f"InternalBrief: {r['internal_brief']}")
+            print(f"({r['line_count']} lines, {r['chapter_count']} chapters, {r['part_count']} parts, "
+                  f"{r['word_count']} chars, exec_summary={'yes' if r['exec_summary'] else 'no'})")
         else:
             print("FAIL")
             for iss in r['issues']:
