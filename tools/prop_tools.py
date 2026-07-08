@@ -37,6 +37,12 @@ LABELS = {
                             '最终执行以合同约定为准。引用的第三方数据版权归原机构所有。'),
         'gen_time': '生成时间：{time}',
         'narrative': '叙事',
+        'exec_summary': '## 方案综述', 'exec_summary_label': '方案综述',
+        'todo_title': '# 人工待办清单', 'todo_note': ('> 下列内容 AI 不应替你决定或编造，需投标人本人填写/核实后再定稿。'
+                                                 '按「不填会丢多少分」排序，废标风险项排最前。'),
+        'todo_blocking': '## ⚠ 废标风险项（必须处理）', 'todo_scoring': '## 丢分项（建议处理）',
+        'todo_weak': '## 竞争力薄弱项（自评信号，供人工强化）', 'todo_none': '（无）',
+        'todo_ch': '章节', 'todo_item': '待办', 'todo_impact': '不处理的后果',
         'm_req': '要求项', 'm_cat': '类别', 'm_wt': '权重/性质', 'm_sec': '响应章节',
         'cat_qual': '资格', 'cat_subst': '实质性', 'cat_fmt': '格式', 'cat_score': '评分项',
         'uncovered': '⚠ 未覆盖（需补）', 'budget_within': '≤{v}{u}（预算带内）',
@@ -54,6 +60,12 @@ LABELS = {
                             'public information and professional judgment; execution follows the contract.'),
         'gen_time': 'Generated: {time}',
         'narrative': 'Narrative',
+        'exec_summary': '## Executive Summary', 'exec_summary_label': 'Executive Summary',
+        'todo_title': '# Human To-Do', 'todo_note': ('> The items below must be filled or verified by the bidder. '
+                                                    'Sorted by score impact; disqualification risks first.'),
+        'todo_blocking': '## Disqualification risks (must fix)', 'todo_scoring': '## Score losses (should fix)',
+        'todo_weak': '## Weak items (self-score signals)', 'todo_none': '(none)',
+        'todo_ch': 'Chapter', 'todo_item': 'To-do', 'todo_impact': 'If ignored',
         'm_req': 'Requirement', 'm_cat': 'Category', 'm_wt': 'Weight/Type', 'm_sec': 'Addressed in',
         'cat_qual': 'Qualification', 'cat_subst': 'Substantive', 'cat_fmt': 'Format', 'cat_score': 'Scoring',
         'uncovered': '⚠ Not covered (fix)', 'budget_within': '<= {v}{u} (within budget)',
@@ -262,6 +274,15 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     elif os.path.isdir(output_path) or not output_path.endswith('.md'):
         output_path = os.path.join(output_path, f"{safe_title}-{now.strftime('%Y%m%d-%H%M%S')}.md")
 
+    # 执行摘要（section-0.md，可选；不参与章节编号）
+    exec_text = ''
+    exec_path = os.path.join(sections_dir, 'section-0.md')
+    if os.path.exists(exec_path):
+        exec_body = read_text(exec_path).strip()
+        exec_body = re.sub(r'^#{1,2} .+?\n+', '', exec_body, count=1)  # 去掉误写的标题
+        if exec_body:
+            exec_text = f"{L['exec_summary']}\n\n{exec_body}"
+
     # 章节正文
     chapter_texts = []
     for sec in sections:
@@ -277,6 +298,8 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
 
     # 目录
     toc_lines = []
+    if exec_text:
+        toc_lines.append(f"- [{L['exec_summary_label']}](#{github_anchor(L['exec_summary_label'])})")
     for sec in sections:
         n = sec.get('n')
         label = toc_label(lang, n, sec.get('title', ''))
@@ -354,6 +377,7 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
             f"{L['matrix']}\n",
             L['matrix_note'], "",
             matrix_text, "",
+            *([exec_text, ""] if exec_text else []),
             "\n\n".join(chapter_texts),
             "\n---\n",
             ref_text,
@@ -368,9 +392,9 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     full = build(wc, rt)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    # 去重同名旧稿
+    # 去重同名旧稿（含其配套的 -human-todo.md）
     out_dir = os.path.dirname(output_path)
-    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}\.md$')
+    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}(?:-human-todo)?\.md$')
     for fn in os.listdir(out_dir):
         if pat.match(fn) and fn != os.path.basename(output_path):
             try:
@@ -388,6 +412,7 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         "output_path": output_path,
         "line_count": full.count('\n') + 1,
         "chapter_count": len(chapter_texts),
+        "exec_summary": bool(exec_text),
         "word_count": wc,
         "issues": issues,
     }
@@ -529,6 +554,74 @@ def self_score(requirements_path, strategy_path, report_path, mode):
     }
 
 
+# ── 人工待办清单 ───────────────────────────────────────────────────────────
+PLACEHOLDER_RE = re.compile(r'【([^】\n]{1,80})】')
+
+
+def human_todo(requirements_path, strategy_path, report_path, mode, output_path, lang):
+    """扫描正文占位符 + 自评薄弱项，汇总成一份「AI 不该替你决定」的人工清单。
+    按不处理的后果排序：废标风险 > 高权重丢分 > 低权重 > 竞争力薄弱。"""
+    req = read_json(requirements_path)
+    strategy = read_json(strategy_path)
+    report = read_text(report_path)
+    L = lab(lang)
+
+    sections = {s.get('n'): s for s in (strategy.get('sections') or [])}
+    scoring_by_id = {s.get('id'): s for s in (req.get('scoring') or []) if s.get('id')}
+    mand_by_id = {m.get('id'): m for m in (req.get('mandatory') or []) if m.get('id')}
+
+    blocking, scoring_loss = [], []
+    for n, text in split_chapters(report):
+        sec = sections.get(n, {})
+        ch_label = toc_label(lang, n, sec.get('title', ''))
+        addrs = sec.get('addresses') or []
+        weights = [scoring_by_id[a].get('weight', 0) or 0 for a in addrs if a in scoring_by_id]
+        max_w = max(weights) if weights else 0
+        hit_mand = [mand_by_id[a] for a in addrs if a in mand_by_id]
+
+        for ph in PLACEHOLDER_RE.findall(text):
+            if hit_mand:
+                impact = f"废标风险（{hit_mand[0].get('type', '强制')}项：{hit_mand[0].get('item', '')[:24]}）"
+                blocking.append((ch_label, ph, impact))
+            else:
+                impact = f"丢 {max_w} 分" if max_w else "影响完整性"
+                scoring_loss.append((max_w, ch_label, ph, impact))
+
+    scoring_loss.sort(key=lambda x: -x[0])
+
+    ss = self_score(requirements_path, strategy_path, report_path, mode)
+    weak = ss.get('weak_items') or []
+
+    def _table(rows):
+        if not rows:
+            return L['todo_none']
+        out = [f"| {L['todo_ch']} | {L['todo_item']} | {L['todo_impact']} |", "|:---|:---|:---|"]
+        for ch, ph, impact in rows:
+            out.append(f"| {ch} | {ph.replace('|', '/')} | {impact} |")
+        return '\n'.join(out)
+
+    weak_lines = [L['todo_none']] if not weak else [
+        f"- [ ] **{scoring_by_id.get(w['id'], {}).get('item', w['id'])}** — {w['reason']}"
+        for w in weak
+    ]
+
+    parts = [
+        L['todo_title'], '',
+        L['todo_note'], '',
+        L['todo_blocking'], '',
+        _table(blocking), '',
+        L['todo_scoring'], '',
+        _table([(ch, ph, im) for _, ch, ph, im in scoring_loss]), '',
+        L['todo_weak'], '',
+        '\n'.join(weak_lines), '',
+    ]
+    write_text_atomic(output_path, '\n'.join(parts) + '\n')
+
+    return {"passed": True, "output_path": output_path,
+            "blocking_count": len(blocking), "scoring_count": len(scoring_loss),
+            "weak_count": len(weak), "todo_count": len(blocking) + len(scoring_loss)}
+
+
 def _load_profile(mode):
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
@@ -538,8 +631,32 @@ def _load_profile(mode):
         return {}
 
 
+# ── 甲方导向词频（"这份方案在讲谁"的机械信号）──────────────────────────────
+BUYER_TERMS_ZH = ['贵单位', '贵局', '贵委', '贵办', '贵中心', '贵司', '贵公司', '贵方', '采购人']
+SELF_TERMS_ZH = ['我司', '我方', '我们', '我公司', '本公司', '本单位', '本项目组', '本团队']
+
+
+def buyer_focus(report, req, lang):
+    """甲方提及数 / 我方提及数。比值低 = 方案在自夸而非解决甲方问题。
+    启发式信号，警告级——不阻断交付，交给人在定稿关卡判断。"""
+    if lang != 'zh':
+        return {"passed": True, "warning": True, "skipped": "仅 zh 启用"}
+
+    buyer_name = (req.get('buyer') or '').strip()
+    buyer_n = sum(report.count(t) for t in BUYER_TERMS_ZH)
+    if buyer_name:
+        buyer_n += report.count(buyer_name)
+    self_n = sum(report.count(t) for t in SELF_TERMS_ZH)
+
+    ratio = round(buyer_n / self_n, 2) if self_n else (99.0 if buyer_n else 0.0)
+    passed = buyer_n > 0 and ratio >= 0.8
+    return {"passed": passed, "warning": True, "buyer_mentions": buyer_n,
+            "self_mentions": self_n, "ratio": ratio, "min_ratio": 0.8,
+            "hint": "甲方提及少于我方 → 检查各章是否以甲方问题开篇，而非自我推销"}
+
+
 # ── QA ─────────────────────────────────────────────────────────────────────
-def qa_proposal(report_path, mode, strategy_path, lang):
+def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
     checks = {}
     report = read_text(report_path)
     lines = report.split('\n')
@@ -597,6 +714,20 @@ def qa_proposal(report_path, mode, strategy_path, lang):
     # LaTeX 公式残留（$ 后数字未转义）——警告级
     math = re.findall(r'(?<!\\)\$\d', report)
     checks['no_latex'] = {"passed": len(math) == 0, "warning": True, "found": len(math)}
+
+    # 方案综述（执行摘要）——警告级
+    checks['exec_summary'] = {"passed": L['exec_summary'] in report, "warning": True,
+                              "hint": "评委只精读前两页，建议有方案综述"}
+
+    # 甲方导向词频——警告级
+    if requirements_path and os.path.exists(requirements_path):
+        checks['buyer_focus'] = buyer_focus(report, read_json(requirements_path), lang)
+
+    # CTA / 排除项残留（销售提案措辞混入投标文件 → 不懂规则 / 负偏离风险）——警告级
+    bad_phrases = ['下一步行动', '下周会议', '期待与您沟通', '签约条款', '排除项', '不包含以下服务']
+    found_bad = [p for p in bad_phrases if p in report]
+    checks['no_sales_cta'] = {"passed": len(found_bad) == 0, "warning": True, "found": found_bad,
+                              "hint": "投标是密封递交，无 CTA；『排除项』易被认定实质性负偏离"}
 
     hard_fail = any(
         not v.get('passed', True) and not v.get('warning', False)
@@ -742,6 +873,15 @@ def main():
     p.add_argument('report')
     p.add_argument('--mode', default='standard', choices=['quick', 'standard', 'deep'])
     p.add_argument('--strategy', default=None)
+    p.add_argument('--requirements', default=None)
+    p.add_argument('--lang', default='zh')
+
+    p = sub.add_parser('human-todo')
+    p.add_argument('--requirements', required=True)
+    p.add_argument('--strategy', required=True)
+    p.add_argument('--report', required=True)
+    p.add_argument('--mode', default='standard', choices=['quick', 'standard', 'deep'])
+    p.add_argument('--output', required=True)
     p.add_argument('--lang', default='zh')
 
     args = parser.parse_args()
@@ -773,7 +913,8 @@ def main():
                               args.sections_dir, args.mode, args.output, args.lang)
         if r['passed']:
             print(f"Proposal assembled: {r['output_path']} "
-                  f"({r['line_count']} lines, {r['chapter_count']} chapters, {r['word_count']} chars)")
+                  f"({r['line_count']} lines, {r['chapter_count']} chapters, {r['word_count']} chars, "
+                  f"exec_summary={'yes' if r['exec_summary'] else 'no'})")
         else:
             print("FAIL")
             for iss in r['issues']:
@@ -794,9 +935,15 @@ def main():
         print(json.dumps(r, ensure_ascii=False, indent=2))
         sys.exit(0)
     elif args.command == 'qa-proposal':
-        r = qa_proposal(args.report, args.mode, args.strategy, args.lang)
+        r = qa_proposal(args.report, args.mode, args.strategy, args.lang, args.requirements)
         print(json.dumps(r, ensure_ascii=False, indent=2))
         sys.exit(0 if r['passed'] else 1)
+    elif args.command == 'human-todo':
+        r = human_todo(args.requirements, args.strategy, args.report,
+                       args.mode, args.output, args.lang)
+        print(f"HUMANTODO: blocking={r['blocking_count']} scoring={r['scoring_count']} "
+              f"weak={r['weak_count']} -> {r['output_path']}")
+        sys.exit(0)
 
 
 if __name__ == '__main__':

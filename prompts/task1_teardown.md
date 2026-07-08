@@ -7,6 +7,9 @@
 - 标书：读取 {TMPDIR}/tender.txt（粘贴文本）或 {TMPDIR}/tender_paths.txt 中列出的文件路径
   - `.md/.txt` 用 read 直接读；`.pdf` 先 read 尝试，失败则 `pip install pypdf2 -q` 提取到 {TMPDIR}/extracted-*.txt 再 read；`.docx` `pip install python-docx -q` 提取后 read
 - 用户素材（可选）：{TMPDIR}/materials.txt（案例/资质/报价参考的路径，若有则扫读）
+- **沟通纪要（可选，materials.txt 中标 `[notes]` 前缀的条目）**：踏勘记录、答疑会纪要、售前沟通笔记、甲方内部信息
+  - ⚡ 这是标书文字里没有的**甲方真实诉求**，是最大的信息不对称来源，务必读透，用来校准 `buyer_insight`
+  - 🚫 **但它只作为你理解甲方的输入，绝不能进入方案正文**。正文里写「根据与贵单位王处长的沟通」会被质疑不正当接触，竞争对手可据此投诉。把纪要里的洞察**转化成基于公开信息的表述**（政策文件、公开报道、标书原文）再用
 - 模式：{MODE}（quick/standard/deep）
 - 叙事指定：{NARRATIVE}（logic/story/vision/evidence = 用户显式指定，直接采用；auto = 由你按 TYPES.md 叙事策略库的"选择决策"判定）
 - 当前年份：{CURRENT_YEAR}
@@ -68,6 +71,15 @@
 5. **差异化惊喜**：甲方"没明确要求但会眼前一亮/加分"的增值点。每个要：低/合理成本、高感知、对应某个评分项。数量 ≥ {MODE} 模式的 min_differentiators（quick 2 / standard 3 / deep 5）
 6. **报价思路**：单一最优解，卡预算带内，讲清"这个价买到什么价值"（不分档）
 7. **章节映射**：每章覆盖哪些 scoring/mandatory 的 id（`addresses`）。不允许不对应任何评分项的凑数章
+8. **诚实标出你不知道的**（`open_questions`）：投标策略里有一批判断，**你无论怎么读标书、怎么联网都不可能知道答案**，只有投标人本人知道。把它们全部列出来，别偷偷替他假设。典型的：
+   - 差异化增值点**我司真做得到吗**？有没有这个资源/团队/技术？成本兜得住吗？
+   - 报价的**心理价位**是多少？这个标是要利润还是要业绩？愿意压到什么程度？
+   - **竞争对手是谁**？他们的强项是什么？我司相对优势在哪？
+   - 我司与该采购人**有无既往合作/关系**？有没有需要规避的历史？
+   - 资质/业绩门槛**我司真的满足吗**？案例库里的案例能拿出核验材料吗？
+   - 甲方**领导个人偏好**（讲话风格、关注点）——决定叙事和措辞
+   每条写清 `why_matters`（不确认会怎样）和 `ai_assumption`（你现在假设的是什么）。
+   **宁可多问，不可假装知道。** 主 agent 会把这些直接摆到投标人面前请他拍板。
 
 ### 章节数约束
 | 模式 | quick | standard | deep |
@@ -95,6 +107,9 @@
     {"id": "D1", "point": "增值点描述", "why_wow": "为什么让甲方惊喜", "addresses_scoring": ["S2"], "cost_note": "低成本高感知/合理成本"}
   ],
   "budget_strategy": "报价与资源的最优解思路（一段），是否卡在 budget_cap 内",
+  "open_questions": [
+    {"q": "需要投标人本人拍板的问题", "why_matters": "不确认会怎样（丢分/废标/策略跑偏）", "ai_assumption": "你目前假设的答案是什么"}
+  ],
   "sections": [
     {
       "n": 1,
@@ -112,6 +127,7 @@
 1. `differentiators` 数量达标且每个有 `addresses_scoring`
 2. `big_idea` 有且仅一个
 3. `narrative` 必填：主叙事全案唯一，`through_line` 一句话；每个 section 都有 `narrative_role`；报价章与合规/资质响应章的 narrative_role 固定为 logic/evidence 式呈现
+3b. `open_questions` 至少 3 条（deep 模式至少 5 条）。**空数组视为不合格**——任何投标都有 AI 不可能知道的关键判断
 4. 每个 `sections[].addresses` 至少含一个 id；把 requirements 的所有 scoring/mandatory id 分配到各章（可多章共担），确保并集覆盖全部 id——这是零遗漏的源头
 5. `sub` 是子节标题列表：deep 每章 3-6 节，standard 2-4 节，quick 1-2 节；≤12 字，不含编号
 6. `intel_needs` 写清本章需要 Task2 去联网查什么（甲方/行业/竞品/案例/数据）。若主叙事为 story/vision，在相关章的 intel_needs 中加"叙事素材"条目（真实场景/人物细节/甲方战略表述原文），Task2 据此定向调研
@@ -123,6 +139,8 @@
 - [ ] 所有 id 是否都被分配到至少一个 section 的 addresses
 - [ ] differentiators 数量是否达标
 - [ ] narrative 是否完整（mode/rationale/through_line），每章是否都有 narrative_role
+- [ ] open_questions 是否列全了"只有投标人知道"的判断（≥3 条，deep ≥5 条），有没有偷偷替他假设
+- [ ] 若有沟通纪要：洞察是否已转化成基于公开信息的表述（正文不得引用私下沟通）
 - [ ] 报价章、团队案例章、风险保障章是否都在
 
 ## 作业
@@ -138,6 +156,7 @@ Narrative: <主叙事 mode>(<辅助叙事 mode 或 ->)
 Sections: <章数>
 Scoring: <评分项数> · Mandatory: <强制项数> · Differentiators: <差异化点数>
 BudgetCap: <数值+单位或"未明确">
+OpenQuestions: <条数>
 ```
 
 ---

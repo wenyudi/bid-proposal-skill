@@ -21,24 +21,45 @@
 ## 用法
 
 ```
-/proposal <标书文件路径或粘贴标书文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence]
+/proposal <标书路径或粘贴标书文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-auto]
 ```
 
 - **必需**：甲方标书（`.pdf/.docx/.md/.txt` 路径，或直接粘贴标书内容）
-- **可选**：案例库 / 资质 / 报价参考等本地素材路径
+- **可选**：资质 / 报价参考 / **沟通纪要**（踏勘、答疑会、售前笔记）等本地素材路径
+  - 案例库 `casebase/` 非空时自动纳入，不用传
+  - ⚠️ 沟通纪要只作 AI 理解甲方的输入，**绝不进方案正文**（引用私下沟通 = 不正当接触嫌疑）
 - **模式**：
   - `-quick` 快速应标（小标 / 时间紧）
   - 默认 标准投标（评分项 8-12 项）
   - `-deep` 大标 / 重点项目（强竞争 / 多轮答辩）
 - **叙事**（可选；不指定则按标书特征自动判定，见 TYPES.md 叙事策略库）：
   - `-logic` 逻辑征服 · `-story` 故事打动 · `-vision` 愿景共创 · `-evidence` 数据实证
+- **关卡**：默认停两次问你（见下）；`-auto` 全自动跑完
 
 示例：
 ```
-/proposal /Users/me/招标文件.pdf ~/我司案例库/ -deep
-/proposal /Users/me/文旅局宣传标书.pdf -story
-/proposal （粘贴标书正文……）
+/proposal /Users/me/招标文件.pdf ~/资质材料/ -deep
+/proposal /Users/me/文旅局宣传标书.pdf 踏勘纪要.md -story
+/proposal /Users/me/小标.pdf -quick -auto
 ```
+
+---
+
+## 人机分工：两道关卡
+
+AI 能读标书、能联网、能写字，但有一批判断 **它无论如何都不可能知道**，只有你知道。硬猜的结果是方案跑偏而不自知。所以流程里留了两个停顿：
+
+**⛳ Gate 1 — 策略确认**（Task1 之后，动笔之前）
+呈现甲方洞察 / Big Idea / 叙事策略 / 差异化点 / 报价思路 / 章节框架，并**单独列出 AI 不可能知道、需要你拍板的问题**（`open_questions`）：
+
+> 这个差异化点我司真做得到吗（资源/团队/成本）？报价心理价位是多少，要利润还是要业绩？竞争对手是谁？我司跟这个采购人有没有历史？资质业绩真的满足吗？甲方领导的关注点是什么？
+
+放在这里，是因为**策略错了，后面所有联网调研和分章撰写全是浪费**。
+
+**⛳ Gate 2 — 红队定稿**（方案写完、合规校验通过之后）
+派 4 个 agent 并行攻击方案：采购人代表、技术专家、财务纪检、**竞争对手**（详见 TYPES.md）。红队**只提质疑不改稿**——除了致命项（废标风险 / 高权重评分项实质未答）会自动补。剩下的由你决定：哪些必须补、哪些是红队想多了、哪些暴露了真实能力缺口需要调整策略甚至弃标。
+
+同时产出 `<方案名>-human-todo.md`：把正文里散落的 `【待补充】` 占位符按「不填会丢多少分」排序，废标风险项排最前。**递交前务必过一遍**——AI 不该替你编造真实业绩、报价数字、团队人员和可承诺的 KPI。
 
 ---
 
@@ -51,7 +72,10 @@
 | **会讲法** | Task1 按标书特征选定**叙事策略**（逻辑征服 / 故事打动 / 愿景共创 / 数据实证，用户可用标志强制指定），through_line 贯穿各章；**叙事只决定讲法不裁内容**——评分点仍零遗漏，报价与合规响应永远逻辑呈现 |
 | **有战绩** | 把真实案例放进 `casebase/`（格式见其 README），生成时自动按行业/客户类型/预算量级筛选 3-8 个最匹配案例写进方案；案例库案例永远优先于联网第三方案例 |
 | **给惊喜** | Task1 提炼 Big Idea + 差异化增值点候选；Task2 联网找甲方画像/行业数据/标杆案例坐实（story/vision 叙事下加采叙事素材）；Task3 写入并标为亮点；QA 校验差异化点数 ≥ 模式下限 |
-| **竞争力研判** | Task4 `self-score` 给出预估得分、覆盖率、薄弱评分项，+ LLM 定性研判（内部参考，不写入交付文档） |
+| **被看见** | Task3.5 在**全部章节写完后**回头提炼一页 `## 方案综述`（执行摘要），置于对照表之后——评委只精读前两页 |
+| **挨过打** | 定稿前**红队四视角**并行攻击（采购人代表 / 技术专家 / 财务纪检 / **竞争对手**），致命项自动补，其余交人判断 |
+| **知边界** | Task1 产出 `open_questions`（AI 不可能知道的判断）→ Gate 1 交人拍板；正文占位符汇总成 `human-todo.md` → 递交前人工填实 |
+| **竞争力研判** | Task4 `self-score` 预估得分/覆盖率/薄弱项 + `buyer_focus` 甲方导向词频（在讲甲方还是在自夸）+ LLM 定性研判（内部参考，不写入交付文档） |
 
 ---
 
@@ -60,10 +84,14 @@
 主 agent 调度 4 个 Task，中间数据走临时目录：
 
 ```
-标书 → Task1 标书解读+投标策略  → requirements.json + strategy.json
-       Task2 联网情报收集        → intel-pool.json（甲方/行业/竞品/案例）
-       Task3 并行分章撰写        → sections/section-*.md（每章照评分标准写）
-       Task4 装配+合规+自评+QA   → reports/zh/<方案标题>-<时间戳>.md
+标书 → Task1   标书解读+投标策略      → requirements.json + strategy.json（含 open_questions）
+       ⛳ Gate 1 策略确认（人拍板）
+       Task2   联网情报收集          → intel-pool.json（甲方/行业/竞品/案例库筛选）
+       Task3   并行分章撰写          → sections/section-*.md（每章照评分标准写）
+       Task3.5 方案综述（读完各章）   → sections/section-0.md
+       Task4   装配+合规+自评+红队    → reports/zh/<方案标题>-<时间戳>.md
+                                     + <方案标题>-<时间戳>-human-todo.md
+       ⛳ Gate 2 红队定稿（人取舍）
 ```
 
 - **联网为主**：沿用运行时自适应搜索（CLI 内置引擎 + SearXNG + 免费源）+ Scrapling 全文抓取，webfetch 兜底
@@ -75,20 +103,23 @@
 
 ```
 proposal/
-├── SKILL.md              主调度流程 + 中标级质量标准
-├── RULES.md              废标红线 / 真实性红线 / 常见陷阱
-├── TYPES.md              六类提案类型 + 评标维度模型 + 叙事策略库 + 编号体系
+├── SKILL.md              主调度流程 + 中标级质量标准 + 两道人工关卡
+├── RULES.md              废标红线 / 真实性红线 / 人机边界 / 常见陷阱
+├── TYPES.md              六类提案类型 + 评标维度模型 + 叙事策略库 + 红队四视角 + 编号体系
 ├── profiles.json         三档参数（章节数/段落/差异化下限/字数）
 ├── VERSION
 ├── command/proposal.md   /proposal 命令入口
+├── install/              各 CLI 的 skill 注册说明（⚠️ 不注册 = 不走多 agent 流程）
 ├── prompts/
-│   ├── task1_teardown.md      标书解读 + 投标策略 + 方案框架
-│   ├── task2_intel.md         联网情报收集
+│   ├── task1_teardown.md      标书解读 + 投标策略 + open_questions
+│   ├── task2_intel.md         联网情报收集 + 案例库筛选
 │   ├── task3_section_agent.md 分章撰写
+│   ├── task3b_exec_summary.md 方案综述（读完各章后提炼）
+│   ├── task4_redteam.md       红队评审（4 角色并行）
 │   └── task4_assembly.md      装配/合规/自评/QA 命令参考
-├── tools/prop_tools.py   自包含引擎：assemble / check-compliance / self-score / qa / encoding
+├── tools/prop_tools.py   自包含引擎：assemble / check-compliance / self-score / qa / human-todo / encoding
 ├── casebase/             案例库（放真实案例 .md，自动筛选进方案；格式见其 README）
-└── reports/zh/           输出目录
+└── reports/zh/           输出目录（方案 + 配套 human-todo.md）
 ```
 
 ---
@@ -98,6 +129,21 @@ proposal/
 - Python 3.8+（`prop_tools.py` 仅用标准库）
 - 联网调研需要可用的搜索工具（CLI 内置 websearch / SearXNG）与抓取工具（Scrapling MCP 或 webfetch）
 - 读 `.pdf/.docx` 标书时自动安装 `pypdf2` / `python-docx`
+
+---
+
+## 它刻意不做的事
+
+投标 ≠ 销售提案。以下是西方顾问式提案的常见做法，**在中国政企投标里会出事**，本 skill 主动拦截：
+
+| 不做 | 为什么 |
+|:----|:------|
+| **CTA / 下一步行动**（"期待与您进一步沟通"） | 投标是密封递交、开标评标。写 CTA 暴露不懂规则 |
+| **排除项 / 免责声明**（"本报价不包含以下服务"） | 极易被认定**实质性负偏离** → 废标。要写只能写「需甲方配合事项」 |
+| **分阶段 opt-in 报价**（先买调研，后续再决定） | = 报价未完整响应 → 废标风险 |
+| **引用私下沟通**（"据贵单位李主任介绍……"） | 不正当接触嫌疑，竞争对手可据此投诉。沟通纪要只作 AI 理解输入，不进正文 |
+
+引用只引**所有投标人都看得到的东西**：标书原文、答疑澄清文件、公开政策、公开报道。
 
 ---
 

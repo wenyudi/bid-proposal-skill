@@ -1,7 +1,7 @@
 ---
 name: proposal
-description: "政企传媒投标方案生成 — 多 agent 协作：标书解读拆评分项、按标选叙事（逻辑征服/故事打动/愿景共创/数据实证）、联网调研甲方/行业/竞品/案例、并行分章撰写、应标响应对照表零遗漏校验与竞争力自评。保基础、控成本、给甲方最大惊喜。"
-version: 1.2.0
+description: "政企传媒投标方案生成 — 多 agent 协作：标书解读拆评分项、按标选叙事（逻辑征服/故事打动/愿景共创/数据实证）、联网调研甲方/行业/竞品/案例、并行分章撰写、方案综述、红队四视角评审、应标响应对照表零遗漏校验。两道人工关卡（策略确认 / 红队定稿）把 AI 不该替人决定的判断交回投标人。"
+version: 1.3.0
 updated: 2026-07-08
 risk: medium
 ---
@@ -10,8 +10,9 @@ risk: medium
 
 为广告/传媒公司生成给**政企客户**投标的方案文档。目标：在**保证基础合规（不废标、覆盖全部评分项）**的前提下，用**合理成本的单一最优解**，配**贴合本标的叙事策略**（逻辑征服/故事打动/愿景共创/数据实证，见 TYPES.md 叙事策略库），给甲方**最大惊喜**，从众多提案中脱颖而出。
 
-- **输入**：甲方标书（本地文件 pdf/docx/md/txt，或粘贴文本）+ 可选的用户素材（资质/报价参考）；`{SKILLDIR}/casebase/` 有案例时自动筛选纳入（无需传路径）
-- **架构**：主 agent 调度 4 个 Task —— Task1 标书解读+投标策略（含叙事判定） → Task2 联网情报 → Task3 并行分章撰写（按叙事指令） → Task4 装配+合规校验+自评分+QA（主 agent 直接执行）
+- **输入**：甲方标书（本地文件 pdf/docx/md/txt，或粘贴文本）+ 可选的用户素材（资质/报价参考/**沟通纪要**）；`{SKILLDIR}/casebase/` 有案例时自动筛选纳入（无需传路径）
+- **架构**：主 agent 调度 —— Task1 标书解读+投标策略（含叙事判定） → **⛳ Gate 1 策略确认（人）** → Task2 联网情报 → Task3 并行分章撰写（按叙事指令）→ Task3.5 方案综述 → Task4 装配+合规校验+自评+红队四视角+人工待办 → **⛳ Gate 2 红队定稿（人）**
+- **人机分工**：AI 负责拆解、调研、撰写、校验；**人负责 AI 不可能知道的判断**——我司真实能力边界、报价心理价位、竞争对手、与甲方的关系、领导偏好。两道关卡就是把这些交回给人。`-auto` 可跳过关卡
 - **情报来源**：联网为主（甲方画像/行业趋势/竞品打法/标杆案例）+ 标书 + 用户素材
 - **输出**：正式投标方案文档（Markdown，可转 Word/PDF），保存到 `{SKILLDIR}/reports/{LANG}/`
 - **中间数据**：走带时间戳的临时目录 TMPDIR（requirements.json / strategy.json / intel-pool.json / sections/）
@@ -41,6 +42,10 @@ risk: medium
 | 14 | **时间戳正确** | 文件名和文末时间用 `date` 命令获取 |
 | 15 | **编码洁净** | 所有中间文件与最终稿 UTF-8 无 BOM，无替换字符（�）/Mojibake/`???` |
 | 16 | **纯文本公式** | 不用 LaTeX（`$...$`）；货币 `$` 写 `\$` |
+| 17 | **方案综述前置** | 目录+对照表之后有一页 `## 方案综述`（Task3.5 在各章写完后提炼），评委只精读前两页 |
+| 18 | **甲方导向** | `qa-proposal` 的 `buyer_focus.ratio` ≥ 0.8（甲方提及数 / 我方提及数）。低于此值说明在自夸而非解决甲方问题 |
+| 19 | **引用可公开** | 只引标书原文/答疑澄清文件/公开政策/公开报道。**私下沟通、售前会议中的甲方个人表述绝不进正文**（不正当接触嫌疑） |
+| 20 | **无销售话术** | 投标是密封递交，**没有 CTA**。禁止"下一步行动/期待沟通/签约条款"；禁止"排除项"式免责（易认定负偏离） |
 
 ---
 
@@ -68,6 +73,9 @@ risk: medium
    - 直接粘贴的标书文本 → 写入 {TMPDIR}/tender.txt
    - 既无路径也无文本 → 回复用户索要标书（"请提供标书文件路径或粘贴标书内容"），不继续
  → 识别用户额外素材（案例库/资质文件/报价参考/品牌手册路径）→ 记入 {TMPDIR}/materials.txt（可为空）
+ → **沟通纪要识别**：用户提供的踏勘记录/答疑会纪要/售前沟通笔记 → 在 materials.txt 中以 `[notes]` 前缀标注
+   ⚡ 这是标书没写的甲方真实诉求，喂给 Task1 校准 buyer_insight
+   🚫 但只作 AI 理解输入，**绝不进方案正文**（引用私下沟通 = 不正当接触嫌疑，见质量标准 #19）
  → **案例库自动检测**：若 {SKILLDIR}/casebase/ 存在且含案例文件（.md，排除 _ 开头与 README）
    → 把该目录追加进 materials.txt 并标注 `[casebase]` 前缀——用户没传素材也能自动用上案例库
  → **模式解析**：用户输入末尾
@@ -78,6 +86,9 @@ risk: medium
    - ` -logic` / ` -story` / ` -vision` / ` -evidence` → $NARRATIVE=对应值（用户强制指定主叙事）
    - 用户在自然语言中明确表达叙事偏好（如"用讲故事的方式"）→ 映射到对应 $NARRATIVE
    - 无指定 → $NARRATIVE=auto（Task1 按 TYPES.md 叙事策略库判定）
+ → **关卡解析**：
+   - ` -auto` → $GATES=off（全自动跑完，不停顿。适合无人值守或初稿快评）
+   - 无标志   → $GATES=on（默认）：standard/deep 停 Gate 1 + Gate 2；quick 只停 Gate 1
 
 ══ 主流程 ══
 
@@ -90,8 +101,40 @@ risk: medium
     → 运行 `python {TOOLSDIR}/prop_tools.py check-requirements {TMPDIR}/requirements.json`，
       确认 mandatory[]/scoring[] 结构完整、评分项含权重。不通过 → 重新派发 Task1 一次
     → read strategy.json 确认 narrative 完整（mode/through_line 存在、每章有 narrative_role）；缺失 → 重新派发 Task1 一次
+    → read strategy.json 确认 open_questions 非空（deep ≥5 条，其余 ≥3 条）；为空 → 重新派发 Task1 一次
     → 从 strategy.json 读取 title + sections 数 + depth_mode + narrative.mode；从 requirements.json 读取 scoring/mandatory 计数
-    → todowrite 标记完成，向用户报告（$LANG）：标书类型、评分项数、预算带、差异化点数、叙事策略（mode + 一句 rationale）
+    → todowrite 标记完成
+ 3b. ══ ⛳ Gate 1 — 策略确认（人工关卡）══  【$GATES=off 时整段跳过，直接进 Task 2】
+
+    **为什么停在这里**：策略错了，后面所有联网调研和分章撰写全是浪费。而策略里最关键的几个判断，
+    AI 无论怎么读标书都不可能知道——只有投标人本人知道。
+
+    → 用 $LANG 向用户呈现（表格形式，简洁）：
+
+    ```
+    📋 投标策略待确认
+
+    | 项目 | AI 的判断 |
+    |:----|:---------|
+    | 🎯 甲方洞察 | {buyer_insight} |
+    | 💡 Big Idea | {big_idea} |
+    | 🎭 叙事策略 | {narrative.mode}（{narrative.rationale}）· 主线：{through_line} |
+    | ✨ 差异化点 | {differentiators 逐条：point → why_wow → 对应评分项} |
+    | 💰 报价思路 | {budget_strategy} · 预算带 {budget_cap} |
+    | 📑 章节框架 | {sections 逐条：n. title（覆盖评分项数）} |
+
+    ⚠️ 以下判断 AI 不可能知道，需要你拍板：
+    {open_questions 逐条：q → 「不确认的后果：why_matters」→ 「AI 目前假设：ai_assumption」}
+    ```
+
+    → **用 AskUserQuestion 工具**（若可用）把 open_questions 中最关键的 2-4 条做成选择题；
+      或直接结束 response 等用户回复。**不得自行假设后继续。**
+    → 用户可能：① 确认全部 → 继续  ② 修改某项（改 Big Idea/叙事/差异化/报价/章节）
+      ③ 回答 open_questions  ④ 要求重做策略
+    → 根据用户反馈**用 write 更新 {TMPDIR}/strategy.json**（把确认后的答案并入 buyer_insight/differentiators/budget_strategy，
+      并把 open_questions 中已确认的条目标 `"resolved": "<用户的答复>"`），必要时同步 requirements.json
+    → 更新后 read 确认，再进 Task 2
+
  4. ══ Task 2 — 联网情报收集 ══
     → 读取 {PROMPTSDIR}/task2_intel.md，替换 {TMPDIR} {TOOLSDIR} {LANG} {COUNTRY} {CURRENT_YEAR}
       + {MATERIALS}（读取 {TMPDIR}/materials.txt 内容，空则空串）
@@ -121,7 +164,17 @@ risk: medium
       - read 逐一确认 {TMPDIR}/sections/section-{N}.md 存在且非空
       - 缺失/空 → 串行重写该章（task run_in_background=false）
       - todowrite 标记完成，向用户报告
- 6. ══ Task 4 — 装配 + 合规校验 + 自评分 + QA（主 agent 直接执行）══
+ 5b. ══ Task 3.5 — 方案综述（执行摘要）══
+
+    ⚠️ **必须在全部章节完成之后串行执行**——摘要是从写成的正文里提炼的，不是从策略推演的。
+    → 读取 {PROMPTSDIR}/task3b_exec_summary.md，替换 {TMPDIR} {LANG} {TOTAL}（章数）
+      {EXEC_CHARS}（quick 600 / standard 800 / deep 1000）
+      {NARRATIVE_BLOCK}（同 Task3 的全案叙事要点）
+    → 派发 task()（run_in_background=false），等待完成
+    → read 确认 {TMPDIR}/sections/section-0.md 存在且非空；缺失 → 重试一次，仍失败则跳过（装配会自动省略综述，QA 给警告）
+    → todowrite 标记完成
+
+ 6. ══ Task 4 — 装配 + 合规校验 + 自评分 + 红队 + QA（主 agent 直接执行）══
     → **Step 0 清理**：删除 {SKILLDIR}/reports/ 下 0 字节文件；确保 {SKILLDIR}/reports/$LANG/ 存在
     → **Step 1 装配**：
       `python {TOOLSDIR}/prop_tools.py assemble-proposal --strategy {TMPDIR}/strategy.json --requirements {TMPDIR}/requirements.json --intel {TMPDIR}/intel-pool.json --sections-dir {TMPDIR}/sections/ --mode {depth_mode} --output {SKILLDIR}/reports/$LANG/ --lang $LANG`
@@ -140,9 +193,52 @@ risk: medium
       预估处于什么水平、最强的差异化点、最需补强的评分项，以及叙事执行是否到位（抽读 1-2 章开头，
       判断是否符合 strategy.narrative 的讲法而非模板腔）。**这是内部竞争力研判，供用户参考，不写入交付文档。**
     → **Step 4 货币转义**：`python {TOOLSDIR}/prop_tools.py escape-currency "$REPORT"`
-    → **Step 5 QA**：`python {TOOLSDIR}/prop_tools.py qa-proposal "$REPORT" --mode {depth_mode} --strategy {TMPDIR}/strategy.json --lang $LANG`
+    → **Step 5 QA**：`python {TOOLSDIR}/prop_tools.py qa-proposal "$REPORT" --mode {depth_mode} --strategy {TMPDIR}/strategy.json --requirements {TMPDIR}/requirements.json --lang $LANG`
       → 解析 JSON，passed=true 则机械检查通过；不通过项局部补刀（单章重写最多 1 次）
-    → **Step 6 清理**：删除 TMPDIR（Unix `rm -rf`，Windows `Remove-Item -Recurse -Force`）
+      → 警告级信号（`buyer_focus` / `exec_summary` / `no_sales_cta` / `no_latex` / `no_id_leak`）不阻断，
+        但**必须带进 Gate 2 给人看**。`buyer_focus.ratio < 0.8` 说明方案在自夸 → 建议人工复看各章开篇
+    → **Step 6 🔴 红队评审（四视角并行）**：
+      → mkdir {TMPDIR}/redteam/
+      → 读取 {PROMPTSDIR}/task4_redteam.md 模板；从 TYPES.md「红队四视角」取四个角色的
+        `{ROLE_KEY}` `{ROLE_NAME}` `{ROLE_BRIEF}`：`buyer`（采购人代表）/ `expert`（技术专家）/
+        `audit`（财务纪检）/ `rival`（竞争对手）
+      → **并行派发 4 个 task(run_in_background=true)**，各自替换 {ROLE_*} {REPORT} {TMPDIR} {LANG}
+      → 仅当收到 [ALL BACKGROUND TASKS COMPLETE] 才继续；read 确认四个 {TMPDIR}/redteam/{role}.json
+      → 汇总：按 severity 归并（致命 → 重要 → 次要），同一 target 的重复质疑合并
+      → **致命项（废标风险 / 高权重评分项实质未答）不进 Gate 2 等人——先自动补**：
+        定位归属章节 → 重新派发该章 agent 补写 → 重新装配 → 重跑 check-compliance → 最多 2 轮
+    → **Step 7 人工待办清单**：
+      设 $TODO = "${REPORT%.md}-human-todo.md"（与报告同名同目录，避免多个标互相覆盖）
+      `python {TOOLSDIR}/prop_tools.py human-todo --requirements {TMPDIR}/requirements.json --strategy {TMPDIR}/strategy.json --report "$REPORT" --mode {depth_mode} --output "$TODO" --lang $LANG`
+      → 解析 `HUMANTODO:` 行：blocking_count / scoring_count / weak_count
+    → **Step 8 ⛳ Gate 2 — 红队定稿（人工关卡）**  【$GATES=off 或 quick 模式时跳过，直接 Step 9】
+
+      **为什么停在这里**：红队只提质疑，不改稿。哪些必须补、哪些是红队想多了、哪些暴露了真实能力缺口
+      需要调整策略甚至弃标——这是投标人的判断，不是 AI 的。
+
+      → 用 $LANG 呈现：
+      ```
+      🔴 红队评审结果（定稿前）
+
+      | 视角 | 判断 | 致命 | 重要 | 次要 |
+      |:----|:----|:---:|:---:|:---:|
+      | 采购人代表 | {overall_verdict} | n | n | n |
+      | 技术专家   | … | | | |
+      | 财务纪检   | … | | | |
+      | 竞争对手   | … | | | |
+
+      ⚔️ 对手会怎么打你：{rival.if_i_were_competitor}
+      🛡️ 方案最能打的地方：{各视角 strongest_point 归并}
+
+      【重要级质疑】逐条：target · quote · issue · why_it_costs · fix
+      【机械信号】甲方导向比 {buyer_focus.ratio}（阈值 0.8）· 综述 {有/无} · 销售话术残留 {…}
+      【人工待办】废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 → {human-todo.md 路径}
+      ```
+      → 用 AskUserQuestion（若可用）让用户挑要补的质疑；或结束 response 等回复
+      → 用户选定后：局部补写对应章节 → 重新装配 → 重跑 check-compliance + qa → 再报告
+      → 用户说"可以了" → 进 Step 9
+    → **Step 9 清理**：删除 TMPDIR（Unix `rm -rf`，Windows `Remove-Item -Recurse -Force`）
+      ⚠️ human-todo.md 在报告目录，不在 TMPDIR，不会被删
     → todowrite 全部完成
     → ⏱ 计算总耗时（start_time.txt vs 当前）
     → 用 $LANG 向用户汇报最终结果（见下方汇报格式）
@@ -163,13 +259,15 @@ risk: medium
 | 💡 Big Idea | {strategy.big_idea} |
 | ✨ 差异化惊喜 | {diff_count} 个增值点（{列出 2-3 个 point}）|
 | ✅ 合规 | 强制项 {addressed_mandatory}/{total_mandatory} · 评分项覆盖 {coverage_pct}% |
-| 📊 竞争力自评 | 预估 {estimated_score} 分档 · 预算{within_budget ? "带内" : "⚠超预算"} → {llm_verdict} |
-| ⚠ 待补强 | {weak_items 前几项，供用户人工强化} |
+| 📊 竞争力自评 | 预估 {estimated_score} 分档 · 预算{within_budget ? "带内" : "⚠超预算"} · 甲方导向比 {buyer_focus.ratio} → {llm_verdict} |
+| 🔴 红队 | 致命 {已补 n} · 重要 {n}（{已采纳 m}）· 对手威胁：{if_i_were_competitor 摘要} |
+| 📝 人工待办 | 废标风险 {blocking_count} 项 · 丢分 {scoring_count} 项 → {human-todo.md 路径} |
 | 📄 文档 | {REPORT} |
 | ⏱ 耗时 | {totalMin} 分钟 · 生成 {gen_time} |
 ```
 
-> 竞争力自评是**机械信号 + LLM 研判**，非评委真实打分，仅供投标决策参考。`weak_items` 是建议人工强化的评分项。
+> 竞争力自评是**机械信号 + LLM 研判**，非评委真实打分，仅供投标决策参考。
+> **交付前请务必过一遍 `human-todo.md`**——里面是 AI 不该替你决定或编造的内容（真实业绩、报价数字、团队人员、可承诺的 KPI）。废标风险项没填完就递交，方案再好也是零分。
 
 ---
 
@@ -179,7 +277,7 @@ risk: medium
 **用法**：读取文件，替换 `{TMPDIR}` `{TOOLSDIR}` `{LANG}` `{MODE}` `{NARRATIVE}` `{CURRENT_YEAR}` 后注入。
 **输出**（用 write 工具）：
 - `{TMPDIR}/requirements.json` — 标书结构化拆解（mandatory[] / scoring[] 含权重 / budget_cap / deliverables）
-- `{TMPDIR}/strategy.json` — 投标策略 + 方案框架（win_themes / differentiators / big_idea / **narrative**（mode/secondary/rationale/through_line）/ sections[] 含 addresses 映射与 narrative_role）
+- `{TMPDIR}/strategy.json` — 投标策略 + 方案框架（win_themes / differentiators / big_idea / **narrative**（mode/secondary/rationale/through_line）/ **open_questions[]**（只有投标人知道的判断，Gate 1 拿它问人）/ sections[] 含 addresses 映射与 narrative_role）
 
 ---
 
@@ -203,15 +301,26 @@ risk: medium
 
 ---
 
-## 5. Task 4 — 装配 + 合规 + 自评 + QA（主 agent 直接执行）
+## 4b. Task 3.5 — 方案综述（执行摘要）
 
-主 agent 通过 bash 直接调用 `{TOOLSDIR}/prop_tools.py`：
+**工具**：`task()` | 一次调用 | **prompt**：`prompts/task3b_exec_summary.md`
+**时机**：**全部章节完成之后**，串行执行。摘要从写成的正文里提炼，不从策略推演。
+**替换变量**：`{TMPDIR}` `{LANG}` `{TOTAL}` `{EXEC_CHARS}`（quick 600 / standard 800 / deep 1000）`{NARRATIVE_BLOCK}`
+**输出**：`{TMPDIR}/sections/section-0.md`（只写正文，装配自动加 `## 方案综述` 标题并置于对照表后、正文各章前；不参与章节编号）
 
-1. `assemble-proposal` → 生成方案文档（含应标响应与评分对照表）
-2. `check-compliance` → ⚡ 合规校验（强制项/评分项零遗漏，阻断）
+---
+
+## 5. Task 4 — 装配 + 合规 + 自评 + 红队 + QA（主 agent 直接执行）
+
+主 agent 通过 bash 直接调用 `{TOOLSDIR}/prop_tools.py`，红队部分派 4 个 agent：
+
+1. `assemble-proposal` → 生成方案文档（含应标响应与评分对照表 + 方案综述）
+2. `check-compliance` → ⚡ 合规校验（强制项/评分项零遗漏，**唯一硬阻断点**）
 3. `self-score` → 竞争力机械自评（预估得分/覆盖率/薄弱项/预算合规）
 4. `escape-currency` → 货币符号转义
-5. `qa-proposal` → 全量质量检查（编码/结构/目录/元数据/对照表/差异化下限/字数）
+5. `qa-proposal --requirements ...` → 全量质量检查（编码/结构/目录/对照表/差异化下限/字数 + **甲方导向词频/综述存在/销售话术残留**，后三项警告级）
+6. **红队四视角**（`prompts/task4_redteam.md` × 4 并行，角色见 TYPES.md）→ `{TMPDIR}/redteam/{role}.json`；致命项自动补，其余进 Gate 2
+7. `human-todo` → 汇总正文占位符 + 薄弱项，按「不处理的后果」排序，产出 `human-todo.md`（与报告同目录，**不随 TMPDIR 删除**）
 
 ---
 
@@ -219,7 +328,8 @@ risk: medium
 
 - **路径优先级**：① 用户显式指定的输出目录 ② 默认 `{SKILLDIR}/reports/{LANG}/`
 - **文件名**：`<方案标题>-YYYYMMDD-HHmmss.md`，日期用 `date` 命令
-- **清理**：QA 通过后删除 TMPDIR
+- **附带产物**：`human-todo.md`（与报告同目录）——AI 不该替人决定的待办清单，**交付前必须过一遍**
+- **清理**：QA 通过后删除 TMPDIR（红队 JSON 随之删除；结论已进 Gate 2 报告）
 - **路径核验**：QA 确认报告在默认目录或用户指定目录，否则标"路径异常"
 
 ---
@@ -232,7 +342,9 @@ risk: medium
 | `searxng`（webfetch 访问 SearXNG JSON） | 补充搜索，含百度/搜狗等 | Task2 |
 | `scrapling_bulk_get/stealthy/fetch` | 全文抓取（MCP，若已注册） | Task2 |
 | `webfetch` | 抓取兜底 | Task2 |
-| `prop_tools.py` | 装配/合规/自评/QA/编码 | Task4 |
+| `prop_tools.py` | 装配/合规/自评/QA/人工待办/编码 | Task4 |
+| `task()` × 4 并行 | 红队四视角评审 | Task4 Step 6 |
+| `AskUserQuestion`（若可用） | Gate 1 策略确认、Gate 2 质疑取舍 | 两道关卡 |
 | `read`/`write`/`glob` | 标书与素材读取、文件写入 | Task1/2/3 |
 | `bash` | date 时间戳、pdf/docx 文本提取、调脚本 | 全流程 |
 
@@ -245,7 +357,10 @@ risk: medium
 - 所有脚本调用有兜底：主路径失败 → 换 `sys.executable` / 检查路径 / 直接 Python 实现 → 三次失败向用户报告具体问题
 - Task2 联网失败不阻塞：抓不到的情报在 intel-pool 标 gap，方案照常生成（相应章节用标书+素材+专业判断补，并在自评中提示情报受限）
 - Scrapling 不可用 → 全量 webfetch，标注抓取方式
+- Task3.5 综述失败 → 跳过（装配自动省略，QA 给警告），不阻塞交付
+- 红队某一视角失败 → 用剩余视角继续，Gate 2 标注"{role} 视角缺失"；四个全失败 → 跳过红队，Gate 2 只报机械信号
 - `check-compliance` 是**唯一硬阻断点**——强制项有遗漏必须补齐才能交付
+- **Gate 1/2 不得自行跳过**（除非 $GATES=off）。等不到用户回复就结束 response，不许"替用户假设后继续"
 
 ---
 
