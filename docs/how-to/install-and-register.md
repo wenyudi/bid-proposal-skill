@@ -1,0 +1,106 @@
+# 安装并注册 proposal
+
+仅 clone 仓库不会让宿主自动执行 proposal 流程。你还需要注册一个 skill 入口，并让入口指向仓库这个唯一事实来源。
+
+以下步骤只覆盖仓库中已有明确映射的 Claude Code 和 pi。其他宿主应先确认自己的 skill、子 agent、联网抓取与文件工具注册机制，不要直接套用未经验证的命令。
+
+## 1. 克隆仓库
+
+选择一个长期不变的目录：
+
+```bash
+git clone https://github.com/wenyudi/bid-proposal-skill.git ~/Code/proposal
+cd ~/Code/proposal
+python3 -m unittest discover -s tests
+```
+
+若你使用 GitHub SSH，也可以把 clone 地址换成 `git@github.com:wenyudi/bid-proposal-skill.git`。
+
+测试应全部通过。后续入口只引用这个目录，更新时在仓库内执行常规 `git pull`，无需复制 prompts。
+
+## 2. 建立跨宿主入口
+
+创建入口目录：
+
+```bash
+mkdir -p ~/.agents/skills/proposal
+```
+
+用编辑器新建其中的 `SKILL.md`。把下面所有 `{REPO}` 替换为仓库绝对路径，例如 `/home/me/Code/proposal`；不要使用 `~`。
+
+````markdown
+---
+name: proposal
+description: 政企传媒技术标 v3 生成：拆标书硬要求，建立多角色客户价值与交付 canonical，研究后选亮点，并行分章与独立兑现审计，红队和硬门定稿。Use when 用户要写投标方案/应标文件/政企客户提案，提供标书要求出方案，或输入 /proposal。
+---
+
+# proposal — 宿主入口
+
+完整定义位于 `{REPO}`，它是唯一事实来源。
+
+1. Read `{REPO}/SKILL.md`、`{REPO}/RULES.md`、`{REPO}/TYPES.md`、`{REPO}/profiles.json`；Task 1 前 Read `{REPO}/DECISIONS.md`。用户显式 `-legacy` 时改读 `{REPO}/LEGACY.md`，两套引擎不得混线。
+2. 严格执行 SKILL.md：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择 → generation gate/snapshot → 并行 Task 3 → 独立 realization audit → realized-only 综述 → 装配/硬检/fit → 四视角红队/Gate 2 → `_state` 归档。
+3. 所有仓库相对路径从 `{REPO}` 解析；Python 优先 `python3`，若不可用再选择当前平台的 Python 3。
+4. canonical 只由主 agent 通过 ChangeSet 写。Task 2 必须抓取原文；Task 3 只读 compiled brief；realization auditor 必须与 writer 分离；红队只提交 root diagnostic。
+5. `-auto` 的 assumed 决策阻断直接递交。private notes、URL、canonical ID、策略/模式/工具痕迹不得进入递交稿；下划线内部内容不得递交。
+
+## Claude Code 工具映射
+
+| 流程概念 | Claude Code |
+|:---|:---|
+| 派 agent | `Agent`，`subagent_type=general-purpose`；章节可后台运行 |
+| 收集后台结果 | `TaskOutput`，或读取目标文件确认 |
+| 记录进度 | `TaskCreate` / `TaskUpdate` |
+| 搜索与抓取 | `WebSearch` + `WebFetch` |
+| 读写与命令 | `Read` / `Write` / `Glob` / `Bash` |
+| Gate 单题 | `AskUserQuestion`；一次一题，给推荐与得失后等待 |
+````
+
+入口文件应很短。不要把仓库中的主 prompt 复制进去，否则仓库更新后会出现两份不一致的事实来源。
+
+## 3. 注册到 Claude Code
+
+Claude Code 使用 `~/.claude/skills/`。先检查目标是否已存在：
+
+```bash
+ls -ld ~/.agents/skills/proposal ~/.claude/skills/proposal
+```
+
+如果 `~/.claude/skills/proposal` 不存在，建立父目录和软链：
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s ../../.agents/skills/proposal ~/.claude/skills/proposal
+```
+
+如果目标已经存在，先人工确认它是否就是当前 proposal 入口；不要盲目覆盖其他 skill。
+
+pi 原生读取 `~/.agents/skills/`，不需要 Claude Code 这一步软链。
+
+## 4. 验证注册
+
+关闭旧会话并新开一个会话，然后输入：
+
+```text
+/proposal /绝对路径/一份测试标书.md -quick
+```
+
+正确注册后，宿主应先加载 proposal skill、检查标书输入并执行 Task 1，而不是直接生成一篇通用方案。
+
+也可以在仓库内确认 CLI：
+
+```bash
+python3 tools/prop_tools.py --help
+python3 tools/prop_tools.py check-canonical --help
+```
+
+## 更新
+
+在仓库目录拉取更新并重新测试：
+
+```bash
+git pull --ff-only
+python3 -m unittest discover -s tests
+```
+
+只要仓库绝对路径未变，入口和软链无需重建。若注册后未触发、提示找不到文件或 Python 不可用，按[解除常见阻断](resolve-blockers.md)检查。

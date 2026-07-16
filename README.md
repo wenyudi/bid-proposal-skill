@@ -1,159 +1,97 @@
-# proposal — 政企传媒技术标生成 skill
+# proposal
 
-proposal 3.0 默认运行 v3：先把标书要求、客户角色与需求、价值主张、证据、执行责任和验收边界做成可校验状态，再生成客户可读方案。目标是同时做到：
+面向广告与传媒公司的政企技术标生成 skill。proposal 3.0 默认使用 v3：先校验标书要求、客户价值、证据、责任、资源与验收边界，再生成客户容易阅读、投标人能够兑现的方案。
 
 > 合规零遗漏 · 真懂客户 · 亮点值得选 · 证据可信 · 交付可兑现 · 风险妥帖
 
-范围仅限技术标。投标函、法定代表人授权书、承诺函和法定报价表等，仍按标书模板套用。
+本项目只覆盖技术标。投标函、授权书、承诺函、法定报价表等仍须按标书原模板填写。
 
-它是独立 skill：运行时不调用 wayfinder、grill-me 或外部 issue tracker。复杂任务找路与压力追问的方法参考了 [mattpocock/skills](https://github.com/mattpocock/skills)（MIT），已经内生为本项目的 canonical、ChangeSet、单题 Gate 和诊断规则。
+## 它解决什么
 
-## 安装
+- 把 mandatory、评分项、预算和交付物拆成不可被创意文案覆盖的硬门。
+- 从实际判断、使用、监督和担责角色出发，连接客户需求、决策标准与价值主张。
+- 候选阶段保持发散，公开研究后才选择 lead / supporting 亮点；不按亮点数量或篇幅凑竞争力。
+- 把承诺连接到动作、责任、资源、时点和验收，避免“创意很好，但无法落地”。
+- 用独立兑现审计检查正文是否真正回答要求、有没有夸大 Claim 或 Action。
+- 把 private 纪要、内部模型、URL、诊断和适配度留在内部，不破坏客户阅读体验。
 
-必须注册 skill 入口，否则模型只会在对话里直接写稿，不会执行研究后选择、分章并行和硬门审计。
+复杂任务找路和压力追问的思路参考了 [mattpocock/skills](https://github.com/mattpocock/skills) 中的 wayfinder 与 grill-me，并已内生为 canonical、ChangeSet、单题 Gate 和根因诊断；运行时不需要 skill 之间互相调用。
 
-- Claude Code：见 [`install/claude-code-skill.md`](install/claude-code-skill.md)
-- OpenCode：将仓库注册为 skill；`command/proposal.md` 提供 `/proposal`
-- 其他 CLI：按安装文档映射 agent/search/fetch/read/write 工具
+## 快速开始
 
-## 用法
+要求 Python 3.8+。运行宿主还需要具备文件读写、子 agent 和联网检索/抓取能力；Python 工具本身只使用标准库。
+
+1. 按[安装与注册指南](docs/how-to/install-and-register.md) clone 仓库并注册 skill。
+2. 新开会话，输入：
+
+   ```text
+   /proposal /绝对路径/招标文件.pdf /绝对路径/投标素材/ -deep -story
+   ```
+
+3. 在 Gate 1 逐题确认只有投标人能决定的能力、资源、报价或授权边界。
+4. 调研、亮点选择、分章写作和独立审计完成后，在 Gate 2 处理红队根因并确认定稿。
+5. 只在最终汇报明确 `submission_ready=true`，且人工待办中的硬项已清零后，才把 `技术方案-完整版.md` 作为递交稿继续排版。
+
+第一次使用建议跟随[完成第一份方案](docs/tutorial/first-proposal.md)。
+
+## 常用调用
 
 ```text
 /proposal <标书路径或粘贴文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-auto] [-legacy]
 ```
 
-- 无深度标志：standard；`-quick` 适合时间紧，`-deep` 适合重点标。
-- 无叙事标志：按标书自动选 logic/story/vision/evidence；叙事只改变讲法，不能裁掉评分项或加强承诺。
-- 默认停 Gate 1 和 Gate 2；quick 只停 Gate 1。每轮只解决一个需要投标人拍板的决策，并给推荐答案。
-- `-auto` 可生成完整保守草案，但 assumed 能力、报价或承诺会让 `submission_ready=false`，不会伪装成可直接递交。
-- 无标志和 `-v3` 都是 v3；只有显式 `-legacy` 才使用 2.x 回退流程。两套引擎不能在同一 run 混线。
-- `casebase/` 非空时自动纳入。沟通/踏勘/售前纪要标 `[notes]`，只作 private 校准，正文绝不引用。
+- 无深度标志为 standard；`-quick` 用于小标或时间紧，`-deep` 用于重点标。
+- 无叙事标志时按标书选择；叙事只决定表达，不得裁剪评分项或加强承诺。
+- 默认 v3；`-v3` 只是兼容标志。只有显式 `-legacy` 才运行 2.x 回退链。
+- `-auto` 生成的是保守草案。任何 assumed 决策都会阻断直接递交。
+- `casebase/` 中非 `_` 开头的案例会自动纳入；沟通、踏勘和售前纪要须标 `[notes]`。
 
-示例：
+模式与组合示例见[选择深度、叙事和关卡模式](docs/how-to/choose-modes.md)。
 
-```text
-/proposal /Users/me/文旅传播招标文件.pdf ~/投标素材/ -deep -story
-/proposal /Users/me/新媒体代运营标书.pdf -evidence
-/proposal /Users/me/小标.pdf -quick -auto
-/proposal /Users/me/旧项目目录 -legacy
-```
-
-## v3 为什么更适合客户
-
-| 客户会问 | v3 怎么回答 |
-|:---|:---|
-| 你真的理解谁在判断、使用和担责吗？ | 按标实例化业务、专家、采购合规、纪检、领导和使用者角色；权力、否决、履约影响与审查风险分开，不虚构个人偏好 |
-| 这个亮点跟我有什么关系？ | ValueProposition 必须连到具体 Role × Need × Criterion，并说明客户变化与价值机制；满足标书本身不冒充亮点 |
-| 这是点子还是能做的方案？ | proposal/commitment 连接 Action、唯一 accountable、资源时点、客户依赖安全兜底和 AcceptanceContract |
-| 数字、案例和承诺凭什么信？ | Evidence 原记录与“它证明什么”分开；正文用途、scope、强度和 authority 都可校验；匿名材料不回退原文，第三方案例不能证明我方能力 |
-| 评委读完会形成什么新判断？ | 评分骨架上叠加 DecisionJob：理解 → 相信 → 价值 → 落地 → 风险 → 可辩护选择，不强制六阶段一章一段 |
-| 严格结构会不会让稿子难读？ | 完整图谱只在底层；每章只收到最小 compiled brief，客户稿不显示 ID、状态机、审计标签或适配度 |
-| 综述会不会比正文吹得更大？ | 每章先审 Requirement 是否实质回答，再审 Claim/Action realization；方案综述只读取全部正式章的 valid 白名单 |
-| “适配度 83 分”可信吗？ | 不输出伪精确点分和中标率；十个锚定维度给敏感性区间、短板、置信度和修复 owner，硬门失败则 overall withheld |
-
-候选阶段保持发散：从 outcome、efficiency、risk、visibility、experience、asset、contrarian 多镜头生成候选。Task 2 查证后，Task 2.5 才用窄硬门、关键短板、Pareto 和组合充分性选择 lead/supporting/reserve。v3 不奖励亮点数量、篇幅、表格或形容词。
-
-## 两道人工关卡
-
-Gate 1 只问 AI 无法知道的真实边界：投标人能力、资源容量、报价取舍、案例/名称/数字授权、关键 KPI、免费增值、未公开履约关系和个人偏好。标书和素材能查到的事实由系统查，公开缺口交 Task 2。答案通过跨文件 ChangeSet 同时更新 decision 与受影响的 VP/Claim/Action/Resource/Acceptance，避免“状态已确认、方案还没改”。
-
-Gate 2 在机械门与四视角红队后处理根因诊断。红队只提问题；每条带正文引文、影响、置信度、canonical owner 和修复范围。相同根因合并，不为凑数量制造质疑。用户可明确授权“其余按推荐处理”。
-
-## 流程
-
-```text
-标书/素材
-  → Task 1：五域 bootstrap + 开放候选池
-  → Gate 1：真实能力/资源/报价/授权单题确认
-  → Task 2：公开 Evidence、反证、案例 proof task
-  → Task 2.5：lead/supporting/reserve + Claim/Action/DecisionJob 收敛
-  → generation gate + customer-fit strategy checkpoint + snapshot
-  → Task 3：按章最小 brief 并行写作
-  → 独立 realization 审计（Requirement addressed + Claim/Action/scope/承诺）
-  → Task 3.5：realized-only 方案综述
-  → 装配 + compliance + QA + submission fit
-  → buyer/expert/audit/rival 红队 + Gate 2
-  → 最终复验 + _state 原子归档 + last-good
-```
-
-五份 canonical：
-
-```text
-requirements.json      标书 Requirement / 评分 / mandatory / 预算
-customer-value.json    Role / Need / Criterion / VP / Claim / Metric / EvidenceLink
-delivery-plan.json     DeliveryRole / Action / Resource / Dependency / Acceptance
-strategy.json          narrative / DecisionJob / Section / Gate 决策地图
-intel-pool.json        Evidence 原记录
-```
-
-Task 和 Gate 不直接散改它们，而是提交带 base revision 的 ChangeSet。工具在临时副本检查 schema、引用、生命周期、权限和跨文件硬门，全部通过才原子替换；stale 或任一失败整组回滚。
-
-## 输出
+## 你会得到什么
 
 ```text
 <方案标题>-<时间戳>/
-├── 技术方案-完整版.md          递交稿
-├── 分册/                       目录、对照表、综述、各章
-├── _内部研判.md                不递交：决策、来源、fit、红队
-├── _人工待办.md                不递交：assumed、缺口、占位符
-└── _state/                     不递交：canonical、sections、快照、diagnostics、realization
+├── 技术方案-完整版.md          客户可见递交稿
+├── 分册/                       目录、对照表、综述和各章
+├── _内部研判.md                内部：策略、来源、fit、红队
+├── _人工待办.md                内部：假设、缺口、占位符
+└── _state/                     内部：canonical、快照和审计状态
 ```
 
-下划线开头的内容一律不递交。装配先在 staging 完成，成功后才切换；上一份成功卷册保存在报告目录 `.last-good/`，状态重复归档时保留 `_state.last-good`。失败构建不会删掉上一份成功结果。`archive-state` 的 `canonical_submission_ready` 只证明归档当时的 canonical/realization；复制 `_state` 到新目录恢复后，须重编译 brief 并复审全部章节/摘要，旧绝对路径 artifact 不作为续用 attestation。最终是否可递交还必须以同一份 report 的 compliance、QA、customer-fit 和 Gate 2 为准。
+下划线开头的文件和目录一律不递交。输出、归档和就绪信号详见[输出与可递交状态参考](docs/reference/outputs-and-readiness.md)。
 
-## 关键命令
+## 文档
 
-`tools/prop_tools.py` 保留所有 2.x 命令，并新增：
+| 你现在要做什么 | 文档 |
+|:---|:---|
+| 第一次完整跑通 | [完成第一份方案](docs/tutorial/first-proposal.md) |
+| 安装或注册 | [安装与注册](docs/how-to/install-and-register.md) |
+| 整理标书、素材和纪要 | [准备输入](docs/how-to/prepare-inputs.md) |
+| 选择 quick / deep / narrative / auto | [选择运行模式](docs/how-to/choose-modes.md) |
+| 录入和核验真实案例 | [维护案例库](docs/how-to/manage-casebase.md) |
+| 恢复 v3 或迁移旧项目 | [恢复与迁移](docs/how-to/resume-or-migrate.md) |
+| 处理失败、stale 或 blocker | [解除阻断](docs/how-to/resolve-blockers.md) |
+| 查命令与参数 | [命令行参考](docs/reference/command-line.md) |
+| 查流程、Task 和 Gate | [流程与硬门参考](docs/reference/workflow-and-gates.md) |
+| 查状态文件和写权限 | [Canonical 状态参考](docs/reference/canonical-state.md) |
+| 查诊断字段和严重度 | [诊断参考](docs/reference/diagnostics.md) |
+| 理解为什么改成 v3 | [为什么是 v3](docs/explanation/why-v3.md) |
+| 理解客户价值底座 | [客户价值模型](docs/explanation/customer-value-model.md) |
+| 理解证据、授权和隐私 | [证据、授权与隐私](docs/explanation/evidence-authority-and-privacy.md) |
+| 理解快照与兑现审计 | [兑现审计与快照](docs/explanation/realization-and-snapshots.md) |
 
-```text
-bootstrap-state / migrate-state
-check-canonical / apply-changeset / apply-auto-state
-compile-context / promote-research / freeze-snapshot
-audit-realization / customer-fit / archive-state
-```
+## 安全边界
 
-示例：
+proposal 不会替投标人确认资质、业绩、人员、报价、资源容量或保证性 KPI。以下任一情况存在时，输出不可直接递交：
 
-```bash
-python3 tools/prop_tools.py check-canonical --state-dir /tmp/run --stage generation --write-derived
-python3 tools/prop_tools.py compile-context --state-dir /tmp/run --target section --id CH-03
-python3 tools/prop_tools.py customer-fit --state-dir /tmp/run --checkpoint submission
-python3 tools/prop_tools.py qa-proposal /path/to/report.md --strategy /tmp/run/strategy.json --requirements /tmp/run/requirements.json --state-dir /tmp/run
-```
+- 最终状态为 `submission_ready=false` 或未给出最终可递交结论；
+- mandatory、真实性、预算、授权、法律或兑现硬门未通过；
+- 正文仍有占位符，或 `_人工待办.md` 仍有硬项；
+- 运行使用了未经人工确认的 `-auto` 假设。
 
-所有运行时代码只依赖 Python 3.8+ 标准库。联网研究依赖宿主提供的 search/fetch；PDF/DOCX 提取可由宿主工具或可选库完成。
+`customer-fit` 只用于内部发现短板，是规则敏感性区间，不是评委分数或中标概率。
 
-## 仓库结构
+## 维护
 
-```text
-SKILL.md                 v3 默认调度
-LEGACY.md                显式 -legacy 回退
-RULES.md                 硬门、权限和正文边界
-DECISIONS.md             Gate 单题状态机与 ChangeSet 原则
-TYPES.md                 六标型、评委、叙事与决策旅程变体
-prompts/                 v3 Task 1/2/2.5/3/realization/summary/redteam
-prompts/legacy/          2.x 回退 prompts
-tools/prop_tools.py      兼容 CLI、装配、合规、QA
-tools/prop_v3.py         canonical、事务、context、realization、fit、归档
-tests/                   legacy 兼容与 v3 hard-gate 测试
-casebase/                人工维护的真实案例事实源
-```
-
-## 刻意不做
-
-- 不写销售 CTA、“期待进一步沟通”、分阶段 opt-in 报价。
-- 不写“排除项/不包含”式免责，避免实质性负偏离；客户配合只能写有安全兜底的依赖。
-- 不引用私下沟通或个人内部表述；只用标书、澄清、公开政策/报道和已批准材料投影。
-- 不把 URL 书目、生成元数据、叙事策略、内部 ID、customer-fit 或工具痕迹印给评委。
-- 不虚构资质、案例、团队、资源、数字或保证性结果。
-- 不把第三方案例包装成我方业绩，不把“材料清单上有”当成 verified。
-- 不用客户适配度软分替代 mandatory、真实性、预算、法律、授权和交付硬门。
-
-## 合规声明
-
-生成物是投标响应草案。真实资质、业绩、人员、报价和可承诺 KPI 必须由投标人核验；任何 `submission_ready=false`、占位符或 `_人工待办.md` 硬项未清，都不可直接递交。customer-fit 是内部敏感性诊断，不是评委分数或中标概率。
-
----
-```
-proposal skill · 3.0.0 · v3 direct-default
-```
+仓库入口包括 [SKILL.md](SKILL.md)、[RULES.md](RULES.md)、[DECISIONS.md](DECISIONS.md)、[TYPES.md](TYPES.md) 和 `tools/`。修改前请阅读[贡献指南](CONTRIBUTING.md)。
