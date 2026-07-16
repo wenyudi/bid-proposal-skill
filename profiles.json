@@ -5,7 +5,11 @@
     "min_chapters": 6,
     "min_paragraphs": 4,
     "min_differentiators": 2,
-    "max_chars": 15000
+    "min_differentiators_legacy_only": true,
+    "max_chars": 15000,
+    "v3_candidate_breadth": {"low": 5, "high": 8},
+    "v3_evidence_depth": "focused",
+    "v3_context_token_budget": 16000
   },
   "standard": {
     "label": "标准投标",
@@ -13,7 +17,11 @@
     "min_chapters": 8,
     "min_paragraphs": 5,
     "min_differentiators": 3,
-    "max_chars": 28000
+    "min_differentiators_legacy_only": true,
+    "max_chars": 28000,
+    "v3_candidate_breadth": {"low": 8, "high": 14},
+    "v3_evidence_depth": "balanced",
+    "v3_context_token_budget": 24000
   },
   "deep": {
     "label": "大标/重点项目",
@@ -21,6 +29,10 @@
     "min_chapters": 11,
     "min_paragraphs": 6,
     "min_differentiators": 5,
-    "max_chars": 50000
+    "min_differentiators_legacy_only": true,
+    "max_chars": 50000,
+    "v3_candidate_breadth": {"low": 12, "high": 20},
+    "v3_evidence_depth": "deep",
+    "v3_context_token_budget": 36000
   }
 }

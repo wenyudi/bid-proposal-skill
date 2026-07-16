@@ -1,5 +1,5 @@
 ---
-description: 政企传媒投标方案生成 — 读甲方标书，联网调研，产出保基础、控成本、给惊喜的正式投标方案文档
+description: 政企传媒投标方案 v3 — 客户价值与交付底座、研究后亮点选择、兑现审计和硬门定稿
 ---
 
 <command-instruction>
@@ -23,8 +23,11 @@ Parse `$ARGUMENTS`:
   - `-vision`   → 愿景共创（未来图景+伙伴关系，适合多年框架/长期代运营）
   - `-evidence` → 数据实证（可核验结果说话，适合效果导向/投放增长类）
 - 关卡标志：
-  - `-auto` → 全自动跑完，跳过两道人工关卡（无人值守/初稿快评时用）
-  - 无标志  → 默认停 ⛳ Gate 1 策略确认（Task1 后）与 ⛳ Gate 2 红队定稿（Task4 后）；quick 模式只停 Gate 1
+  - `-auto` → 全自动跑完，跳过两道人工关卡；v3 由 `apply-auto-state` 生成 assumed、同步降级失效授权并进入内部待办
+  - 无标志  → 默认停 ⛳ Gate 1 决策地图（Task1 后）与 ⛳ Gate 2 红队定稿（Task4 后）；每轮只问一个决策并给推荐答案；quick 模式只停 Gate 1
+- 引擎标志：
+  - 无标志 / `-v3` → v3（默认；`-v3` 仅作兼容 no-op）
+  - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`；不得与 v3 状态或章节混用
 </command-instruction>
 
 <user-request>
@@ -33,5 +36,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 政企传媒投标方案生成
+proposal skill · 3.0.0 · v3 direct-default
 ```

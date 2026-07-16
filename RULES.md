@@ -1,131 +1,131 @@
-# 中标红线与常见陷阱 — proposal
+# proposal v3 规则与硬门
 
-所有规则按"在哪拦截"标注。**废标红线**违反即整份作废（最高优先级），其余违规即降级。
+本文件约束所有 Task、Gate、工具和客户可见正文。规则冲突时顺序为：法律/mandatory/真实性/预算/授权 → canonical 语义与交付边界 → 客户价值与阅读体验 → 叙事偏好。软适配度永远不能抵消硬门。
 
----
+## 1. 权威性与写入权限
 
-## 🚫 废标红线（Task 1 拆解 + Task 4 合规校验双重拦截）
+- 五份 canonical 各自只有一个 owner：requirements、customer-value、delivery-plan、strategy、intel-pool。相同事实不得复制成两份可手改真相。
+- 主 agent 是逻辑单写者；Task/Gate 只提交 proposal/ChangeSet。Task 3、摘要、红队只能报告 observation/diagnostic。
+- ChangeSet 必须有 base revision；先在临时副本应用全部 operation，校验 schema/ref/lifecycle/permission/cross-file gate，全部通过才原子提交并递增 revision。stale 拒绝，失败整组回滚。
+- Gate answer 必须同步真正受影响的 Need/VP/Claim/Action/Resource/Acceptance/strategy；只改 decision.status 视为不完整。
+- derived brief、coverage、diagnostics、fit、realization 与正文都不是事实源，不能反向静默改 canonical。
 
-标书里的实质性/资格性/格式性条款一旦漏应答或不满足，方案再好也直接废标。这是"保证基础"的底线。
+## 2. Mandatory 与真实性硬门
 
-| 红线 | 说明 | 在哪拦截 |
-|:----|:-----|:---------|
-| **资格条件缺失** | 标书要求的资质/注册资本/业绩门槛/授权，方案未明确响应或不满足 | Task1 提取到 `mandatory[type=资格]` → Task4 应标对照表逐条核验 |
-| **实质性条款负偏离** | 服务内容/工期/质量标准等打★或"必须满足"项未达标 | Task1 `mandatory[type=实质性]` → Task4 校验 |
-| **超预算** | 报价超过标书预算上限/最高限价 | Task1 提取 `budget_cap` → Task4 报价校验 |
-| **格式性缺件** | 标书要求的必备章节/表格/承诺函/响应表缺失 | Task1 `mandatory[type=格式]` → Task4 结构校验 |
-| **应标对照表有遗漏** | 任一 `mandatory` 或 `scoring` 项在正文找不到对应 | ⚡ Task4 `check-compliance` 阻断点 |
+| 红线 | 规则 |
+|:---|:---|
+| 评分/强制零遗漏 | mandatory、scoring、deliverable 保留标书原意与权重；Requirement → Section 映射后还须在正文独立语义审计为 addressed，客户价值软分不可替代 |
+| 资质/业绩/团队 | 必须来自标书、可核验用户材料或已授权案例 Evidence；不确定就留占位并阻断，不编造 |
+| 案例边界 | 合同只证明参与和范围，截图只证明时点数据，验收只证明验收范围；第三方案例只作 benchmark/feasibility，绝不证明我方能力 |
+| 数据与来源 | public Evidence 抓取原文并有 URL；作为支持必须 active/current、用途获授权、Link 有 scope/reason 且质量/强度匹配风险；正文只写机构/文件+年份，不写 URL。重要反证不可隐藏 |
+| private | 沟通纪要、内部关系、底价、个人偏好只作内部约束；获得公开支持后也只用独立公开投影，不引用 private 原句。approved_anonymized 必须有人工批准 safe_title/wording 与 scoped authority，绝不回退 raw content |
+| 政务导向 | 现状写“发展的下一步”，不渲染负面、不虚构具体人物事迹、不引用不正当接触信息 |
+| 预算/负偏离 | 单一最优解在预算边界内；禁止用“排除项/不包含”转嫁 mandatory 责任 |
 
-> **原则**：合规不阻塞创意，但创意不能牺牲合规。先保证每一条强制项都有响应，再谈惊喜。
+## 3. 客户价值模型
 
-## ⚖️ 真实性红线（法律责任，Task 2/3 拦截）
+- CustomerRole 是有据的判断/使用/监督/否决角色，不是猜测的个人画像。formal power、veto、practical influence、delivery impact、scrutiny 分开；inferred 只能调软优先级，不能制造硬否决。
+- CustomerNeed 是角色希望获得的结果或规避的风险；DecisionCriterion 是其判断可信、优选或不可接受的标准；Requirement 与二者可关联但不等同。
+- coverage 基本单位是 Role × Need × Criterion，不做全图笛卡尔积。required/expected/exploratory 分开；同一 Need 对一个角色覆盖不自动代表其他角色。
+- Role 冲突按：法律/mandatory/预算/真实性/明确 veto → 投标人能力边界 → 多角色共同解 → 评分权重/优先级/Evidence/损失取舍。重大能力、报价、偏好冲突进 Gate。
 
-投标文件弄虚作假可被认定串标/骗标，后果严重。
+### Need 与 Evidence
 
-| 红线 | 说明 | 在哪拦截 |
-|:----|:-----|:---------|
-| **不虚构业绩/资质** | 案例、获奖、资质、团队履历必须真实；无把握的写"拟"或留占位符待甲方核实素材填充 | Task2 情报 + Task3 撰写自检 |
-| **数据有来源** | 引用的行业数据、案例效果数据必须**行内标注**来源（机构+年份），不编造。情报池里 `url` 必填（供投标人核验），但**URL 不进正文** | Task2 情报池 `url` 必填 + Task3 行内标注 + Task4 QA |
-| **不承诺做不到的** | 效果承诺、KPI 保底须在能力范围内，用"目标/预期"而非"保证"措辞（除非确可承诺） | Task3 撰写自检 |
-| **引用只引可公开材料** | 只引标书原文/答疑澄清文件/公开政策/公开报道。**私下沟通、售前会议、内部消息中的甲方个人表述绝不进正文**——写「据贵单位李主任介绍」会被质疑不正当接触，竞争对手可据此投诉。此类洞察须转化成基于公开信息的表述 | Step 0.5 标 `[notes]` + Task1/3 撰写自检 + 红队 `audit` 视角 |
+- Need 将 assertion_mode（explicit/inferred）、source visibility、evidence quality、inference confidence、priority 分开。
+- 生命周期：candidate → active / contested / superseded / rejected。新 Evidence 追加，不覆盖历史；冲突足以改变方向时 contested，暂停生成新 publishable Claim。
+- Task 2 只能加 Evidence/Link、反证和 change proposal，不能静默改 Need 含义。
+- public Claim 不能只靠 private/unknown/expired/contested Evidence。
 
----
+## 4. 发散与选择
 
-## 🤝 人机边界（Gate 1 / Gate 2）
+- Task 1 从 Need、Criterion、真实能力/资产、已有案例交叉发散，并覆盖 outcome、efficiency、risk、visibility、experience、asset、contrarian 多镜头。candidate 允许缺 Evidence，不因最终硬门提前收窄。
+- ResponseObligation 保基础；ValueProposition 解释客户为何得到更好结果、更低风险或更少管理成本。“完成标书要求”本身不冒充亮点。
+- VP 生命周期：candidate / investigating / qualified / selected / publishable / rejected / superseded；组合角色 lead / supporting / reserve 正交。
+- 只淘汰不可挽救项：违法/mandatory 冲突、确认能力/预算不可行且无缩减、无真实 Need/Criterion、只能依赖不可安全投影的事实、价值低于新增负担、与策略不可调和。
+- 缺 Evidence 留 investigating；普通差异性可降基础增强；未知能力/成本进 Gate；重复等待合并/替代/组合。
+- Task 2.5 用关键短板、Pareto 与组合充分性选 lead/supporting；不奖励数量、篇幅、表格、形容词或模板命中。找不到合格 lead 就报告竞争力不足，不编造。
+- Task 2.5 只能选择、编排或重开 Gate：Role/Need/Criterion/关系/EvidenceLink 与 narrative/Big Idea/decision_map 只读，不得新建/改写 VP 核心语义，不得 resolved/assumed Gate，不得新增/改变 authority，不得升 committed/confirmed；已有授权对象的 proposition/scope/Metric/resource/Acceptance 等边界不可扩大。
+- Big Idea 是 selected VP 的记忆与叙事伞，不替代原子 VP，也不能掩盖各自短板。
 
-有一批判断 **AI 无论怎么读标书、怎么联网都不可能知道**，只有投标人本人知道。替他假设 = 方案跑偏而不自知。
+## 5. Claim、Metric 与承诺
 
-| 只有人知道的 | 在哪交回给人 |
-|:----|:---------|
-| 差异化增值点**我司真做得到吗**（资源/团队/成本） | Task1 `open_questions` → ⛳ Gate 1 |
-| 报价**心理价位**（要利润还是要业绩，愿意压到什么程度） | ⛳ Gate 1 |
-| **竞争对手是谁**、他们强在哪、我司相对优势 | ⛳ Gate 1 + 红队 `rival` 视角 |
-| 与该采购人的**既往关系/历史** | ⛳ Gate 1 |
-| 资质业绩**我司真的满足吗**、案例能否提供核验材料 | ⛳ Gate 1 + `_人工待办.md` |
-| 甲方**领导个人偏好**（讲话风格、关注点） | ⛳ Gate 1（影响叙事选择） |
-| 红队质疑**哪些必须补、哪些是想多了、哪些暴露真实能力缺口** | ⛳ Gate 2 |
-| 真实业绩数字、团队人员、可承诺的 KPI | `_人工待办.md`（占位符汇总） |
+Claim 使用三轴：
 
-**规则**：
-- Task1 的 `open_questions` **不得为空**（deep ≥5 条，其余 ≥3 条）——任何投标都有 AI 不知道的关键判断
-- Gate 1/2 **不许自行跳过或替用户假设后继续**（除非用户显式加 `-auto`）
-- **红队只提质疑，不自动改稿**——除了「致命项」（废标风险/高权重评分项实质未答）才自动补
-- `_人工待办.md` 里的**废标风险项没填完就递交 = 零分**，交付汇报必须提示
+- content_kind：fact / insight / proposal / target
+- epistemic_status：evidenced / inferred / assumed
+- commitment_level：none / intended / committed
 
----
+规则：
 
-## Task 1 规则（标书解读 + 策略）
+- fact 有直接、有效 Evidence；高风险资质/业绩/资源/价格还需可核验材料与投标人确认。
+- insight 有 Evidence、推理理由和置信度；存在重要反证时不可 publishable。
+- intended proposal 有执行机制与基本可行性；committed proposal 另需 Owner、资源、排期、scope、Acceptance 和 authority。
+- target 有基线、测算、影响因素和 MetricContract。无可靠基线只写方向/区间；行业基准不能直接变成本项目保证值。
+- committed authority 只能来自明确授权该对象/用途的标书 Requirement、verified Evidence 或 resolved `GATE-*`；authority_ref 必须真实解析且 scope 覆盖目标，任意字符串或无关条款无效。新增资源、免费增值、排他能力、关键 KPI、SLA 和 outcome guarantee 必须人工确认。
+- `-auto` 不把 assumed/new capability 升 committed；assumed 默认不进正文，并阻断 submission-ready。
+- Task 3 可自然改写表层表达，但不能加强/缩小/扩大核心命题、scope 或承诺；需要变化时提交 claim_change_proposal。
+- 摘要只复用正文 valid realization，不新增或加强。
 
-| 规则 | 说明 | 在哪拦截 |
-|:----|:-----|:---------|
-| **评分项零遗漏** | 标书评分办法的每一项都必须进入 `requirements.json` 的 `scoring[]`，含权重 | Task1 |
-| **权重驱动结构** | 权重高的评分维度 → 对应章节篇幅重、放前面 | Task1 章节映射 |
-| **每章映射评分项** | `sections[].addresses` 必须标注本章覆盖哪些 `scoring/mandatory` 的 id，不允许"孤儿章节"（不对应任何评分项的凑数章） | Task1 + Task4 校验 |
-| **差异化下限** | `differentiators` 数量 ≥ profiles.json 当前模式的 `min_differentiators`，且每个标注 `addresses_scoring` | Task1 + Task4 QA |
-| **Big Idea 唯一** | 有且仅有一个贯穿全案的创意大概念，不是零散点子堆砌 | Task1 |
-| **叙事策略必选** | `narrative` 必填：主叙事全案唯一（用户指定 > 按 TYPES.md 适用信号判定），含 rationale 和 through_line；每章标 narrative_role | Task1 + 主 agent 校验 |
-| **报价/合规不故事化** | 无论主叙事是什么，报价章与合规/资质响应固定用 logic/evidence 呈现——评委在这两处只要确定性 | Task1 narrative_role + Task3 |
-| **预算带识别** | 标书写明预算/限价 → 记入 `budget_cap`；未写明 → 标 null，报价章用行业合理区间并说明假设 | Task1 |
+MetricContract 至少有：名称/定义、公式或统计对象、单位、窗口、基线值/日期/来源、目标、数据源、频率、责任方、验收/容差。无可靠基线时不得制造伪精确点目标。
 
-## Task 2 规则（联网情报）
+## 6. Delivery、责任、资源与验收
 
-| 规则 | 说明 | 在哪拦截 |
-|:----|:-----|:---------|
-| **甲方画像优先** | 采购人背景/业务/近期动态/既往传播是最高优先级情报——方案要"懂甲方" | Task2 |
-| **竞品/对标必查** | 行业标杆案例、可能的竞争对手打法，用于差异化 | Task2 |
-| **数据结构化** | 情报以 JSON `facts[]`/`cases[]`/`insights[]` 存储，非散装文本 | Task2 输出 |
-| **来源可追溯** | 每条 fact/case 附 `url`，抓取全文而非搜索摘要 | Task2 |
-| **惊喜有据** | Task1 的差异化候选点，Task2 要找到坐实它的数据/案例（`insights`），不能空想 | Task2 |
-| **案例库优先** | casebase/ 有匹配案例必须筛入（3-8 个，按行业/客户类型/预算量级/年份匹配）；正文写作时自家案例优先于联网第三方案例 | Task2 筛选 + Task3 案例章 |
+- 只建模直接响应 Requirement、实现 selected VP/Claim、消耗需核验资源或需独立 Owner/依赖/验收的 Action；不扩成日常项目管理系统。
+- Action 三轴：selection_status、readiness_status、commitment_level。Claim 承诺强度不得高于引用 Action。
+- selected Action 恰有一个投标人 accountable DeliveryRole；required/committed 至少一个 responsible。CustomerRole 只能 approver/consulted/informed/dependency，不能承担我方责任。
+- required/committed Action 必须有 time_window 和 bounded resource treatment；有预算上限时每个 selected Action 都须预算 demand 或获授权的 cost_not_applicable，不能只挂一个组合总价漏掉其他 Action。
+- CustomerDependency 写所需输入、时点、延误影响、安全 fallback、升级路径和依据；不能成为免责或责任转嫁。
+- AcceptanceContract 写对象、标准、方法、阈值/容差、周期、审核角色、记录、纠正窗口与 authority。定性创意用 rubric/样稿确认，不虚构罚则或保证下限。
+- ResourceEnvelope 和 demand 用同单位、同窗口 low/high 区间并按同期聚合：`demand_low > capacity_high` blocker；区间相交 needs_review；unknown 允许 intended 草案但 committed 不通过。Action predecessor 无环，excluded_scope 不得与 Requirement 冲突。
+- 单项可行但组合超载只报一个 portfolio 根因，不按每条路径刷屏。
 
-## Task 3 / 装配规则
+## 7. DecisionJob、叙事与正文
 
-| 规则 | 说明 | 在哪拦截 |
-|:----|:-----|:---------|
-| **甲方视角开篇** | 每章以"甲方要解决的问题/达成的目标"开头，不以自我介绍/夸公司开头；开篇讲法按叙事指令（logic=本质判断 / story=场景带入 / vision=战略语境 / evidence=基准数据） | Task3 prompt + Task4 抽查 |
-| **叙事不裁内容** | 叙事只决定讲法（组织/开篇/语言温度），评分点必须全答、创意必须配落地——不允许以"故事讲不下"为由跳过评分项 | Task3 prompt + Task4 check-compliance |
-| **政务叙事守导向** | 政务语境下故事化表达必须导向正确：现状写成"发展的下一步"，不渲染负面、不过度煽情；场景细节用真实情报素材，不虚构人物事迹 | Task3 + Task4 抽查 |
-| **创意配落地** | 每个创意/亮点必须配"怎么做（执行路径）+ 谁来做（资源）+ 何时做（排期）"，禁止空谈概念 | Task3 prompt |
-| **标题含主张** | 章节/子节标题是主张句，非名词标签（"3个月引爆城市声量"✅ / "传播方案"❌） | Task3 + Task4 grep |
-| **标题自解释** | 不含模拟编号（S1/ch-01 等内部 id 不得泄露到正文） | Task4 grep |
-| **子节编号体系分离** | 子节用阿拉伯数字 N.1，章用汉字数字；`### 一、` ❌ | Task3 + Task4 grep `^### [一二三四五六七八九十]` |
-| **报价单一最优解** | 报价章只呈现一个推荐方案（不分基础/进阶档），卡预算带内，价值-成本对应 | Task3 报价章 + Task4 |
-| **纯文本公式** | 不用 LaTeX（`$...$`）；货币 `$` 写 `\$` | Task3 + Task4 |
-| **编码洁净** | 所有中间文件与最终稿 UTF-8 无 BOM，无替换字符/Mojibake/`???` | 各输出环节 |
-| **卷册结构** | 递交稿：标题 → 项目信息头 → 目录（纯文本无锚点）→ 应标响应对照表 → **方案综述** → 正文各章。无元数据块、无 URL 书目、无研报声明 | Task4 装配 + QA `structure` |
-| **零内部泄露** ⚡ | 递交稿不得出现叙事策略 / 深度模式 / 工具版本 / 生成时间 / 阅读时间 / URL / 对本方案手法的自我描述。一律进 `_内部研判.md`（下划线 = 不递交） | Task3 prompt + Task4 QA `no_internal_leak`（**硬阻断**） |
-| **应标对照表前置** | `## 应标响应与评分对照表` 紧跟目录，让评委一眼看到零遗漏 | Task4 |
-| **综述后写** | `## 方案综述` 由 Task3.5 在**全部章节完成后**从正文提炼，主张/数字不得超出正文；不参与章节编号 | Task3.5 + QA `exec_summary` |
-| **甲方导向** | `buyer_focus.ratio`（甲方提及数/我方提及数）≥ 0.8。低于此值 = 方案在自夸而非解决甲方问题 | Task4 `qa-proposal`（警告级，进 Gate 2 交人判断） |
-| **无销售话术** | 投标是密封递交，**没有 CTA**。禁止"下一步行动/下周会议/期待与您沟通/签约条款"；禁止"排除项/不包含以下服务"（易认定实质性负偏离，要写只能写「需甲方配合事项」） | Task3 prompt + Task4 `no_sales_cta` |
+- 评分与 mandatory 决定章节骨架；每个正式章节一个 primary DecisionJob、最多一个 secondary。Job 必须有 Role、Criterion、expected judgment、selected VP/Claim、Section 和 transition。
+- job_kind 可复用 understand / believe / value / deliver / safe / choose，但不把六类通用文案复制进正文，也不要求一阶段一章。
+- 同一 VP/Claim 跨章时分别承担 introduce/prove/operationalize/measure/price/derisk 等增量；无增量重复为 redundant。
+- narrative 有 presentation authority，没有 semantic authority。它可改变开篇、材料顺序、场景、温度和节奏；不得改变 Requirement、DecisionJob、VP/Claim、Evidence、Metric、Action 或 authority。报价/合规/资质固定 logic/evidence。
+- 每章以客户任务/结果开篇，标题含主张，创意配动作/责任/资源/时点/验收；不以我司自夸开篇。
+- 严格底层不进入客户稿：禁止 Role/Need/DecisionJob/Claim/Evidence ID、覆盖状态、customer-fit、状态机、RACI 机械标签和审计过程。用自然段、集中表格和顺滑过渡保护阅读体验。
 
-## 常见陷阱
+### 递交稿禁项
 
-| 反模式 | 在哪拦截 |
-|:-------|:--------|
-| **自嗨式开篇**（大篇幅讲我司多牛，不讲甲方问题） | Task3 甲方视角规则 |
-| **创意飘在天上**（有 idea 无执行路径/资源/排期） | Task3 创意配落地 |
-| **评分项漏应答**（最致命——直接丢分甚至废标） | ⚡ Task4 应标对照表阻断 |
-| **超预算或报价与内容不匹配** | Task4 报价校验 |
-| **堆砌通用话术**（"我们将竭诚服务"等填充词，无信息量） | Task3 零套话 |
-| **模板腔无叙事**（全篇标准应答体，评委读三页就忘——有内容没讲法） | Task1 叙事策略必选 + Task3 叙事指令 |
-| **叙事盖过应答**（故事讲得漂亮，评分点漏答/浅答——最贵的丢分方式） | Task3 叙事不裁内容 + Task4 check-compliance |
-| **一份方案多种腔调**（前三章讲故事，后三章说明书——比没有叙事更糟） | Task1 主叙事唯一 + Task3 统一叙事指令 |
-| **把销售提案套进投标文件**（写 CTA、写"排除项"、写分阶段 opt-in 报价——暴露不懂规则，甚至构成负偏离） | Task3 无销售话术 + Task4 `no_sales_cta` + 红队 `audit` |
-| **引用私下沟通**（"据贵单位李主任介绍…"——不正当接触嫌疑，够对手投诉） | RULES 引用红线 + 红队 `audit` |
-| **摘要与正文打架**（综述吹的承诺正文里没有，评委一对照就露馅） | Task3.5 必须先读正文再提炼 |
-| **AI 替人假设关键判断**（差异化点做不做得到、报价压到哪、对手是谁——AI 不可能知道却硬猜） | Task1 `open_questions` + ⛳ Gate 1 |
-| **占位符带进递交稿**（`【待补充案例】` 原样交上去 = 直接丢分甚至废标） | Task4 `human-todo` 汇总 + 交付汇报提示 |
-| **把研报当投标文件交**（元数据块写"阅读 46 分钟 · 模式 deep · 叙事 story · 版本 v1.0.0"、尾部挂一串 URL 书目——**等于把工具痕迹和说服底牌交给评委**） | Task4 QA `no_internal_leak` **硬阻断** |
-| **递交了下划线文件**（`_内部研判.md` 里有叙事策略和情报 URL） | 卷册命名约定 + 交付汇报提示 |
-| **差异化点太少或无据**（惊喜不够 / 吹牛无案例支撑） | Task4 差异化下限 + 来源校验 |
-| **虚构业绩/资质**（法律风险） | Task2/3 真实性红线 |
-| **内部编号泄露正文**（"以下是 S3 的响应"） | Task4 grep |
-| **章节不映射评分项**（凑数章，浪费评委时间） | Task1 映射 + Task4 |
-| **子节用一、二、三编号**（应与章编号分离） | Task4 grep |
-| **自定义脚本替代 prop_tools.py** | Task3/4 兜底规则 |
+- URL/书目、叙事策略/模式/版本/生成时间/阅读时间/内部权重、工具或模型痕迹。
+- canonical ID、private 原句、未确认个人偏好和内部竞争情报。
+- 销售 CTA、期待沟通/签约、分档 opt-in 报价、“排除项/不包含”。
+- intended 偷写成确保/保证，无限责任，未授权 KPI/SLA/赔偿/免费资源。
+- LaTeX；货币 `$` 未转义；章/子节编号混层；占位符被当成最终事实。
+
+## 8. Context、snapshot 与 realization
+
+- Task 只读 compile-context 生成的最小 brief；must_use 的 Requirement 原文、Claim 语义/scope/承诺、visibility 和硬边界不可裁剪。token 超限应拆任务或显式提高预算，不能静默删约束。
+- section/summary/redteam 只看到字段白名单后的 public/tender/authorized/approved anonymized 投影；Role 权力链、private Need/Criterion、内部 Resource capacity/底价、raw authority 不发送给 writer，private 只编译成禁止越界的约束。
+- Task 2.5 与必要 Gate 后冻结 generation snapshot；并行章节必须同一 snapshot。当前 snapshot 绑定五份 canonical，任一 canonical 变化后全部 snapshot-bound brief/realization/summary stale 并拒绝，不能冒充局部 current。
+- writer hints 只提供 canonical ref、贡献、heading 和 exact quote。独立 auditor 对 Requirement 判 addressed/partial/missing/contradicted，对 Claim/Action 判 entailed/partial/contradicted/overstated/not_found，并扫描 unexpected Claim；工具核验完整 metadata/brief lineage 后生成 authoritative manifest。
+- section hash、brief hash、snapshot 或 canonical dependency 变化后 realization stale；stale/invalid 不得进摘要或最终装配。
+- 模糊 model-only 语义意见不能独立升级 blocker；需确定性规则、明确 canonical-vs-text 冲突、独立复核或 Gate 确认。法律/真实性/mandatory 疑点仍保守处理。
+
+## 9. Diagnostics 与 customer-fit
+
+根因分类：uncovered、orphan、unsupported、unowned、unmeasured、overcommitted、contradictory、redundant。严重度随生命周期、requiredness 和影响变化；blocks 与 severity 分开。同一根因聚合 affected paths，修复回最近 canonical owner。
+
+submission customer-fit 固定评价十个问题：need_alignment、role_decision_coverage、insight_credibility、value_strength、differentiation、evidence_quality、delivery_readiness、commitment_safety、reading_efficiency、consistency。权重来自本标 scoring 映射和风险/角色上下文，用区间和 provenance 表达；表现只用 deficient/fragile/adequate/strong/distinctive 锚点。
+
+- 任一硬 gate 失败：overall withheld。
+- critical dimension fragile：总体不得称 competitive/strong。
+- strong 要求所有适用维度至少 adequate，且 value_strength 或 differentiation 至少一项 distinctive。
+- fit range 是规则敏感性区间，不是统计置信区间、评委分或中标概率；资料少扩大不确定性，不自动等于差。
+- scorecard 规定修复目标，不规定唯一创意解；只比较同一标、同一规则版本的修订，不做跨标排名。
+
+## 10. Gate 与交付
+
+- Gate 1/2 始终一次一题并给推荐与得失；事实不问人。quick 只停 Gate 1；auto 不交互但 assumed 留痕、入待办并阻断 direct submission。
+- 红队只提 root diagnostic，不改稿；相同根因合并，无最低条数。hard fatal 立即修，其余交 Gate 2。
+- resolved 只能在修复后复验通过产生；false positive dismissal 记录理由/依据/处理人/规则版本；accepted risk 仅限非硬门 major/minor/expected，仍保留 fit 影响。mandatory、法律、真实性、预算、授权与 publishable path 无效不可 waive。
+- 最终卷册先 staging 后原子切换，上一份成功结果进入 `.last-good`。状态归档成功后才清 TMPDIR；allow-draft 不接受 schema/source/fatal 损坏。archive 的 `canonical_submission_ready` 只证明状态硬门，报告级 submission-ready 仍须本轮 compliance、QA、fit 与 Gate 2。
+- `_内部研判.md`、`_人工待办.md`、`_state/` 与 `_state.last-good` 绝不递交。
 
 ---
 ```
-proposal skill · 政企传媒投标方案生成
+proposal skill · 3.0.0 · v3 policy
 ```

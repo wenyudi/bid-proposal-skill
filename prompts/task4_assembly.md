@@ -1,91 +1,80 @@
-装配 + 合规校验 + 自评 + 红队 + QA —— **由主 agent 直接执行**（非独立 task agent）。本文件是命令参考，权威流程见 SKILL.md 第 1 节。
+# Task 4 命令参考（v3）
 
-## 输入
-- {TMPDIR}/strategy.json（方案框架 + section→addresses 映射，装配对照表的依据）
-- {TMPDIR}/requirements.json（应标清单，合规校验的依据）
-- {TMPDIR}/intel-pool.json（情报 URL → 归档进 `_内部研判.md`，**不进递交稿**）
-- {TMPDIR}/sections/section-0.md（方案综述）+ section-1..N.md（各章正文）
-- 输出目录：{SKILLDIR}/reports/{LANG}/
+权威顺序见 SKILL.md。本文件只列主 agent 的最终审计/装配命令；所有命令使用同一 `$TMPDIR` 和当前 generation snapshot。
 
-## 命令序列
+## 1. 写作与摘要兑现门
+
+每章和 section-0 都应已通过：
 
 ```bash
-# 1. 装配 → 技术标卷册目录
-python {TOOLSDIR}/prop_tools.py assemble-proposal \
-  --strategy {TMPDIR}/strategy.json \
-  --requirements {TMPDIR}/requirements.json \
-  --intel {TMPDIR}/intel-pool.json \
-  --sections-dir {TMPDIR}/sections/ \
-  --mode {depth_mode} \
-  --output {SKILLDIR}/reports/{LANG} \
-  --lang {LANG}
-# → Proposal assembled: <合并版递交稿>   → $REPORT
-# → BundleDir: <卷册目录>                → $BUNDLE
-# → InternalBrief: <_内部研判.md>        → $BRIEF
-#
-# 卷册内容：技术方案-完整版.md（递交）/ 分册/NN-*.md（递交）
-#           _内部研判.md（不递交）
-# 递交稿里没有元数据块、没有 URL 书目、没有研报声明——那些都在 $BRIEF 里
-
-# 2. ⚡ 硬阻断之一：合规校验——强制项/评分项零遗漏
-python {TOOLSDIR}/prop_tools.py check-compliance \
-  --requirements {TMPDIR}/requirements.json \
-  --strategy {TMPDIR}/strategy.json \
-  --report "$REPORT"
-# → JSON: missing_mandatory / missing_scoring / coverage_pct
-# → missing_mandatory 非空 = 废标风险，必须补：把缺失 id 映射到合适章节（编辑 strategy），
-#   重派该章 agent 补写 → 重新装配 → 重新校验，直到清空
-
-# 3. 竞争力自评（机械信号）
-python {TOOLSDIR}/prop_tools.py self-score \
-  --requirements {TMPDIR}/requirements.json \
-  --strategy {TMPDIR}/strategy.json \
-  --report "$REPORT" --mode {depth_mode}
-# → SELFSCORE: estimated_score=.. addressed_pct=.. diff_count=.. within_budget=.. weak_items=..
-
-# 4. 货币符号转义
-python {TOOLSDIR}/prop_tools.py escape-currency "$REPORT"
-
-# 5. ⚡ 硬阻断之二：QA（含内部信息泄露检查）
-python {TOOLSDIR}/prop_tools.py qa-proposal "$REPORT" \
-  --mode {depth_mode} --strategy {TMPDIR}/strategy.json \
-  --requirements {TMPDIR}/requirements.json --lang {LANG}
-# → checks.no_internal_leak.passed=false 必须修：递交稿混进了叙事策略/模式/版本/
-#   生成时间/URL/对手法的自我描述。定位章节 → 重写 → 重装配
-# → 警告级：buyer_focus（甲方导向词频）/ exec_summary / no_sales_cta / no_latex / no_id_leak
-#   不阻断，但必须带进 Gate 2 给人看
-
-# 6. 红队四视角（并行 4 个 agent，prompt: task4_redteam.md，角色见 TYPES.md）
-mkdir -p {TMPDIR}/redteam
-# buyer / expert / audit / rival，各写 {TMPDIR}/redteam/{role}.json
-# 致命项（废标风险 / 高权重评分项实质未答）自动补，最多 2 轮；其余进 Gate 2 交人取舍
-
-# 7. 人工待办清单 + 内部研判归档
-python {TOOLSDIR}/prop_tools.py human-todo \
-  --requirements {TMPDIR}/requirements.json \
-  --strategy {TMPDIR}/strategy.json \
-  --report "$REPORT" --mode {depth_mode} \
-  --output "$BUNDLE/_人工待办.md" --lang {LANG}
-# → HUMANTODO: blocking=.. scoring=.. weak=..
-# 再用 write 把「竞争力自评 + 红队结论」追加进 $BRIEF，让卷册自带完整内部备忘
+$PY {TOOLSDIR}/prop_tools.py audit-realization --state-dir "$TMPDIR" --section-ref <CH-ID> --section <section.md> --hints <proposed.json> --brief <brief.json> --semantic <semantic.json>
 ```
 
-## 验收清单
-- [ ] check-compliance: missing_mandatory 为空（否则废标风险，必须补）
-- [ ] check-compliance: missing_scoring 为空或已补
-- [ ] qa-proposal: `no_internal_leak.passed=true`（⚡ 递交稿零内部泄露）
-- [ ] qa-proposal: `structure.passed=true`（标题/项目信息头/目录/对照表齐备）
-- [ ] 红队致命项已清零
-- [ ] 差异化点数 ≥ 模式下限
-- [ ] 报价在预算带内（人工核对报价章）
-- [ ] 无内部 id（S/M/D 编号）泄露正文
+任一 manifest 非 valid 不进入装配。表达问题回 Task 3；Evidence 回 Task 2；VP/Claim/Action 回 Task 2.5；能力/资源/授权回 Gate 1。
 
-## 清理
-QA 通过后：`rm -rf {TMPDIR}`（Unix）或 `Remove-Item -Recurse -Force {TMPDIR}`（Windows）
-⚠️ `$BUNDLE` 内的 `_内部研判.md` 与 `_人工待办.md` 不在 TMPDIR，不会被删。
-**递交时下划线开头的文件一律不要交。**
+## 2. 预览装配
+
+`$AUTO_ARG` 仅 `-auto` 时为 `--auto`：
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py assemble-proposal --strategy "$TMPDIR/strategy.json" --requirements "$TMPDIR/requirements.json" --intel "$TMPDIR/intel-pool.json" --sections-dir "$TMPDIR/sections" --mode <mode> --output "{SKILLDIR}/reports/<lang>" --lang <lang> $AUTO_ARG
+```
+
+解析并重新绑定 `Proposal assembled` → `$REPORT`、`BundleDir` → `$BUNDLE`、`InternalBrief` → `$BRIEF`。每次重装配都重绑。装配在 staging 完成，上一份成功卷册进入报告目录 `.last-good/`。
+
+## 3. 四类硬检
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py check-compliance --requirements "$TMPDIR/requirements.json" --strategy "$TMPDIR/strategy.json" --report "$REPORT"
+$PY {TOOLSDIR}/prop_tools.py qa-proposal "$REPORT" --mode <mode> --strategy "$TMPDIR/strategy.json" --requirements "$TMPDIR/requirements.json" --state-dir "$TMPDIR" --lang <lang>
+$PY {TOOLSDIR}/prop_tools.py check-canonical --state-dir "$TMPDIR" --stage submission --realization-dir "$TMPDIR/derived/realization" --write-derived
+$PY {TOOLSDIR}/prop_tools.py customer-fit --state-dir "$TMPDIR" --checkpoint submission
+```
+
+- compliance：mandatory/scoring 实质遗漏必须补。
+- QA：structure、no_internal_leak、no_private_raw_leak 等硬项必须过；URL、internal ID/策略/模式/工具痕迹，以及 private/internal/匿名批准前 raw 原句都不能进递交稿，只能使用 approved projection。
+- canonical：Claim/Evidence/Metric/authority、Action/Owner/Resource/Acceptance、coverage、snapshot/realization 和 assumed 状态均受检。
+- customer-fit：硬门失败 overall withheld；区间不是评委分或中标概率。
+- `self-score` 只保留 legacy 兼容，不作为 v3 headline；固定 differentiator 数量不再是门。
+
+修改后从受影响 canonical owner/brief/section 开始重跑，不能只改最终 Markdown 掩盖根因。
+
+## 4. 红队与 Gate 2
+
+四个角色分别编译：
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target redteam --role buyer
+$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target redteam --role expert
+$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target redteam --role audit
+$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target redteam --role rival
+```
+
+用 task4_redteam.md 并行派发。相同 root_cause 合并；确定硬门致命项先按 owner 修，模型独有低置信度只 needs_review。其余按 DECISIONS.md Gate 2 一次一题；canonical 变化走 ChangeSet，并按当前全局 snapshot 重编译/realization 全部绑定输出后再装配复验。
+
+## 5. 最终待办、内部研判与状态
+
+最终重装配和四类硬检通过后：
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py human-todo --requirements "$TMPDIR/requirements.json" --strategy "$TMPDIR/strategy.json" --intel "$TMPDIR/intel-pool.json" --state-dir "$TMPDIR" --report "$REPORT" --mode <mode> --output "$BUNDLE/_人工待办.md" --lang <lang>
+$PY {TOOLSDIR}/prop_tools.py archive-state --state-dir "$TMPDIR" --bundle-dir "$BUNDLE"
+```
+
+把最终 fit、红队、Gate 取舍和报告级 submission_ready 追加 `$BRIEF`。auto/明确草案使用 `archive-state --allow-draft`，并醒目标“不直接递交”；archive 返回的 `canonical_submission_ready` 不替代本轮 report 的 compliance/QA/fit/Gate 2。归档成功、开始时间已读取后才删除 TMPDIR。
+
+## 验收
+
+- [ ] Requirement 映射与正文实质响应零遗漏
+- [ ] 所有正式 section 与 summary realization valid、snapshot fresh
+- [ ] publishable Claim 均有合法 Evidence/Metric/authority，private 不泄露
+- [ ] selected/committed Action 的 Owner/资源/依赖/验收与组合容量有效
+- [ ] compliance、QA、canonical submission 全过；fit 未被误称中标分
+- [ ] 红队根因已处理或按权限记录，不存在硬门 waiver
+- [ ] `_人工待办.md`、`_内部研判.md`、`_state/` 明确不递交
+- [ ] last-good 仍可恢复
 
 ---
 ```
-proposal skill · 政企传媒投标方案生成
+proposal skill · 3.0.0 · v3 assembly
 ```

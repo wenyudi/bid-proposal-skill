@@ -8,3 +8,6 @@ Thumbs.db
 
 # 临时目录（skill 运行时中间数据，正常会自动清理）
 /tmp-proposal-*/
+
+# 本地设计/压力测试过程产物（不属于可分发 skill）
+/.scratch/

@@ -1,184 +1,159 @@
-# proposal — 政企传媒投标方案生成 skill
+# proposal — 政企传媒技术标生成 skill
 
-为广告/传媒公司生成给**政企客户**投标的正式方案文档。核心目标：
+proposal 3.0 默认运行 v3：先把标书要求、客户角色与需求、价值主张、证据、执行责任和验收边界做成可校验状态，再生成客户可读方案。目标是同时做到：
 
-> **保证基础（不废标、覆盖全部评分项）→ 合理成本（单一最优报价）→ 贴标的叙事（逻辑征服 / 故事打动 / 愿景共创 / 数据实证）→ 给甲方最大惊喜（差异化脱颖而出）**
+> 合规零遗漏 · 真懂客户 · 亮点值得选 · 证据可信 · 交付可兑现 · 风险妥帖
 
-产出范围：**技术标**。投标函、法定代表人授权书、承诺函、报价一览表等格式文本请按标书模板自行套用。
+范围仅限技术标。投标函、法定代表人授权书、承诺函和法定报价表等，仍按标书模板套用。
 
-**独立 skill，无运行时依赖**（`tools/prop_tools.py` 只用 Python 标准库）。多 agent 链式编排的思路借鉴自 [deep-research](https://github.com/hoolulu/deep-research)（MIT），但**交付物模型完全不同**——投标文件不是研报，见下方「它刻意不做的事」。
-
----
+它是独立 skill：运行时不调用 wayfinder、grill-me 或外部 issue tracker。复杂任务找路与压力追问的方法参考了 [mattpocock/skills](https://github.com/mattpocock/skills)（MIT），已经内生为本项目的 canonical、ChangeSet、单题 Gate 和诊断规则。
 
 ## 安装
 
-**必须注册 skill 入口，否则 AI 不会走本 skill 的多 agent 流程**（不联网调研、不并行分章、不读案例库，只会凭对话直接写方案）。
+必须注册 skill 入口，否则模型只会在对话里直接写稿，不会执行研究后选择、分章并行和硬门审计。
 
-- Claude Code → 见 [`install/claude-code-skill.md`](install/claude-code-skill.md)
-- OpenCode → 直接把本仓库注册为 skill，`command/proposal.md` 自动生效
-- 其他 CLI → 参考上文的工具映射表适配
-
----
+- Claude Code：见 [`install/claude-code-skill.md`](install/claude-code-skill.md)
+- OpenCode：将仓库注册为 skill；`command/proposal.md` 提供 `/proposal`
+- 其他 CLI：按安装文档映射 agent/search/fetch/read/write 工具
 
 ## 用法
 
-```
-/proposal <标书路径或粘贴标书文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-auto]
+```text
+/proposal <标书路径或粘贴文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-auto] [-legacy]
 ```
 
-- **必需**：甲方标书（`.pdf/.docx/.md/.txt` 路径，或直接粘贴标书内容）
-- **可选**：资质 / 报价参考 / **沟通纪要**（踏勘、答疑会、售前笔记）等本地素材路径
-  - 案例库 `casebase/` 非空时自动纳入，不用传
-  - ⚠️ 沟通纪要只作 AI 理解甲方的输入，**绝不进方案正文**（引用私下沟通 = 不正当接触嫌疑）
-- **模式**：
-  - `-quick` 快速应标（小标 / 时间紧）
-  - 默认 标准投标（评分项 8-12 项）
-  - `-deep` 大标 / 重点项目（强竞争 / 多轮答辩）
-- **叙事**（可选；不指定则按标书特征自动判定，见 TYPES.md 叙事策略库）：
-  - `-logic` 逻辑征服 · `-story` 故事打动 · `-vision` 愿景共创 · `-evidence` 数据实证
-- **关卡**：默认停两次问你（见下）；`-auto` 全自动跑完
+- 无深度标志：standard；`-quick` 适合时间紧，`-deep` 适合重点标。
+- 无叙事标志：按标书自动选 logic/story/vision/evidence；叙事只改变讲法，不能裁掉评分项或加强承诺。
+- 默认停 Gate 1 和 Gate 2；quick 只停 Gate 1。每轮只解决一个需要投标人拍板的决策，并给推荐答案。
+- `-auto` 可生成完整保守草案，但 assumed 能力、报价或承诺会让 `submission_ready=false`，不会伪装成可直接递交。
+- 无标志和 `-v3` 都是 v3；只有显式 `-legacy` 才使用 2.x 回退流程。两套引擎不能在同一 run 混线。
+- `casebase/` 非空时自动纳入。沟通/踏勘/售前纪要标 `[notes]`，只作 private 校准，正文绝不引用。
 
 示例：
-```
-/proposal /Users/me/招标文件.pdf ~/资质材料/ -deep
-/proposal /Users/me/文旅局宣传标书.pdf 踏勘纪要.md -story
+
+```text
+/proposal /Users/me/文旅传播招标文件.pdf ~/投标素材/ -deep -story
+/proposal /Users/me/新媒体代运营标书.pdf -evidence
 /proposal /Users/me/小标.pdf -quick -auto
+/proposal /Users/me/旧项目目录 -legacy
 ```
 
----
+## v3 为什么更适合客户
 
-## 人机分工：两道关卡
+| 客户会问 | v3 怎么回答 |
+|:---|:---|
+| 你真的理解谁在判断、使用和担责吗？ | 按标实例化业务、专家、采购合规、纪检、领导和使用者角色；权力、否决、履约影响与审查风险分开，不虚构个人偏好 |
+| 这个亮点跟我有什么关系？ | ValueProposition 必须连到具体 Role × Need × Criterion，并说明客户变化与价值机制；满足标书本身不冒充亮点 |
+| 这是点子还是能做的方案？ | proposal/commitment 连接 Action、唯一 accountable、资源时点、客户依赖安全兜底和 AcceptanceContract |
+| 数字、案例和承诺凭什么信？ | Evidence 原记录与“它证明什么”分开；正文用途、scope、强度和 authority 都可校验；匿名材料不回退原文，第三方案例不能证明我方能力 |
+| 评委读完会形成什么新判断？ | 评分骨架上叠加 DecisionJob：理解 → 相信 → 价值 → 落地 → 风险 → 可辩护选择，不强制六阶段一章一段 |
+| 严格结构会不会让稿子难读？ | 完整图谱只在底层；每章只收到最小 compiled brief，客户稿不显示 ID、状态机、审计标签或适配度 |
+| 综述会不会比正文吹得更大？ | 每章先审 Requirement 是否实质回答，再审 Claim/Action realization；方案综述只读取全部正式章的 valid 白名单 |
+| “适配度 83 分”可信吗？ | 不输出伪精确点分和中标率；十个锚定维度给敏感性区间、短板、置信度和修复 owner，硬门失败则 overall withheld |
 
-AI 能读标书、能联网、能写字，但有一批判断 **它无论如何都不可能知道**，只有你知道。硬猜的结果是方案跑偏而不自知。所以流程里留了两个停顿：
+候选阶段保持发散：从 outcome、efficiency、risk、visibility、experience、asset、contrarian 多镜头生成候选。Task 2 查证后，Task 2.5 才用窄硬门、关键短板、Pareto 和组合充分性选择 lead/supporting/reserve。v3 不奖励亮点数量、篇幅、表格或形容词。
 
-**⛳ Gate 1 — 策略确认**（Task1 之后，动笔之前）
-呈现甲方洞察 / Big Idea / 叙事策略 / 差异化点 / 报价思路 / 章节框架，并**单独列出 AI 不可能知道、需要你拍板的问题**（`open_questions`）：
+## 两道人工关卡
 
-> 这个差异化点我司真做得到吗（资源/团队/成本）？报价心理价位是多少，要利润还是要业绩？竞争对手是谁？我司跟这个采购人有没有历史？资质业绩真的满足吗？甲方领导的关注点是什么？
+Gate 1 只问 AI 无法知道的真实边界：投标人能力、资源容量、报价取舍、案例/名称/数字授权、关键 KPI、免费增值、未公开履约关系和个人偏好。标书和素材能查到的事实由系统查，公开缺口交 Task 2。答案通过跨文件 ChangeSet 同时更新 decision 与受影响的 VP/Claim/Action/Resource/Acceptance，避免“状态已确认、方案还没改”。
 
-放在这里，是因为**策略错了，后面所有联网调研和分章撰写全是浪费**。
+Gate 2 在机械门与四视角红队后处理根因诊断。红队只提问题；每条带正文引文、影响、置信度、canonical owner 和修复范围。相同根因合并，不为凑数量制造质疑。用户可明确授权“其余按推荐处理”。
 
-**⛳ Gate 2 — 红队定稿**（方案写完、合规校验通过之后）
-派 4 个 agent 并行攻击方案：采购人代表、技术专家、财务纪检、**竞争对手**（详见 TYPES.md）。红队**只提质疑不改稿**——除了致命项（废标风险 / 高权重评分项实质未答）会自动补。剩下的由你决定：哪些必须补、哪些是红队想多了、哪些暴露了真实能力缺口需要调整策略甚至弃标。
+## 流程
 
-同时产出 `_人工待办.md`：把正文里散落的 `【待补充】` 占位符按「不填会丢多少分」排序，废标风险项排最前。**递交前务必过一遍**——AI 不该替你编造真实业绩、报价数字、团队人员和可承诺的 KPI。
-
----
-
-## 它怎么保证"赢标三要素"
-
-| 诉求 | 机制 |
-|:----|:-----|
-| **保基础** | Task1 把标书拆成 `requirements.json`（强制项 + 评分项 + 权重）；Task4 生成**应标响应与评分对照表**并做 `check-compliance` **阻断式**零遗漏校验——任一强制项漏应答即视为废标风险，必须补齐才能交付 |
-| **控成本** | 报价章只出**单一最优解**，卡在标书预算带内，价值-成本一一对应（不做分档阶梯） |
-| **会讲法** | Task1 按标书特征选定**叙事策略**（逻辑征服 / 故事打动 / 愿景共创 / 数据实证，用户可用标志强制指定），through_line 贯穿各章；**叙事只决定讲法不裁内容**——评分点仍零遗漏，报价与合规响应永远逻辑呈现 |
-| **有战绩** | 把真实案例放进 `casebase/`（格式见其 README），生成时自动按行业/客户类型/预算量级筛选 3-8 个最匹配案例写进方案；案例库案例永远优先于联网第三方案例 |
-| **给惊喜** | Task1 提炼 Big Idea + 差异化增值点候选；Task2 联网找甲方画像/行业数据/标杆案例坐实（story/vision 叙事下加采叙事素材）；Task3 写入并标为亮点；QA 校验差异化点数 ≥ 模式下限 |
-| **被看见** | Task3.5 在**全部章节写完后**回头提炼一页 `## 方案综述`（执行摘要），置于对照表之后——评委只精读前两页 |
-| **挨过打** | 定稿前**红队四视角**并行攻击（采购人代表 / 技术专家 / 财务纪检 / **竞争对手**），致命项自动补，其余交人判断 |
-| **知边界** | Task1 产出 `open_questions`（AI 不可能知道的判断）→ Gate 1 交人拍板；正文占位符汇总成 `_人工待办.md` → 递交前人工填实 |
-| **不亮底牌** | 递交稿零内部泄露（叙事策略/深度模式/工具版本/生成时间/URL 全部隔离进 `_内部研判.md`），`no_internal_leak` 硬阻断 |
-| **竞争力研判** | Task4 `self-score` 预估得分/覆盖率/薄弱项 + `buyer_focus` 甲方导向词频（在讲甲方还是在自夸）+ LLM 定性研判（内部参考，不写入交付文档） |
-
----
-
-## 架构
-
-主 agent 调度 4 个 Task，中间数据走临时目录：
-
-```
-标书 → Task1   标书解读+投标策略      → requirements.json + strategy.json（含 open_questions）
-       ⛳ Gate 1 策略确认（人拍板）
-       Task2   联网情报收集          → intel-pool.json（甲方/行业/竞品/案例库筛选）
-       Task3   并行分章撰写          → sections/section-*.md（每章照评分标准写）
-       Task3.5 方案综述（读完各章）   → sections/section-0.md
-       Task4   装配+合规+自评+红队    → reports/zh/<方案标题>-<时间戳>/
-       ⛳ Gate 2 红队定稿（人取舍）
+```text
+标书/素材
+  → Task 1：五域 bootstrap + 开放候选池
+  → Gate 1：真实能力/资源/报价/授权单题确认
+  → Task 2：公开 Evidence、反证、案例 proof task
+  → Task 2.5：lead/supporting/reserve + Claim/Action/DecisionJob 收敛
+  → generation gate + customer-fit strategy checkpoint + snapshot
+  → Task 3：按章最小 brief 并行写作
+  → 独立 realization 审计（Requirement addressed + Claim/Action/scope/承诺）
+  → Task 3.5：realized-only 方案综述
+  → 装配 + compliance + QA + submission fit
+  → buyer/expert/audit/rival 红队 + Gate 2
+  → 最终复验 + _state 原子归档 + last-good
 ```
 
-产出的卷册目录：
+五份 canonical：
 
+```text
+requirements.json      标书 Requirement / 评分 / mandatory / 预算
+customer-value.json    Role / Need / Criterion / VP / Claim / Metric / EvidenceLink
+delivery-plan.json     DeliveryRole / Action / Resource / Dependency / Acceptance
+strategy.json          narrative / DecisionJob / Section / Gate 决策地图
+intel-pool.json        Evidence 原记录
 ```
+
+Task 和 Gate 不直接散改它们，而是提交带 base revision 的 ChangeSet。工具在临时副本检查 schema、引用、生命周期、权限和跨文件硬门，全部通过才原子替换；stale 或任一失败整组回滚。
+
+## 输出
+
+```text
 <方案标题>-<时间戳>/
-├── 技术方案-完整版.md      ← 递交稿（合并版，拼 Word 用）
-├── 分册/
-│   ├── 00-目录.md
-│   ├── 01-应标响应与评分对照表.md
-│   ├── 02-方案综述.md
-│   └── 03-一、xxx.md …     ← 各章，便于单章重写 / 逐章贴进 Word
-├── _内部研判.md            ← ⚠️ 不递交：生成参数、叙事策略、情报 URL、竞争力自评、红队结论
-└── _人工待办.md            ← ⚠️ 不递交：AI 不该替你编造的内容清单
+├── 技术方案-完整版.md          递交稿
+├── 分册/                       目录、对照表、综述、各章
+├── _内部研判.md                不递交：决策、来源、fit、红队
+├── _人工待办.md                不递交：assumed、缺口、占位符
+└── _state/                     不递交：canonical、sections、快照、diagnostics、realization
 ```
 
-**下划线开头的文件一律不递交。** `_内部研判.md` 里有你的叙事策略和情报来源，给评委看等于亮底牌。
+下划线开头的内容一律不递交。装配先在 staging 完成，成功后才切换；上一份成功卷册保存在报告目录 `.last-good/`，状态重复归档时保留 `_state.last-good`。失败构建不会删掉上一份成功结果。`archive-state` 的 `canonical_submission_ready` 只证明归档当时的 canonical/realization；复制 `_state` 到新目录恢复后，须重编译 brief 并复审全部章节/摘要，旧绝对路径 artifact 不作为续用 attestation。最终是否可递交还必须以同一份 report 的 compliance、QA、customer-fit 和 Gate 2 为准。
 
-- **联网为主**：沿用运行时自适应搜索（CLI 内置引擎 + SearXNG + 免费源）+ Scrapling 全文抓取，webfetch 兜底
-- **交付物**：正式投标方案文档（Markdown，可转 Word/PDF）
+## 关键命令
 
----
+`tools/prop_tools.py` 保留所有 2.x 命令，并新增：
 
-## 文件结构
-
-```
-proposal/
-├── SKILL.md              主调度流程 + 中标级质量标准 + 两道人工关卡
-├── RULES.md              废标红线 / 真实性红线 / 人机边界 / 常见陷阱
-├── TYPES.md              六类提案类型 + 评标维度模型 + 叙事策略库 + 红队四视角 + 编号体系
-├── profiles.json         三档参数（章节数/段落/差异化下限/字数）
-├── VERSION
-├── command/proposal.md   /proposal 命令入口
-├── install/              各 CLI 的 skill 注册说明（⚠️ 不注册 = 不走多 agent 流程）
-├── prompts/
-│   ├── task1_teardown.md      标书解读 + 投标策略 + open_questions
-│   ├── task2_intel.md         联网情报收集 + 案例库筛选
-│   ├── task3_section_agent.md 分章撰写
-│   ├── task3b_exec_summary.md 方案综述（读完各章后提炼）
-│   ├── task4_redteam.md       红队评审（4 角色并行）
-│   └── task4_assembly.md      装配/合规/自评/QA 命令参考
-├── tools/prop_tools.py   自包含引擎：assemble / check-compliance / self-score / qa / human-todo / encoding
-├── casebase/             案例库（放真实案例 .md，自动筛选进方案；格式见其 README）
-└── reports/zh/           输出目录（每个标一个卷册目录）
+```text
+bootstrap-state / migrate-state
+check-canonical / apply-changeset / apply-auto-state
+compile-context / promote-research / freeze-snapshot
+audit-realization / customer-fit / archive-state
 ```
 
----
+示例：
 
-## 依赖
+```bash
+python3 tools/prop_tools.py check-canonical --state-dir /tmp/run --stage generation --write-derived
+python3 tools/prop_tools.py compile-context --state-dir /tmp/run --target section --id CH-03
+python3 tools/prop_tools.py customer-fit --state-dir /tmp/run --checkpoint submission
+python3 tools/prop_tools.py qa-proposal /path/to/report.md --strategy /tmp/run/strategy.json --requirements /tmp/run/requirements.json --state-dir /tmp/run
+```
 
-- Python 3.8+（`prop_tools.py` 仅用标准库）
-- 联网调研需要可用的搜索工具（CLI 内置 websearch / SearXNG）与抓取工具（Scrapling MCP 或 webfetch）
-- 读 `.pdf/.docx` 标书时自动安装 `pypdf2` / `python-docx`
+所有运行时代码只依赖 Python 3.8+ 标准库。联网研究依赖宿主提供的 search/fetch；PDF/DOCX 提取可由宿主工具或可选库完成。
 
----
+## 仓库结构
 
-## 它刻意不做的事
+```text
+SKILL.md                 v3 默认调度
+LEGACY.md                显式 -legacy 回退
+RULES.md                 硬门、权限和正文边界
+DECISIONS.md             Gate 单题状态机与 ChangeSet 原则
+TYPES.md                 六标型、评委、叙事与决策旅程变体
+prompts/                 v3 Task 1/2/2.5/3/realization/summary/redteam
+prompts/legacy/          2.x 回退 prompts
+tools/prop_tools.py      兼容 CLI、装配、合规、QA
+tools/prop_v3.py         canonical、事务、context、realization、fit、归档
+tests/                   legacy 兼容与 v3 hard-gate 测试
+casebase/                人工维护的真实案例事实源
+```
 
-投标 ≠ 销售提案。以下是西方顾问式提案的常见做法，**在中国政企投标里会出事**，本 skill 主动拦截：
+## 刻意不做
 
-| 不做 | 为什么 |
-|:----|:------|
-| **CTA / 下一步行动**（"期待与您进一步沟通"） | 投标是密封递交、开标评标。写 CTA 暴露不懂规则 |
-| **排除项 / 免责声明**（"本报价不包含以下服务"） | 极易被认定**实质性负偏离** → 废标。要写只能写「需甲方配合事项」 |
-| **分阶段 opt-in 报价**（先买调研，后续再决定） | = 报价未完整响应 → 废标风险 |
-| **引用私下沟通**（"据贵单位李主任介绍……"） | 不正当接触嫌疑，竞争对手可据此投诉。沟通纪要只作 AI 理解输入，不进正文 |
+- 不写销售 CTA、“期待进一步沟通”、分阶段 opt-in 报价。
+- 不写“排除项/不包含”式免责，避免实质性负偏离；客户配合只能写有安全兜底的依赖。
+- 不引用私下沟通或个人内部表述；只用标书、澄清、公开政策/报道和已批准材料投影。
+- 不把 URL 书目、生成元数据、叙事策略、内部 ID、customer-fit 或工具痕迹印给评委。
+- 不虚构资质、案例、团队、资源、数字或保证性结果。
+- 不把第三方案例包装成我方业绩，不把“材料清单上有”当成 verified。
+- 不用客户适配度软分替代 mandatory、真实性、预算、法律、授权和交付硬门。
 
-引用只引**所有投标人都看得到的东西**：标书原文、答疑澄清文件、公开政策、公开报道。
+## 合规声明
 
-还有一类是**研报的做法，投标里同样不该有**——这个 skill 早期版本（v1.0–v1.3）真的犯过，现在由 `qa-proposal` 的 `no_internal_leak` **硬阻断**：
-
-| 不做 | 为什么 |
-|:----|:------|
-| **元数据块**（"22770 字 · 阅读 46 分钟 · 生成 01:34:00 · 模式 deep · **叙事 story** · 版本 v1.0.0"） | 把工具痕迹和**说服底牌**印给评委看。叙事是用来打动人的，不是用来通报的 |
-| **URL 参考书目** | 投标文件不带网址书目。来源改行内标注（「据XX研究院2026年报告」），URL 清单归档到 `_内部研判.md` |
-| **GitHub 锚点目录** | 转 Word/PDF 后就是一堆废链接。目录用纯文本 |
-| **研报式版权免责声明** | "引用的第三方数据版权归原机构所有"——投标文件里没这东西 |
-
----
-
-## ⚠️ 合规声明
-
-生成内容为投标响应草案，业绩/资质/团队信息以真实素材为准，无把握处以 `【待补充/待核实】` 占位——**切勿用虚构信息投标**（涉嫌串标/骗标，法律责任严重）。竞争力自评为机械估算，非评委真实打分，仅供投标决策参考。
+生成物是投标响应草案。真实资质、业绩、人员、报价和可承诺 KPI 必须由投标人核验；任何 `submission_ready=false`、占位符或 `_人工待办.md` 硬项未清，都不可直接递交。customer-fit 是内部敏感性诊断，不是评委分数或中标概率。
 
 ---
 ```
-proposal skill · 政企传媒投标方案生成
+proposal skill · 3.0.0 · v3 direct-default
 ```

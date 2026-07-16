@@ -1,69 +1,67 @@
 # 安装到 Claude Code
 
-Claude Code 只会加载 `~/.claude/skills/<name>/SKILL.md`。**仅仅把本仓库 clone 下来是不够的**——不注册入口，Claude 不会走本 skill 的多 agent 流程（不联网调研、不并行分章、不读案例库），只会凭对话直接写方案。
+仅 clone 仓库不会注册 skill。需要让 Claude Code 的 skill 入口指向本仓库；仓库仍是唯一事实来源，后续更新不必复制 prompt。
 
-## 步骤
+## 安装
 
-1. clone 本仓库到任意位置，例如 `~/Code/proposal`
-2. 把下面的入口模板写入 **`~/.agents/skills/proposal/SKILL.md`**（跨 harness 共享位置），
-   把 `{REPO}` 全部替换成第 1 步的绝对路径
-3. 从各 CLI 的 skill 目录软链过去：
-   ```bash
-   mkdir -p ~/.agents/skills/proposal ~/.claude/skills
-   ln -s ../../.agents/skills/proposal ~/.claude/skills/proposal
-   ```
-   （pi 原生加载 `~/.agents/skills/`，无需软链）
-4. 新开一个会话，输入 `/proposal <标书路径>` 验证
+1. clone 到固定目录，例如 `~/Code/proposal`。
+2. 建立跨 harness 入口 `~/.agents/skills/proposal/SKILL.md`，使用下方模板并把 `{REPO}` 替换为绝对路径。
+3. Claude Code 建软链：
 
-> 入口只是一个指针，仓库才是唯一事实来源。改流程改仓库里的文件即可，入口一般不用动。
+```bash
+mkdir -p ~/.agents/skills/proposal ~/.claude/skills
+ln -s ../../.agents/skills/proposal ~/.claude/skills/proposal
+```
+
+pi 原生读取 `~/.agents/skills/`。新开会话后输入 `/proposal <标书路径>` 验证。
 
 ## 入口模板
 
 ````markdown
 ---
 name: proposal
-description: 政企传媒投标方案生成 — 读甲方标书拆评分项保基础得分，按标选叙事策略（逻辑征服/故事打动/愿景共创/数据实证），联网调研甲方/行业/案例 + 从本地案例库自动筛选案例，并行分章撰写，方案综述，红队四视角评审，应标对照表零遗漏校验。含两道人工关卡（策略确认/红队定稿）。Use when 用户要写投标方案/应标文件/给政企客户的提案，或提供标书要求出方案，或输入 /proposal。
+description: 政企传媒技术标 v3 生成：拆标书硬要求，建立多角色客户价值与交付 canonical，研究后选亮点，并行分章与独立兑现审计，红队和硬门定稿。Use when 用户要写投标方案/应标文件/政企客户提案，提供标书要求出方案，或输入 /proposal。
 ---
 
-# proposal — Claude Code 执行入口
+# proposal — Claude Code 入口
 
-本 skill 的完整定义（调度流程/质量标准/prompt/工具脚本）在 **`{REPO}/`**，那是唯一事实来源。本文件只做两件事：把你引到那里，并把文档里的 OpenCode 工具名翻译成 Claude Code 工具。
+完整定义位于 `{REPO}`，它是唯一事实来源。
 
-## 执行步骤
+1. Read `{REPO}/SKILL.md`、`RULES.md`、`TYPES.md`、`profiles.json`；Task 1 前 Read `DECISIONS.md`。用户显式 `-legacy` 时改读 `LEGACY.md`，两套引擎不得混线。
+2. 严格执行 SKILL.md：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择 → generation gate/snapshot → 并行 Task 3 → 独立 realization audit → realized-only 综述 → 装配/硬检/fit → 四视角红队/Gate 2 → `_state` 归档。
+3. 所有仓库相对路径从 `{REPO}` 解析；Python 优先 `python3`，若不可用再选当前平台 Python 3。
 
-1. **读取定义**：Read `{REPO}/SKILL.md`（主调度流程，必读）、`RULES.md`、`TYPES.md`、`profiles.json`。
-2. **严格按其"主 agent 调度流程"执行**：Setup → 语言判定 → 标书摄入+模式/叙事/关卡解析 → Task1 标书解读 → **⛳ Gate 1 策略确认（停下问人）** → Task2 联网情报（含案例库筛选）→ Task3 并行分章 → Task3.5 方案综述 → Task4 装配+合规+自评+红队四视角+人工待办 → **⛳ Gate 2 红队定稿（停下问人）**。
-3. 所有工具名按下表映射（**派发子 agent 时，把本映射表附在子 agent prompt 末尾**，子 agent 同样只有 Claude Code 工具）。
+## 工具映射
 
-## 工具映射（文档写法 → Claude Code 实际）
+| 文档概念 | Claude Code |
+|:---|:---|
+| 派 agent | `Agent`，subagent_type=`general-purpose`；章节可 `run_in_background: true` |
+| 收集后台 | `TaskOutput`，或 Read 目标文件确认 |
+| 进度 | `TaskCreate` / `TaskUpdate` |
+| 搜索/抓取 | `WebSearch` + `WebFetch`；有 Scrapling 时可批量抓全文 |
+| read/write/glob/bash | `Read` / `Write` / `Glob` / `Bash` |
+| Gate 单题 | `AskUserQuestion`；一次一题，给推荐与得失后停止等待 |
 
-| 文档里写的 | Claude Code 用 |
-|:----------|:---------------|
-| `task()` 派发子 agent | `Agent` 工具，subagent_type=`general-purpose` |
-| `task(run_in_background=true)` | `Agent` 工具 `run_in_background: true`（默认即后台）；全部完成的通知到达后再收集 |
-| `background_output` 收集 | `TaskOutput`（先 `ToolSearch` 加载），或直接 Read 各章输出文件确认 |
-| `todowrite` 进度 | `TaskCreate` / `TaskUpdate`（先 `ToolSearch` 加载） |
-| `websearch` | `WebSearch`（先 `ToolSearch` 加载） |
-| `webfetch` | `WebFetch`（先 `ToolSearch` 加载） |
-| `scrapling_bulk_get` 等 | 用 `ToolSearch` 搜 "scrapling"——有则用；没有则全部 `WebFetch` 兜底并在 manifest 标注 |
-| `read` / `write` / `glob` / `bash` | `Read` / `Write` / `Glob` / `Bash` |
-| Gate 1/2 向用户提问 | `AskUserQuestion` 工具（把 `open_questions` / 红队质疑做成选择题） |
+派子 agent 时附上其实际可用工具映射。Task 2 必须真实联网并抓原文；Task 3 只读 compiled brief；realization auditor 必须与 writer 分离；红队只提 root diagnostic。
 
-## 关键约定（防跑偏）
+## 不能省的门
 
-- **Task2 是查资料的核心**：必须真的联网（WebSearch + WebFetch 并行多查询），产出结构化 `intel-pool.json`，不许用模型记忆凑数据。
-- **Task3 是稳定分章的核心**：逐章并行派发 Agent，每章 prompt 嵌入该章评分标准 + 叙事指令 + 筛好的情报；缺章/空章必须重写，不许主 agent 自己一口气写全文。
-- **Task3.5 综述必须最后写**：读完各章再提炼，不许从策略推演；主张/数字不得超出正文。
-- **红队四视角并行**：`prompts/task4_redteam.md` × 4（buyer/expert/audit/rival，角色定义在 TYPES.md）。红队**只提质疑不改稿**，只有致命项才自动补。
-- **案例库**：`{REPO}/casebase/` 存在且非空时自动纳入素材（见主 SKILL.md Step 0.5），Task2 按标筛选案例。
-- **交付物是技术标卷册目录**，不是一份研报：`技术方案-完整版.md` + `分册/NN-*.md` + `_内部研判.md`（不递交）+ `_人工待办.md`（不递交）。范围只到技术标，投标函/授权书/承诺函/报价表不生成。
-- ⚡ **递交稿零内部泄露**：不得出现叙事策略、深度模式、工具版本、生成时间、阅读时间、URL、以及对本方案手法的自我描述（"本方案采用故事化叙事"）。把这些印给评委等于亮底牌。
-- **两个硬阻断点**：`check-compliance`（强制项遗漏 → 废标风险）与 `qa-proposal` 的 `no_internal_leak`（内部泄露）。两者不过不许交付。
-- ⛳ **两道人工关卡不许自行跳过**（除非用户加 `-auto`）。到关卡就**结束 response 等用户回复**，绝不"替用户假设后继续"。Gate 1 在 Task1 之后（策略错了后面全白做），Gate 2 在红队之后（哪些质疑要补是投标人的判断）。
-- **交付时必须提示两件事**：① `_人工待办.md` 里是 AI 不该替人编造的内容（真实业绩/报价数字/团队人员/可承诺 KPI），废标风险项没填完就递交 = 零分；② **下划线开头的文件一律不要递交**。
+- canonical 只由主 agent 通过 ChangeSet 写；stale/失败整组回滚。
+- Task 2.5 后 `check-canonical --stage generation` 通过才写作。
+- 每章与综述 realization valid 才装配；摘要只能用 realized 白名单。
+- 最终 compliance、QA、canonical submission 都通过，customer-fit 才可显示 overall；fit 不是评委分/中标概率。
+- `-auto` assumed 阻断直接递交；必须醒目标草案。
+- private notes、URL、canonical ID、策略/模式/工具痕迹绝不进递交稿。
+- `_内部研判.md`、`_人工待办.md`、`_state/` 均不递交；状态归档成功后才清 TMPDIR。
+- v3 失败不得静默切 legacy；只有用户显式 `-legacy` 才回退。
 ````
 
 ## 其他 CLI
 
-- **OpenCode**：仓库内文档就是按 OpenCode 工具名写的，把仓库注册为 skill 即可，`command/proposal.md` 自动生效。
-- **Codex CLI / Cursor**：参考上面的映射表，替换成对应工具名。
+- OpenCode：仓库注册为 skill 后使用 `command/proposal.md`。
+- Codex / Cursor：保留同一流程，只映射 agent、search、fetch 与文件工具。
+
+---
+```
+proposal skill · 3.0.0 install
+```

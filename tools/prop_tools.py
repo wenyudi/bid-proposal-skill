@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""proposal skill 工具集 — 装配 / 合规校验 / 竞争力自评 / QA / 编码。
+"""proposal skill 工具集 — v3 canonical/context/realization + legacy 装配与 QA。
 
 自包含，仅依赖标准库。所有读取用 utf-8-sig（BOM 容错），写入用 utf-8 无 BOM。
 非 ASCII 文本一律走文件参数，不进 shell argv。
@@ -11,7 +11,13 @@ import re
 import shutil
 import sys
 import datetime
+import tempfile
 import unicodedata
+
+try:
+    from . import prop_v3
+except ImportError:  # direct ``python tools/prop_tools.py`` execution
+    import prop_v3
 
 
 # ── 编码安全 stdout ────────────────────────────────────────────────────────
@@ -42,15 +48,24 @@ LABELS = {
         'brief_params': '生成参数', 'brief_sources': '情报来源（供投标人自行核验）',
         'brief_sources_note': ('> 正文中的数据均以行内方式标注来源（如「据XX研究院2026年报告」）。'
                                '下列 URL 清单供你核验，**不要**附进投标文件——投标文件不带网址书目。'),
-        'narrative': '叙事策略',
+        'narrative': '叙事策略', 'brief_decisions': '投标决策地图',
+        'decision_destination': '终点', 'decision_resolved': '已确认',
+        'decision_assumed': 'AI 假设（待人工复核）', 'decision_open': '未解决',
+        'decision_fog': '尚未具体化', 'decision_out': '范围外',
         'exec_summary': '## 方案综述', 'exec_summary_label': '方案综述',
         'todo_title': '# 人工待办清单', 'todo_note': ('> 下列内容 AI 不应替你决定或编造，需投标人本人填写/核实后再定稿。'
                                                  '按「不填会丢多少分」排序，废标风险项排最前。'),
         'todo_blocking': '## ⚠ 废标风险项（必须处理）', 'todo_scoring': '## 丢分项（建议处理）',
+        'todo_assumptions': '## AI 策略假设（递交前必须复核）',
+        'todo_intel_gaps': '## 情报缺口与假设冲突（人工核验）',
         'todo_weak': '## 竞争力薄弱项（自评信号，供人工强化）', 'todo_none': '（无）',
+        'todo_v3': '## v3 递交阻断与关键诊断',
         'todo_ch': '章节', 'todo_item': '待办', 'todo_impact': '不处理的后果',
+        'todo_decision': '决策', 'todo_assumption': '当前假设',
+        'todo_topic': '主题', 'todo_gap': '情报缺口',
         'm_req': '要求项', 'm_cat': '类别', 'm_wt': '权重/性质', 'm_sec': '响应章节',
         'cat_qual': '资格', 'cat_subst': '实质性', 'cat_fmt': '格式', 'cat_score': '评分项',
+        'cat_deliverable': '交付要求',
         'uncovered': '⚠ 未覆盖（需补）', 'budget_within': '≤{v}{u}（预算带内）',
         'budget_range': '按行业合理区间测算', 'no_src': '暂无联网来源',
         'matrix_note': '> 下表逐条对应标书的资格/实质性/格式条款与评分办法，确保应标零遗漏。',
@@ -70,15 +85,24 @@ LABELS = {
         'brief_params': 'Generation parameters', 'brief_sources': 'Intel sources (for your own verification)',
         'brief_sources_note': ('> Body text cites sources inline. This URL list is for your verification only — '
                                'do not attach it to the bid document.'),
-        'narrative': 'Narrative',
+        'narrative': 'Narrative', 'brief_decisions': 'Bid decision map',
+        'decision_destination': 'Destination', 'decision_resolved': 'Confirmed',
+        'decision_assumed': 'AI assumption (verify)', 'decision_open': 'Unresolved',
+        'decision_fog': 'Not yet specified', 'decision_out': 'Out of scope',
         'exec_summary': '## Executive Summary', 'exec_summary_label': 'Executive Summary',
         'todo_title': '# Human To-Do', 'todo_note': ('> The items below must be filled or verified by the bidder. '
                                                     'Sorted by score impact; disqualification risks first.'),
         'todo_blocking': '## Disqualification risks (must fix)', 'todo_scoring': '## Score losses (should fix)',
+        'todo_assumptions': '## AI strategy assumptions (verify before submission)',
+        'todo_intel_gaps': '## Intel gaps and assumption conflicts (verify)',
         'todo_weak': '## Weak items (self-score signals)', 'todo_none': '(none)',
+        'todo_v3': '## v3 submission blockers and major diagnostics',
         'todo_ch': 'Chapter', 'todo_item': 'To-do', 'todo_impact': 'If ignored',
+        'todo_decision': 'Decision', 'todo_assumption': 'Current assumption',
+        'todo_topic': 'Topic', 'todo_gap': 'Intel gap',
         'm_req': 'Requirement', 'm_cat': 'Category', 'm_wt': 'Weight/Type', 'm_sec': 'Addressed in',
         'cat_qual': 'Qualification', 'cat_subst': 'Substantive', 'cat_fmt': 'Format', 'cat_score': 'Scoring',
+        'cat_deliverable': 'Deliverable',
         'uncovered': '⚠ Not covered (fix)', 'budget_within': '<= {v}{u} (within budget)',
         'budget_range': 'estimated at industry range', 'no_src': 'No online sources',
         'matrix_note': '> The table below maps every mandatory clause and scoring item for zero omission.',
@@ -126,6 +150,10 @@ def write_text_atomic(path, content):
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
         f.write(content)
     os.replace(tmp, path)
+
+
+def write_json_atomic(path, value):
+    write_text_atomic(path, json.dumps(value, ensure_ascii=False, indent=2) + '\n')
 
 
 # ── 编码 / Mojibake 检查 ────────────────────────────────────────────────────
@@ -206,6 +234,9 @@ def all_requirement_ids(req):
     for s in req.get('scoring') or []:
         if s.get('id'):
             ids.append(s['id'])
+    for d in req.get('deliverables') or []:
+        if isinstance(d, dict) and d.get('id'):
+            ids.append(d['id'])
     return ids
 
 
@@ -228,8 +259,45 @@ def id_to_chapters(strategy):
     return m
 
 
+def out_of_scope_items(strategy):
+    """兼容旧字符串格式，统一返回 item/reason/forbidden_terms 对象。"""
+    decision_map = strategy.get('decision_map') or {}
+    normalized = []
+    for raw in decision_map.get('out_of_scope') or []:
+        if isinstance(raw, str):
+            normalized.append({"item": raw, "reason": "", "forbidden_terms": []})
+        elif isinstance(raw, dict):
+            normalized.append({
+                "item": raw.get('item') or '',
+                "reason": raw.get('reason') or '',
+                "forbidden_terms": raw.get('forbidden_terms') or [],
+            })
+    return normalized
+
+
 # ── 参考来源提取 ────────────────────────────────────────────────────────────
 def extract_refs(intel):
+    if isinstance(intel, dict) and isinstance(intel.get('evidence'), list):
+        seen = set()
+        entries = []
+        src_freq = {}
+        for evidence in intel.get('evidence') or []:
+            if not isinstance(evidence, dict):
+                continue
+            url = (evidence.get('url') or '').strip()
+            src = (evidence.get('source') or '').strip()
+            title = (evidence.get('title') or '').strip()
+            observed = evidence.get('observed_at', '')
+            visibility = evidence.get('visibility')
+            if src:
+                src_freq[src] = src_freq.get(src, 0) + 1
+            if visibility != 'public' or not url or url in seen:
+                continue
+            seen.add(url)
+            entries.append((title or src or url, src, observed, url))
+        entries.sort(key=lambda x: (x[1].lower() if x[1] else 'zzz', x[0]))
+        top_sources = sorted(src_freq, key=src_freq.get, reverse=True)[:6]
+        return entries, top_sources
     records = intel if isinstance(intel, list) else [intel]
     seen = set()
     entries = []
@@ -264,7 +332,7 @@ def extract_refs(intel):
 
 # ── 装配 ─────────────────────────────────────────────────────────────────
 def assemble_proposal(strategy_path, requirements_path, intel_path,
-                      sections_dir, mode, output_path, lang):
+                      sections_dir, mode, output_path, lang, allow_assumed=False):
     """产出技术标卷册目录：
         <dir>/技术方案-完整版.md      递交稿（合并版）
         <dir>/分册/NN-*.md            递交稿（分册，便于拼 Word / 单章重写）
@@ -274,6 +342,14 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     字数、阅读时间、URL 书目）——那是研报的东西，写进投标文件等于把底牌
     亮给评委。所有这些一律进 _内部研判.md。
     """
+    strategy_check = check_strategy(
+        strategy_path, mode=mode, require_settled=True, allow_assumed=allow_assumed)
+    if not strategy_check['passed']:
+        return {
+            "passed": False,
+            "issues": [f"Strategy not settled: {issue}" for issue in strategy_check['issues']],
+        }
+
     issues = []
     strategy = read_json(strategy_path)
     req = read_json(requirements_path)
@@ -292,8 +368,8 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     stamp = now.strftime('%Y%m%d-%H%M%S')
     base_dir = output_path or 'reports'
     bundle_dir = os.path.join(base_dir, f"{safe_title}-{stamp}")
-    parts_dir = os.path.join(bundle_dir, L['parts_dir'])
-    output_path = os.path.join(bundle_dir, L['combined_name'])
+    final_parts_dir = os.path.join(bundle_dir, L['parts_dir'])
+    final_output_path = os.path.join(bundle_dir, L['combined_name'])
 
     # 执行摘要（section-0.md，可选；不参与章节编号）
     exec_text = ''
@@ -346,6 +422,14 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         cat = cat_map.get(m.get('type', ''), m.get('type', ''))
         item = (m.get('item') or '').replace('|', '/')
         matrix_rows.append(f"| {item} | {cat} | {'必须满足' if lang=='zh' else 'Mandatory'} | {sec_refs(m.get('id'))} |")
+    for d in req.get('deliverables') or []:
+        if not isinstance(d, dict) or not d.get('id'):
+            continue
+        item = (d.get('item') or '').replace('|', '/')
+        matrix_rows.append(
+            f"| {item} | {L['cat_deliverable']} | "
+            f"{'必须交付' if lang=='zh' else 'Required'} | {sec_refs(d.get('id'))} |"
+        )
     for s in req.get('scoring') or []:
         item = (s.get('item') or '').replace('|', '/')
         dim = (s.get('dimension') or '').replace('|', '/')
@@ -379,14 +463,12 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
 
     wc = word_count_text(full)
 
-    # 去重同名旧卷册目录
+    # 先在 staging 构建完整卷册。只有全部文件和编码检查成功后才切换，
+    # 上一份成功卷册同时进入隐藏的 .last-good；失败构建不碰当前交付物。
     os.makedirs(base_dir, exist_ok=True)
-    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}$')
-    for fn in os.listdir(base_dir):
-        p = os.path.join(base_dir, fn)
-        if pat.match(fn) and p != bundle_dir and os.path.isdir(p):
-            shutil.rmtree(p, ignore_errors=True)
-
+    staging_dir = tempfile.mkdtemp(prefix='.proposal-bundle-staging-', dir=base_dir)
+    parts_dir = os.path.join(staging_dir, L['parts_dir'])
+    output_path = os.path.join(staging_dir, L['combined_name'])
     os.makedirs(parts_dir, exist_ok=True)
     write_text_atomic(output_path, full)
 
@@ -424,8 +506,45 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         f"- {L['budget_resp']}：{budget_str}",
         f"- {L['chars']}：{wc}",
         f"- {L['version']}：v{read_version()}",
-        '', f"## {L['brief_sources']}", '', L['brief_sources_note'], '',
     ]
+
+    # 决策地图只进内部研判：保留用户确认与 -auto 假设，TMPDIR 清理后仍可追溯。
+    decision_map = strategy.get('decision_map') or {}
+    decisions = strategy.get('open_questions') or []
+    if decision_map or decisions:
+        brief.extend(['', f"## {L['brief_decisions']}", ''])
+        destination = decision_map.get('destination')
+        if destination:
+            brief.append(f"- **{L['decision_destination']}**：{destination}")
+        status_labels = {
+            'resolved': L['decision_resolved'],
+            'assumed': L['decision_assumed'],
+            'open': L['decision_open'],
+        }
+        for status in ('resolved', 'assumed', 'open'):
+            for decision in decisions:
+                if decision.get('status', 'open') != status:
+                    continue
+                title = decision.get('title') or decision.get('q') or '-'
+                answer = decision.get('resolved') or decision.get('ai_assumption') or '-'
+                risk = decision.get('why_matters') or ''
+                suffix = f" — {risk}" if status in ('assumed', 'open') and risk else ''
+                brief.append(f"- **{status_labels[status]} · {title}**：{answer}{suffix}")
+        fog = decision_map.get('not_yet_specified') or []
+        if fog:
+            names = [item.get('name', '-') if isinstance(item, dict) else str(item) for item in fog]
+            brief.append(f"- **{L['decision_fog']}**：{'；'.join(names)}")
+        out_of_scope = out_of_scope_items(strategy)
+        if out_of_scope:
+            rendered = []
+            for item in out_of_scope:
+                text = item['item']
+                if item['reason']:
+                    text += f"（{item['reason']}）"
+                rendered.append(text)
+            brief.append(f"- **{L['decision_out']}**：{'；'.join(rendered)}")
+
+    brief.extend(['', f"## {L['brief_sources']}", '', L['brief_sources_note'], ''])
     if entries:
         for name, src, yr, url in entries:
             label = name if not src or src == name else f"{name} · {src}"
@@ -434,18 +553,59 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
             brief.append(f"- [{label}]({url})")
     else:
         brief.append(L['no_src'])
-    write_text_atomic(os.path.join(bundle_dir, L['brief_name']), '\n'.join(brief) + '\n')
+    staging_brief = os.path.join(staging_dir, L['brief_name'])
+    write_text_atomic(staging_brief, '\n'.join(brief) + '\n')
     enc = check_encoding(output_path)
     if not enc['passed']:
         issues.append(f"Encoding issue: {enc['issues']}")
 
+    if issues:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        return {
+            "passed": False,
+            "issues": issues,
+            "bundle_dir": bundle_dir,
+        }
+
+    pat = re.compile(r'^' + re.escape(safe_title) + r'-\d{8}-\d{6}$')
+    previous = sorted(
+        os.path.join(base_dir, fn) for fn in os.listdir(base_dir)
+        if pat.match(fn) and os.path.isdir(os.path.join(base_dir, fn))
+    )
+    previous_path = previous[-1] if previous else None
+    last_good_root = os.path.join(base_dir, '.last-good')
+    last_good_dir = os.path.join(last_good_root, safe_title)
+    moved_previous = False
+    try:
+        if previous_path:
+            os.makedirs(last_good_root, exist_ok=True)
+            if os.path.exists(last_good_dir):
+                shutil.rmtree(last_good_dir, ignore_errors=True)
+            os.replace(previous_path, last_good_dir)
+            moved_previous = True
+        os.replace(staging_dir, bundle_dir)
+        staging_dir = None
+        for old in previous[:-1]:
+            if old != bundle_dir:
+                shutil.rmtree(old, ignore_errors=True)
+    except Exception:
+        if moved_previous and previous_path and not os.path.exists(previous_path):
+            try:
+                os.replace(last_good_dir, previous_path)
+            except Exception:
+                pass
+        if staging_dir and os.path.exists(staging_dir):
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+
     return {
-        "passed": len(issues) == 0,
-        "output_path": output_path,
+        "passed": True,
+        "output_path": final_output_path,
         "bundle_dir": bundle_dir,
-        "parts_dir": parts_dir,
+        "parts_dir": final_parts_dir,
         "part_count": len(part_files),
         "internal_brief": os.path.join(bundle_dir, L['brief_name']),
+        "last_good_bundle": last_good_dir if moved_previous else None,
         "line_count": full.count('\n') + 1,
         "chapter_count": len(chapter_texts),
         "exec_summary": bool(exec_text),
@@ -462,12 +622,15 @@ def check_compliance(requirements_path, strategy_path, report_path):
 
     mand = [(m.get('id'), m.get('item', '')) for m in (req.get('mandatory') or []) if m.get('id')]
     scor = [(s.get('id'), s.get('item', '')) for s in (req.get('scoring') or []) if s.get('id')]
+    deli = [(d.get('id'), d.get('item', '')) for d in (req.get('deliverables') or [])
+            if isinstance(d, dict) and d.get('id')]
 
     missing_mandatory = [{"id": i, "item": it} for i, it in mand if i not in mapped]
     missing_scoring = [{"id": i, "item": it} for i, it in scor if i not in mapped]
+    missing_deliverables = [{"id": i, "item": it} for i, it in deli if i not in mapped]
 
-    total = len(mand) + len(scor)
-    covered = total - len(missing_mandatory) - len(missing_scoring)
+    total = len(mand) + len(scor) + len(deli)
+    covered = total - len(missing_mandatory) - len(missing_scoring) - len(missing_deliverables)
     coverage_pct = round(covered / total * 100) if total else 100
 
     # 校验报告章节数与 strategy 一致（漏写章节会导致映射的评分项其实没落地）
@@ -478,7 +641,7 @@ def check_compliance(requirements_path, strategy_path, report_path):
 
     matrix_present = ('## 应标响应与评分对照表' in report) or ('## Compliance & Scoring Matrix' in report)
 
-    passed = (not missing_mandatory) and (not missing_scoring) and chapter_ok and matrix_present
+    passed = (not missing_mandatory) and (not missing_scoring) and (not missing_deliverables) and chapter_ok and matrix_present
     result = {
         "passed": passed,
         "coverage_pct": coverage_pct,
@@ -489,6 +652,9 @@ def check_compliance(requirements_path, strategy_path, report_path):
         "total_scoring": len(scor),
         "missing_mandatory": missing_mandatory,
         "missing_scoring": missing_scoring,
+        "addressed_deliverables": len(deli) - len(missing_deliverables),
+        "total_deliverables": len(deli),
+        "missing_deliverables": missing_deliverables,
         "chapter_count_in_report": len(chapter_headings),
         "expected_chapters": expected_chapters,
         "chapter_count_ok": chapter_ok,
@@ -525,7 +691,9 @@ def self_score(requirements_path, strategy_path, report_path, mode):
     prof = _load_profile(mode)
     target_per = prof.get('max_chars', 20000) / total_secs
 
-    # 差异化点 → 覆盖的评分 id
+    is_v3 = strategy.get('schema_version') == 'strategy/v3'
+
+    # 差异化点 → 覆盖的评分 id（仅 legacy；v3 由 customer-fit 评价组合充分性）
     diff_ids = set()
     diffs = strategy.get('differentiators') or []
     for d in diffs:
@@ -557,9 +725,9 @@ def self_score(requirements_path, strategy_path, report_path, mode):
                 weak_items.append({"id": sid, "item": s.get('item', ''), "reason": "对应章节篇幅偏薄"})
             else:
                 frac += 0.10
-            if has_diff:
+            if has_diff and not is_v3:
                 frac += 0.15
-            elif w >= 15:
+            elif w >= 15 and not is_v3:
                 weak_items.append({"id": sid, "item": s.get('item', ''), "reason": "高权重项缺差异化亮点"})
         frac = min(frac, 1.0)
         est += frac * w
@@ -583,10 +751,13 @@ def self_score(requirements_path, strategy_path, report_path, mode):
         "addressed_scoring": addressed_scoring,
         "total_scoring": len(scoring),
         "diff_count": diff_count,
-        "min_differentiators": min_diff,
-        "diff_ok": diff_count >= min_diff,
+        "min_differentiators": None if is_v3 else min_diff,
+        "diff_ok": True if is_v3 else diff_count >= min_diff,
         "within_budget": within_budget,
         "weak_items": weak_list,
+        "deprecated": is_v3,
+        "note": ("v3 仅保留 mandatory/scoring 机械兼容信号；客户价值请读取 customer-fit"
+                 if is_v3 else None),
     }
 
 
@@ -594,9 +765,10 @@ def self_score(requirements_path, strategy_path, report_path, mode):
 PLACEHOLDER_RE = re.compile(r'【([^】\n]{1,80})】')
 
 
-def human_todo(requirements_path, strategy_path, report_path, mode, output_path, lang):
-    """扫描正文占位符 + 自评薄弱项，汇总成一份「AI 不该替你决定」的人工清单。
-    按不处理的后果排序：废标风险 > 高权重丢分 > 低权重 > 竞争力薄弱。"""
+def human_todo(requirements_path, strategy_path, report_path, mode, output_path, lang,
+               intel_path=None, state_dir=None):
+    """汇总策略假设、情报缺口、正文占位符与自评薄弱项。
+    顺序：废标风险 > 未确认策略假设 > 情报缺口 > 高/低权重丢分 > 竞争力薄弱。"""
     req = read_json(requirements_path)
     strategy = read_json(strategy_path)
     report = read_text(report_path)
@@ -625,8 +797,54 @@ def human_todo(requirements_path, strategy_path, report_path, mode, output_path,
 
     scoring_loss.sort(key=lambda x: -x[0])
 
+    # -auto 的策略假设不能伪装成用户确认；即使正文没有占位符也要进入人工待办。
+    assumptions = []
+    for decision in strategy.get('open_questions') or []:
+        status = decision.get('status', 'open')
+        if status not in ('open', 'assumed'):
+            continue
+        title = decision.get('title') or decision.get('q') or '-'
+        current = decision.get('resolved') or decision.get('ai_assumption') or '-'
+        impact = decision.get('why_matters') or '-'
+        assumptions.append((title, current, impact))
+
+    intel_gaps = []
+    if intel_path and os.path.exists(intel_path):
+        try:
+            intel = read_json(intel_path)
+        except Exception:
+            intel = []
+        records = intel if isinstance(intel, list) else [intel]
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            topic = record.get('topic') or ('v3 Evidence' if record.get('schema_version') == 'intel-pool/v3' else '-')
+            for gap in record.get('gaps') or []:
+                if isinstance(gap, dict):
+                    item = (gap.get('item') or gap.get('gap') or gap.get('observed')
+                            or gap.get('target_ref') or '-')
+                    decision = gap.get('decision') or gap.get('target_ref')
+                    if decision:
+                        item = f"{item}（关联决策：{decision}）"
+                    impact = (gap.get('impact') or gap.get('next_action')
+                              or gap.get('kind') or '信息不足，需人工核验')
+                else:
+                    item = str(gap)
+                    impact = '信息不足，需人工核验'
+                intel_gaps.append((topic, item, impact))
+
     ss = self_score(requirements_path, strategy_path, report_path, mode)
     weak = ss.get('weak_items') or []
+
+    v3_diagnostics = []
+    if state_dir:
+        realization_dir = os.path.join(state_dir, 'derived', 'realization')
+        checked = prop_v3.check_canonical(
+            state_dir, stage='submission', realization_dir=realization_dir)
+        for diagnostic in checked.get('diagnostics') or []:
+            if diagnostic.get('severity') not in ('fatal', 'blocker', 'major'):
+                continue
+            v3_diagnostics.append(diagnostic)
 
     def _table(rows):
         if not rows:
@@ -636,26 +854,82 @@ def human_todo(requirements_path, strategy_path, report_path, mode, output_path,
             out.append(f"| {ch} | {ph.replace('|', '/')} | {impact} |")
         return '\n'.join(out)
 
+    def _assumption_table(rows):
+        if not rows:
+            return L['todo_none']
+        out = [
+            f"| {L['todo_decision']} | {L['todo_assumption']} | {L['todo_impact']} |",
+            "|:---|:---|:---|",
+        ]
+        for title, current, impact in rows:
+            safe = [str(v).replace('|', '/').replace('\n', ' ') for v in (title, current, impact)]
+            out.append(f"| {safe[0]} | {safe[1]} | {safe[2]} |")
+        return '\n'.join(out)
+
+    def _intel_gap_table(rows):
+        if not rows:
+            return L['todo_none']
+        out = [
+            f"| {L['todo_topic']} | {L['todo_gap']} | {L['todo_impact']} |",
+            "|:---|:---|:---|",
+        ]
+        for topic, gap, impact in rows:
+            safe = [str(v).replace('|', '/').replace('\n', ' ') for v in (topic, gap, impact)]
+            out.append(f"| {safe[0]} | {safe[1]} | {safe[2]} |")
+        return '\n'.join(out)
+
     weak_lines = [L['todo_none']] if not weak else [
         f"- [ ] **{scoring_by_id.get(w['id'], {}).get('item', w['id'])}** — {w['reason']}"
         for w in weak
     ]
+
+    def _v3_table(rows):
+        if not rows:
+            return L['todo_none']
+        out = [
+            "| Severity | Kind | Observed | Owner / repair |",
+            "|:---|:---|:---|:---|",
+        ]
+        for item in rows:
+            repair = (item.get('repair_options') or ['-'])[0] or '-'
+            values = [
+                item.get('severity') or '-', item.get('kind') or '-',
+                item.get('observed') or '-',
+                f"{item.get('owner') or '-'} · {repair}",
+            ]
+            safe = [str(value).replace('|', '/').replace('\n', ' ') for value in values]
+            out.append(f"| {safe[0]} | {safe[1]} | {safe[2]} | {safe[3]} |")
+        return '\n'.join(out)
 
     parts = [
         L['todo_title'], '',
         L['todo_note'], '',
         L['todo_blocking'], '',
         _table(blocking), '',
+        L['todo_assumptions'], '',
+        _assumption_table(assumptions), '',
+        L['todo_intel_gaps'], '',
+        _intel_gap_table(intel_gaps), '',
         L['todo_scoring'], '',
         _table([(ch, ph, im) for _, ch, ph, im in scoring_loss]), '',
         L['todo_weak'], '',
         '\n'.join(weak_lines), '',
+        L['todo_v3'], '',
+        _v3_table(v3_diagnostics), '',
     ]
     write_text_atomic(output_path, '\n'.join(parts) + '\n')
 
     return {"passed": True, "output_path": output_path,
             "blocking_count": len(blocking), "scoring_count": len(scoring_loss),
-            "weak_count": len(weak), "todo_count": len(blocking) + len(scoring_loss)}
+            "assumption_count": len(assumptions), "intel_gap_count": len(intel_gaps),
+            "weak_count": len(weak),
+            "canonical_blocker_count": sum(
+                1 for item in v3_diagnostics
+                if item.get('severity') in ('fatal', 'blocker')),
+            "canonical_major_count": sum(
+                1 for item in v3_diagnostics if item.get('severity') == 'major'),
+            "todo_count": len(blocking) + len(assumptions) + len(intel_gaps)
+            + len(scoring_loss) + len(v3_diagnostics)}
 
 
 def _load_profile(mode):
@@ -691,8 +965,90 @@ def buyer_focus(report, req, lang):
             "hint": "甲方提及少于我方 → 检查各章是否以甲方问题开篇，而非自我推销"}
 
 
+def _sensitive_fingerprint(value):
+    if not isinstance(value, str):
+        return ''
+    folded = unicodedata.normalize('NFKC', value).casefold()
+    return ''.join(
+        ch for ch in folded
+        if unicodedata.category(ch).startswith(('L', 'N'))
+    )
+
+
+def _private_raw_leaks(report, state_dir):
+    """Find exact/normalized private canonical wording reintroduced into a report."""
+    if not state_dir:
+        return []
+    documents, _ = prop_v3.load_state(state_dir)
+    report_fingerprint = _sensitive_fingerprint(report)
+    candidates = []
+
+    def add(ref, field, value, approved=()):
+        fingerprint = _sensitive_fingerprint(value)
+        approved_fingerprints = {
+            _sensitive_fingerprint(item) for item in approved if isinstance(item, str)
+        }
+        # Short labels and generic fragments create too many false positives.
+        if len(fingerprint) < 8 or fingerprint in approved_fingerprints:
+            return
+        candidates.append({"ref": ref, "field": field, "fingerprint": fingerprint})
+
+    intel = documents.get('intel-pool.json') or {}
+    for evidence in intel.get('evidence') or []:
+        if not isinstance(evidence, dict):
+            continue
+        visibility = evidence.get('visibility')
+        if visibility not in ('private', 'internal', 'unknown', 'approved_anonymized'):
+            continue
+        ref = evidence.get('id') or 'Evidence'
+        approved = (evidence.get('safe_title'), evidence.get('approved_projection'))
+        add(ref, 'content', evidence.get('content'), approved)
+        add(ref, 'title', evidence.get('title'), approved)
+        add(ref, 'source', evidence.get('source'), approved)
+
+    customer = documents.get('customer-value.json') or {}
+    for collection in ('needs', 'criteria'):
+        for item in customer.get(collection) or []:
+            if not isinstance(item, dict):
+                continue
+            publication = item.get('publication_status')
+            if publication not in ('internal_only', 'publicly_supportable', None):
+                continue
+            add(item.get('id') or collection, 'statement', item.get('statement'),
+                (item.get('approved_projection'),))
+
+    for role in customer.get('roles') or []:
+        if not isinstance(role, dict):
+            continue
+        for field in ('private_notes', 'notes'):
+            add(role.get('id') or 'Role', field, role.get(field),
+                (role.get('approved_projection'),))
+
+    strategy = documents.get('strategy.json') or {}
+    for decision in strategy.get('open_questions') or []:
+        if not isinstance(decision, dict):
+            continue
+        if decision.get('status') not in ('resolved', 'assumed'):
+            continue
+        add(decision.get('id') or decision.get('ref') or 'Gate', 'resolved',
+            decision.get('resolved'), (decision.get('safe_constraint'),))
+
+    leaks = []
+    seen = set()
+    for candidate in candidates:
+        if candidate['fingerprint'] not in report_fingerprint:
+            continue
+        key = (candidate['ref'], candidate['field'])
+        if key in seen:
+            continue
+        seen.add(key)
+        leaks.append({"ref": candidate['ref'], "field": candidate['field']})
+    return leaks
+
+
 # ── QA ─────────────────────────────────────────────────────────────────────
-def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
+def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
+                state_dir=None):
     checks = {}
     report = read_text(report_path)
     lines = report.split('\n')
@@ -723,11 +1079,21 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
         (r'生成时间\s*[:：]', '生成时间戳'),
         (r'^>\s*\*\*投标方案\*\*\s*·', '研报式元数据块'),
         (r'https?://', 'URL（投标文件不带网址书目，来源改行内标注）'),
+        (r'\b(?:DecisionJob|ValueProposition|customer[- ]fit|canonical|realization manifest)\b',
+         'v3 内部模型或审计术语'),
     ]:
         if re.search(pat, report, re.MULTILINE | re.IGNORECASE):
             leaks.append(why)
     checks['no_internal_leak'] = {"passed": len(leaks) == 0, "leaked": leaks,
                                   "hint": "这些只能进 _内部研判.md，不能进递交稿"}
+
+    private_raw_leaks = _private_raw_leaks(report, state_dir)
+    checks['no_private_raw_leak'] = {
+        "passed": len(private_raw_leaks) == 0,
+        "warning": False,
+        "found": private_raw_leaks[:20],
+        "hint": "命中 private/internal/匿名前 raw canonical 原句；只能使用 approved projection",
+    }
 
     # 章节数
     chapter_headings = re.findall(r'^## (?:[一二三四五六七八九十]+、|\d+\. )', report, re.MULTILINE)
@@ -741,9 +1107,42 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
     checks['subsection_numbering'] = {"passed": len(zh_sub) == 0,
                                       "issues": [f"line {n} 用汉字编号子节" for n in zh_sub[:5]]}
 
-    # 内部 id 泄露（S/M/D + 数字，作为独立 token）——警告级
-    leak = re.findall(r'(?<![A-Za-z0-9])[SMD]\d{1,2}(?![A-Za-z0-9])', report)
-    checks['no_id_leak'] = {"passed": len(leak) == 0, "warning": True,
+    # 内部 id 泄露：legacy S/M/D 编号 + v3 typed refs。任何命中都不能递交。
+    id_pattern = (r'(?<![A-Za-z0-9])(?:[SMD]\d{1,2}|'
+                  r'(?:REQ|ROLE|NEED|CRIT|VP|CL|MET|EL|EV|DR|DA|RES|DEP|AC|DJ|CH|'
+                  r'GATE|SRC|RN|NC|RC)-[A-Z0-9_.-]+)'
+                  r'(?![A-Za-z0-9])')
+    leak = re.findall(id_pattern, report, re.IGNORECASE)
+    exact_ids = set()
+    if state_dir:
+        try:
+            documents, _ = prop_v3.load_state(state_dir)
+            for document in documents.values():
+                if not isinstance(document, dict):
+                    continue
+                for value in document.values():
+                    if not isinstance(value, list):
+                        continue
+                    for item in value:
+                        if isinstance(item, dict):
+                            ref = item.get('id') or item.get('ref')
+                            if isinstance(ref, str) and ref:
+                                exact_ids.add(ref)
+            source_path = os.path.join(state_dir, 'source-manifest.json')
+            if os.path.isfile(source_path):
+                for item in read_json(source_path).get('sources') or []:
+                    if isinstance(item, dict) and item.get('id'):
+                        exact_ids.add(item['id'])
+            strategy = documents.get('strategy.json') or {}
+            for item in strategy.get('open_questions') or []:
+                if isinstance(item, dict) and (item.get('id') or item.get('ref')):
+                    exact_ids.add(item.get('id') or item.get('ref'))
+        except Exception:
+            exact_ids = set()
+    for ref in exact_ids:
+        if re.search(r'(?<![A-Za-z0-9])' + re.escape(ref) + r'(?![A-Za-z0-9])', report):
+            leak.append(ref)
+    checks['no_id_leak'] = {"passed": len(leak) == 0, "warning": False,
                             "found": sorted(set(leak))[:10]}
 
     # 字数
@@ -757,7 +1156,34 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None):
         strat = read_json(strategy_path)
         dc = len(strat.get('differentiators') or [])
         min_diff = prof.get('min_differentiators', 3)
-        checks['differentiators'] = {"passed": dc >= min_diff, "count": dc, "min": min_diff}
+        if strat.get('schema_version') == 'strategy/v3':
+            checks['differentiators'] = {
+                "passed": True, "warning": True, "deprecated": True,
+                "count": dc, "min": None,
+                "hint": "v3 使用 selected ValueProposition 组合充分性，不检查固定亮点数量",
+            }
+        else:
+            checks['differentiators'] = {"passed": dc >= min_diff, "count": dc, "min": min_diff}
+
+        scope_hits = []
+        unchecked = []
+        folded_report = report.casefold()
+        for scope in out_of_scope_items(strat):
+            terms = scope.get('forbidden_terms') or []
+            if not terms:
+                unchecked.append(scope.get('item'))
+            for term in terms:
+                if term.casefold() in folded_report:
+                    scope_hits.append({"item": scope.get('item'), "term": term})
+        decision_map = strat.get('decision_map') or {}
+        checks['scope_guard'] = {
+            "passed": len(scope_hits) == 0,
+            "warning": True,
+            "destination": decision_map.get('destination'),
+            "hits": scope_hits,
+            "unchecked": [item for item in unchecked if item],
+            "hint": "命中范围外禁用词需人工复核；无 forbidden_terms 的范围项交红队做语义检查",
+        }
 
     # LaTeX 公式残留（$ 后数字未转义）——警告级
     math = re.findall(r'(?<!\\)\$\d', report)
@@ -844,12 +1270,305 @@ def check_requirements(path):
                 issues.append(f"mandatory[{i}] 缺 id")
     if 'budget_cap' not in req:
         issues.append("缺 budget_cap 字段")
+    for i, d in enumerate(req.get('deliverables') or []):
+        if isinstance(d, dict) and not d.get('id'):
+            issues.append(f"deliverables[{i}] 缺 id")
     ids = all_requirement_ids(req)
     if len(ids) != len(set(ids)):
         issues.append("存在重复 id")
     return {"passed": len(issues) == 0, "issues": issues,
             "scoring_count": len(req.get('scoring') or []),
             "mandatory_count": len(req.get('mandatory') or [])}
+
+
+# ── check-strategy / 决策前沿 ───────────────────────────────────────────────
+def check_strategy(path, mode=None, require_settled=False, allow_assumed=False):
+    """校验策略骨架与本地决策地图，并动态计算当前决策前沿。"""
+    issues = []
+
+    def _has_text(value):
+        return isinstance(value, str) and bool(value.strip())
+
+    try:
+        strategy = read_json(path)
+    except Exception as e:
+        return {"passed": False, "issues": [f"JSON 解析失败: {e}"],
+                "frontier": [], "blocked": []}
+
+    declared_mode = strategy.get('depth_mode')
+    actual_mode = mode or declared_mode or 'standard'
+    if actual_mode not in ('quick', 'standard', 'deep'):
+        issues.append(f"depth_mode 非法: {actual_mode}")
+        actual_mode = 'standard'
+    if mode and declared_mode and mode != declared_mode:
+        issues.append(f"depth_mode 不一致: strategy={declared_mode}, cli={mode}")
+
+    narrative = strategy.get('narrative')
+    if not isinstance(narrative, dict):
+        issues.append("缺 narrative 对象")
+    else:
+        narrative_mode = narrative.get('mode')
+        if narrative_mode not in ('logic', 'story', 'vision', 'evidence', 'custom'):
+            issues.append(f"narrative.mode 非法: {narrative_mode}")
+        if not _has_text(narrative.get('rationale')):
+            issues.append("narrative 缺 rationale")
+        if not narrative.get('through_line'):
+            issues.append("narrative 缺 through_line")
+
+    sections = strategy.get('sections')
+    if not isinstance(sections, list) or not sections:
+        issues.append("缺 sections[]")
+    else:
+        for i, section in enumerate(sections):
+            if not isinstance(section, dict):
+                issues.append(f"sections[{i}] 必须是对象")
+                continue
+            if not section.get('narrative_role'):
+                issues.append(f"sections[{i}] 缺 narrative_role")
+            addresses = section.get('addresses')
+            if not isinstance(addresses, list) or not addresses:
+                issues.append(f"sections[{i}].addresses 必须是非空数组")
+            elif any(not _has_text(item) for item in addresses):
+                issues.append(f"sections[{i}].addresses 含非法 id")
+
+    decision_map = strategy.get('decision_map')
+    fog = []
+    if not isinstance(decision_map, dict):
+        issues.append("缺 decision_map 对象")
+        decision_map = {}
+    else:
+        if not _has_text(decision_map.get('destination')):
+            issues.append("decision_map 缺 destination")
+        fog = decision_map.get('not_yet_specified')
+        if not isinstance(fog, list):
+            issues.append("decision_map.not_yet_specified 必须是数组")
+            fog = []
+        out_of_scope = decision_map.get('out_of_scope')
+        if not isinstance(out_of_scope, list):
+            issues.append("decision_map.out_of_scope 必须是数组")
+        else:
+            for i, item in enumerate(out_of_scope):
+                if isinstance(item, str):
+                    if not _has_text(item):
+                        issues.append(f"decision_map.out_of_scope[{i}] 必须是非空文本")
+                    continue
+                if not isinstance(item, dict):
+                    issues.append(f"decision_map.out_of_scope[{i}] 必须是对象")
+                    continue
+                if not _has_text(item.get('item')):
+                    issues.append(f"decision_map.out_of_scope[{i}] 缺 item")
+                if not _has_text(item.get('reason')):
+                    issues.append(f"decision_map.out_of_scope[{i}] 缺 reason")
+                terms = item.get('forbidden_terms', [])
+                if not isinstance(terms, list) or any(not _has_text(term) for term in terms):
+                    issues.append(f"decision_map.out_of_scope[{i}].forbidden_terms 必须是文本数组")
+
+    decisions = strategy.get('open_questions')
+    if not isinstance(decisions, list):
+        issues.append("open_questions 必须是数组")
+        decisions = []
+
+    required_fields = ('title', 'q', 'why_matters', 'ai_assumption')
+    titles = []
+    for i, decision in enumerate(decisions):
+        if not isinstance(decision, dict):
+            issues.append(f"open_questions[{i}] 必须是对象")
+            continue
+        for field in required_fields:
+            if not _has_text(decision.get(field)):
+                issues.append(f"open_questions[{i}] 缺 {field}")
+        title = decision.get('title')
+        if _has_text(title):
+            titles.append(title)
+        if 'depends_on' not in decision or not isinstance(decision.get('depends_on'), list):
+            issues.append(f"open_questions[{i}].depends_on 必须是数组")
+        else:
+            for j, dep in enumerate(decision['depends_on']):
+                if not _has_text(dep):
+                    issues.append(f"open_questions[{i}].depends_on[{j}] 必须是非空文本")
+        status = decision.get('status')
+        if status not in ('open', 'resolved', 'assumed'):
+            issues.append(f"open_questions[{i}].status 非法: {status}")
+        if 'resolved' not in decision:
+            issues.append(f"open_questions[{i}] 缺 resolved")
+        if 'assumption_risk' not in decision or not isinstance(decision.get('assumption_risk'), bool):
+            issues.append(f"open_questions[{i}].assumption_risk 必须是布尔值")
+        answer = decision.get('resolved')
+        risk = decision.get('assumption_risk')
+        if status == 'open':
+            if answer is not None:
+                issues.append(f"open_questions[{i}] 仍为 open 但 resolved 已有值")
+            if risk is not False:
+                issues.append(f"open_questions[{i}] 为 open 时 assumption_risk 必须为 false")
+        elif status == 'resolved':
+            if not _has_text(answer):
+                issues.append(f"open_questions[{i}] 状态为 resolved 但 resolved 为空")
+            if risk is not False:
+                issues.append(f"open_questions[{i}] 为 resolved 时 assumption_risk 必须为 false")
+        elif status == 'assumed':
+            if not allow_assumed:
+                issues.append(f"open_questions[{i}] 使用 assumed，但当前不是 -auto 模式")
+            if not _has_text(answer):
+                issues.append(f"open_questions[{i}] 状态为 assumed 但 resolved 为空")
+            elif answer != decision.get('ai_assumption'):
+                issues.append(f"open_questions[{i}] 为 assumed 时 resolved 必须等于 ai_assumption")
+            if risk is not True:
+                issues.append(f"open_questions[{i}] 为 assumed 时 assumption_risk 必须为 true")
+
+    duplicate_titles = sorted({title for title in titles if titles.count(title) > 1})
+    if duplicate_titles:
+        issues.append(f"决策 title 重复: {', '.join(duplicate_titles)}")
+
+    title_set = set(titles)
+    status_by_title = {
+        decision.get('title'): decision.get('status')
+        for decision in decisions
+        if isinstance(decision, dict) and _has_text(decision.get('title'))
+    }
+    graph = {}
+    for i, decision in enumerate(decisions):
+        if not isinstance(decision, dict) or not _has_text(decision.get('title')):
+            continue
+        title = decision['title']
+        deps = [dep for dep in decision.get('depends_on', []) if _has_text(dep)] \
+            if isinstance(decision.get('depends_on'), list) else []
+        graph[title] = deps
+        for dep in deps:
+            if dep == title:
+                issues.append(f"决策「{title}」不能依赖自身")
+            elif dep not in title_set:
+                issues.append(f"决策「{title}」依赖不存在的决策「{dep}」")
+
+    # DFS 检测循环依赖。
+    state = {}
+    found_cycles = set()
+
+    def _visit(title, path):
+        state[title] = 1
+        for dep in graph.get(title, []):
+            if dep not in graph:
+                continue
+            if state.get(dep) == 1:
+                start = path.index(dep) if dep in path else 0
+                cycle = tuple(path[start:] + [dep])
+                if cycle not in found_cycles:
+                    found_cycles.add(cycle)
+                    issues.append(f"决策存在循环依赖: {' -> '.join(cycle)}")
+            elif state.get(dep, 0) == 0:
+                _visit(dep, path + [dep])
+        state[title] = 2
+
+    for title in graph:
+        if state.get(title, 0) == 0:
+            _visit(title, [title])
+
+    for i, item in enumerate(fog):
+        if not isinstance(item, dict):
+            issues.append(f"not_yet_specified[{i}] 必须是对象")
+            continue
+        if not _has_text(item.get('name')):
+            issues.append(f"not_yet_specified[{i}] 缺 name")
+        blocked_by = item.get('blocked_by')
+        if not isinstance(blocked_by, list):
+            issues.append(f"not_yet_specified[{i}].blocked_by 必须是数组")
+            blocked_by = []
+        for j, dep in enumerate(blocked_by):
+            if not _has_text(dep):
+                issues.append(f"not_yet_specified[{i}].blocked_by[{j}] 必须是非空文本")
+                continue
+            if dep not in title_set:
+                issues.append(f"迷雾「{item.get('name', i)}」依赖不存在的决策「{dep}」")
+        if not _has_text(item.get('promotion_signal')):
+            issues.append(f"not_yet_specified[{i}] 缺 promotion_signal")
+
+    settled_statuses = {'resolved'} | ({'assumed'} if allow_assumed else set())
+    frontier = []
+    blocked = []
+    for decision in decisions:
+        if not isinstance(decision, dict) or decision.get('status') != 'open':
+            continue
+        title = decision.get('title') or decision.get('q') or '-'
+        deps = [dep for dep in decision.get('depends_on', []) if _has_text(dep)] \
+            if isinstance(decision.get('depends_on'), list) else []
+        if all(status_by_title.get(dep) in settled_statuses for dep in deps):
+            frontier.append(title)
+        else:
+            blocked.append(title)
+
+    unresolved_count = len(frontier) + len(blocked)
+    if unresolved_count and not frontier:
+        issues.append("仍有 open 决策但决策前沿为空；检查依赖链")
+    if require_settled:
+        if unresolved_count:
+            issues.append(f"决策地图未清：仍有 {unresolved_count} 条 open 决策")
+        if fog:
+            issues.append(f"决策地图未清：仍有 {len(fog)} 条 not_yet_specified")
+
+    resolved_count = sum(1 for d in decisions if isinstance(d, dict) and d.get('status') == 'resolved')
+    assumed_count = sum(1 for d in decisions if isinstance(d, dict) and d.get('status') == 'assumed')
+    return {
+        "passed": len(issues) == 0,
+        "issues": issues,
+        "mode": actual_mode,
+        "allow_assumed": allow_assumed,
+        "decision_count": len(decisions),
+        "resolved_count": resolved_count,
+        "assumed_count": assumed_count,
+        "open_count": unresolved_count,
+        "frontier": frontier,
+        "blocked": blocked,
+        "fog_count": len(fog),
+        "out_of_scope_count": len(decision_map.get('out_of_scope') or []),
+        "settled": unresolved_count == 0 and len(fog) == 0
+        and (allow_assumed or assumed_count == 0),
+    }
+
+
+def apply_auto_decisions(path):
+    """把仍为 open 的决策原子化转换为 -auto 假设；不处理语义性的迷雾归位。"""
+    try:
+        strategy = read_json(path)
+    except Exception as e:
+        return {"passed": False, "issues": [f"JSON 解析失败: {e}"], "converted": 0}
+
+    decisions = strategy.get('open_questions')
+    if not isinstance(decisions, list):
+        return {"passed": False, "issues": ["open_questions 必须是数组"], "converted": 0}
+    decision_map = strategy.get('decision_map') or {}
+    fog = decision_map.get('not_yet_specified') or []
+    if fog:
+        return {"passed": False,
+                "issues": ["not_yet_specified 未清，先把迷雾归入决策/intel_needs/out_of_scope"],
+                "converted": 0}
+
+    issues = []
+    converted = 0
+    for i, decision in enumerate(decisions):
+        if not isinstance(decision, dict):
+            issues.append(f"open_questions[{i}] 必须是对象")
+            continue
+        status = decision.get('status')
+        if status == 'open':
+            assumption = decision.get('ai_assumption')
+            if not isinstance(assumption, str) or not assumption.strip():
+                issues.append(f"open_questions[{i}] 缺 ai_assumption，不能自动决策")
+                continue
+            decision['status'] = 'assumed'
+            decision['resolved'] = assumption
+            decision['assumption_risk'] = True
+            converted += 1
+        elif status == 'assumed':
+            if (decision.get('resolved') != decision.get('ai_assumption')
+                    or decision.get('assumption_risk') is not True):
+                issues.append(f"open_questions[{i}] 的 assumed 状态不一致")
+        elif status != 'resolved':
+            issues.append(f"open_questions[{i}].status 非法: {status}")
+
+    if issues:
+        return {"passed": False, "issues": issues, "converted": 0}
+
+    write_json_atomic(path, strategy)
+    return {"passed": True, "issues": [], "converted": converted}
 
 
 # ── detect-engine ───────────────────────────────────────────────────────────
@@ -886,7 +1605,7 @@ def _print_result(result):
 
 def main():
     _init_stdout()
-    parser = argparse.ArgumentParser(description='proposal tools — 装配/合规/自评/QA')
+    parser = argparse.ArgumentParser(description='proposal tools 3.0 — canonical/context/realization/装配/合规/QA')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p = sub.add_parser('check-encoding'); p.add_argument('file')
@@ -894,6 +1613,12 @@ def main():
     p = sub.add_parser('json-validate'); p.add_argument('file')
     p = sub.add_parser('json-get'); p.add_argument('file'); p.add_argument('key_path')
     p = sub.add_parser('check-requirements'); p.add_argument('file')
+    p = sub.add_parser('check-strategy')
+    p.add_argument('file')
+    p.add_argument('--mode', default=None, choices=['quick', 'standard', 'deep'])
+    p.add_argument('--require-settled', action='store_true')
+    p.add_argument('--auto', action='store_true', help='允许 assumed 决策（仅 -auto 流程）')
+    p = sub.add_parser('apply-auto-decisions'); p.add_argument('file')
     p = sub.add_parser('detect-engine')
     p = sub.add_parser('escape-currency'); p.add_argument('report')
 
@@ -905,6 +1630,7 @@ def main():
     p.add_argument('--mode', default='standard', choices=['quick', 'standard', 'deep'])
     p.add_argument('--output', default=None)
     p.add_argument('--lang', default='zh')
+    p.add_argument('--auto', action='store_true', help='允许已留痕的 assumed 决策')
 
     p = sub.add_parser('check-compliance')
     p.add_argument('--requirements', required=True)
@@ -923,6 +1649,7 @@ def main():
     p.add_argument('--strategy', default=None)
     p.add_argument('--requirements', default=None)
     p.add_argument('--lang', default='zh')
+    p.add_argument('--state-dir', default=None)
 
     p = sub.add_parser('human-todo')
     p.add_argument('--requirements', required=True)
@@ -931,8 +1658,18 @@ def main():
     p.add_argument('--mode', default='standard', choices=['quick', 'standard', 'deep'])
     p.add_argument('--output', required=True)
     p.add_argument('--lang', default='zh')
+    p.add_argument('--intel', default=None)
+    p.add_argument('--state-dir', default=None)
+
+    # v3 is the default pipeline.  Historic commands remain available for the
+    # explicit ``-legacy`` workflow and for old bundle maintenance.
+    prop_v3.add_cli_parsers(sub)
 
     args = parser.parse_args()
+
+    v3_exit = prop_v3.dispatch_cli(args)
+    if v3_exit is not None:
+        sys.exit(v3_exit)
 
     if args.command == 'check-encoding':
         _print_result(check_encoding(args.file))
@@ -951,6 +1688,19 @@ def main():
         r = check_requirements(args.file)
         print(f"SCORING:{r.get('scoring_count',0)} MANDATORY:{r.get('mandatory_count',0)}")
         _print_result(r)
+    elif args.command == 'check-strategy':
+        r = check_strategy(args.file, args.mode, args.require_settled, args.auto)
+        print("DECISIONS: "
+              f"total={r.get('decision_count', 0)} resolved={r.get('resolved_count', 0)} "
+              f"assumed={r.get('assumed_count', 0)} open={r.get('open_count', 0)} "
+              f"fog={r.get('fog_count', 0)}")
+        print("FRONTIER: " + (" | ".join(r.get('frontier') or []) or "-"))
+        print("BLOCKED: " + (" | ".join(r.get('blocked') or []) or "-"))
+        _print_result(r)
+    elif args.command == 'apply-auto-decisions':
+        r = apply_auto_decisions(args.file)
+        print(f"AUTO_DECISIONS: converted={r.get('converted', 0)}")
+        _print_result(r)
     elif args.command == 'detect-engine':
         print(json.dumps(detect_engine(), ensure_ascii=False)); sys.exit(0)
     elif args.command == 'escape-currency':
@@ -958,7 +1708,7 @@ def main():
         print(f"Escaped {r['changes']} dollar signs in: {args.report}"); sys.exit(0)
     elif args.command == 'assemble-proposal':
         r = assemble_proposal(args.strategy, args.requirements, args.intel,
-                              args.sections_dir, args.mode, args.output, args.lang)
+                              args.sections_dir, args.mode, args.output, args.lang, args.auto)
         if r['passed']:
             print(f"Proposal assembled: {r['output_path']}")
             print(f"BundleDir: {r['bundle_dir']}")
@@ -985,14 +1735,17 @@ def main():
         print(json.dumps(r, ensure_ascii=False, indent=2))
         sys.exit(0)
     elif args.command == 'qa-proposal':
-        r = qa_proposal(args.report, args.mode, args.strategy, args.lang, args.requirements)
+        r = qa_proposal(args.report, args.mode, args.strategy, args.lang,
+                        args.requirements, args.state_dir)
         print(json.dumps(r, ensure_ascii=False, indent=2))
         sys.exit(0 if r['passed'] else 1)
     elif args.command == 'human-todo':
         r = human_todo(args.requirements, args.strategy, args.report,
-                       args.mode, args.output, args.lang)
+                       args.mode, args.output, args.lang, args.intel, args.state_dir)
         print(f"HUMANTODO: blocking={r['blocking_count']} scoring={r['scoring_count']} "
-              f"weak={r['weak_count']} -> {r['output_path']}")
+              f"assumptions={r['assumption_count']} intel_gaps={r['intel_gap_count']} "
+              f"weak={r['weak_count']} canonical_blockers={r['canonical_blocker_count']} "
+              f"canonical_major={r['canonical_major_count']} -> {r['output_path']}")
         sys.exit(0)
 
 
