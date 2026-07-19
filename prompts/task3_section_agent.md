@@ -20,7 +20,7 @@
 
 ## 交付前自检
 
-- 标题与 `must_use.section` 一致，正文不含内部 ID、URL、prompt、工具、评分推演或销售 CTA。
+- 首行用 `# <本章标题>`；章内子节用 `##`，下一级用 `###`，不手写最终章节号（装配器统一编号）。正文不含内部 ID、`private/public/visibility` 等状态标签、URL、prompt、工具、评分推演或销售 CTA；用客户语言自然表达。
 - 每个 expected Claim/Action、Requirement 和 required visible output 都在正文中有唯一、可逐字定位的实质表达。
 - 没有把 assumed 写成事实、intended 写成 committed、示意稿写成既有业绩。
 - 只写 Markdown 文件；不要生成 realization hints 或修改 canonical。

@@ -511,6 +511,58 @@ class CheckStrategyTests(unittest.TestCase):
         self.assertNotIn("投标决策地图", report)
         self.assertNotIn("AI 假设", report)
 
+    def test_assembly_normalizes_writer_local_heading_hierarchy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = self._assembly_fixture(directory)
+            section_path = os.path.join(fixture["sections"], "section-1.md")
+            with open(section_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "# 1. 项目理解\n\n"
+                    "## 先看客户任务\n\n正文。\n\n"
+                    "### 核心判断\n\n细化内容。\n\n"
+                    "## 9.9 再看交付\n\n正文。\n\n"
+                    "## 1.5倍响应不是编号\n\n正文。\n"
+                )
+
+            result = self._assemble_at(
+                fixture, datetime.datetime(2026, 7, 15, 12, 0, 0)
+            )
+            with open(result["output_path"], "r", encoding="utf-8") as handle:
+                report = handle.read()
+            qa = prop_tools.qa_proposal(
+                result["output_path"], "standard", fixture["strategy"], "zh"
+            )
+
+        self.assertTrue(result["passed"], result.get("issues"))
+        self.assertIn("## 一、项目理解", report)
+        self.assertIn("### 1.1 先看客户任务", report)
+        self.assertIn("#### (1) 核心判断", report)
+        self.assertIn("### 1.2 再看交付", report)
+        self.assertIn("### 1.3 1.5倍响应不是编号", report)
+        self.assertNotIn("## 先看客户任务", report)
+        self.assertTrue(qa["checks"]["heading_hierarchy"]["passed"])
+
+    def test_qa_blocks_chapter_local_heading_at_h2(self):
+        strategy = _strategy()
+        strategy["decision_map"]["not_yet_specified"] = []
+        strategy["open_questions"] = []
+        report = (
+            "# 测试\n\n项目名称：测试\n\n## 目录\n\n"
+            "## 应标响应与评分对照表\n\n## 一、项目理解\n\n"
+            "## 错误子节\n\n正文。\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            strategy_path = self._write_json(directory, "strategy.json", strategy)
+            report_path = os.path.join(directory, "report.md")
+            with open(report_path, "w", encoding="utf-8") as handle:
+                handle.write(report)
+            result = prop_tools.qa_proposal(
+                report_path, "standard", strategy_path, "zh"
+            )
+
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["heading_hierarchy"]["passed"])
+
     def test_assembly_rejects_unsettled_strategy_before_writing(self):
         strategy = _strategy()
         requirements = {

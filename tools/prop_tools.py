@@ -134,6 +134,82 @@ def toc_label(lang, n, title):
     return f"{n}. {title}"
 
 
+def _strip_heading_number(title):
+    """Remove a writer-supplied chapter/subsection number before renumbering."""
+    value = re.sub(r'\s+#+\s*$', '', title.strip())
+    patterns = (
+        r'^[（(]\d+[）)]\s*',
+        r'^\d+(?:(?:\.\d+)+|[.．、])\s+',
+        r'^[一二三四五六七八九十百零〇两]+[、.．]\s*',
+    )
+    for pattern in patterns:
+        stripped = re.sub(pattern, '', value, count=1)
+        if stripped != value:
+            return stripped.strip()
+    return value
+
+
+def _normalize_section_body(body, chapter_n, expected_title):
+    """Compile writer-local headings into the final proposal hierarchy.
+
+    Writers may use H2/H3 locally because they only see one chapter.  The
+    assembled report owns the chapter H2, so local headings are shifted and
+    deterministically numbered as H3 ``N.x`` and H4 ``(x)`` headings.
+    """
+    lines = body.strip().splitlines()
+    if not lines:
+        return ''
+
+    first = re.match(r'^(#{1,2})[ \t]+(.+?)\s*$', lines[0])
+    if first:
+        first_title = _strip_heading_number(first.group(2))
+        if first.group(1) == '#' or first_title == expected_title.strip():
+            lines = lines[1:]
+            while lines and not lines[0].strip():
+                lines.pop(0)
+
+    headings = []
+    fenced = False
+    fence_marker = None
+    for index, line in enumerate(lines):
+        marker = re.match(r'^\s*(```+|~~~+)', line)
+        if marker:
+            token = marker.group(1)[0]
+            if not fenced:
+                fenced, fence_marker = True, token
+            elif token == fence_marker:
+                fenced, fence_marker = False, None
+            continue
+        if fenced:
+            continue
+        match = re.match(r'^(#{1,6})[ \t]+(.+?)\s*$', line)
+        if match:
+            headings.append((index, len(match.group(1)), match.group(2)))
+
+    if not headings:
+        return '\n'.join(lines).strip()
+
+    shift = max(0, 3 - min(level for _, level, _ in headings))
+    subsection = 0
+    subsubsection = 0
+    replacements = {}
+    for index, level, title in headings:
+        normalized_level = min(6, level + shift)
+        clean_title = _strip_heading_number(title)
+        if normalized_level == 3:
+            subsection += 1
+            subsubsection = 0
+            clean_title = f"{chapter_n}.{subsection} {clean_title}"
+        elif normalized_level == 4:
+            subsubsection += 1
+            clean_title = f"({subsubsection}) {clean_title}"
+        replacements[index] = f"{'#' * normalized_level} {clean_title}"
+
+    for index, value in replacements.items():
+        lines[index] = value
+    return '\n'.join(lines).strip()
+
+
 # ── 文件 IO ────────────────────────────────────────────────────────────────
 def read_text(path):
     with open(path, 'r', encoding='utf-8-sig') as f:
@@ -375,8 +451,9 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         if not os.path.exists(spath):
             issues.append(f"Missing section file: section-{n}.md")
             continue
-        body = read_text(spath).strip()
-        body = re.sub(r'^#{1,2} .+?\n+', '', body, count=1)  # 去掉误写的章标题
+        body = _normalize_section_body(
+            read_text(spath), n, sec.get('title', '')
+        )
         heading = chapter_heading(lang, n, sec.get('title', ''))
         chapter_texts.append(f"{heading}\n\n{body}")
 
@@ -1157,6 +1234,40 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
     ]
     checks['subsection_numbering'] = {"passed": len(zh_sub) == 0,
                                       "issues": [f"line {n} 用汉字编号子节" for n in zh_sub[:5]]}
+
+    # 章为 H2，一级子节为 H3 N.x，子子节为 H4 (x)。客户稿的
+    # 层级必须由装配结果确定，不能受分章 writer 的局部标题习惯影响。
+    hierarchy_issues = []
+    current_chapter = None
+    saw_subsection = False
+    chapter_counter = 0
+    for line_no, line in enumerate(lines, 1):
+        if re.match(r'^## (?:[一二三四五六七八九十]+、|\d+\. )', line):
+            chapter_counter += 1
+            current_chapter = chapter_counter
+            saw_subsection = False
+            continue
+        if current_chapter is None:
+            continue
+        if line.startswith('## '):
+            hierarchy_issues.append(
+                f"line {line_no} 章内标题不得与章同为 H2"
+            )
+        elif line.startswith('### '):
+            if not re.match(rf'^### {current_chapter}\.\d+\s+\S', line):
+                hierarchy_issues.append(
+                    f"line {line_no} 一级子节应为 {current_chapter}.x"
+                )
+            saw_subsection = True
+        elif line.startswith('#### '):
+            if not saw_subsection or not re.match(r'^#### \(\d+\)\s+\S', line):
+                hierarchy_issues.append(
+                    f"line {line_no} 子子节应位于子节后并使用 (x)"
+                )
+    checks['heading_hierarchy'] = {
+        "passed": len(hierarchy_issues) == 0,
+        "issues": hierarchy_issues[:10],
+    }
 
     # 内部 id 泄露：legacy S/M/D 编号 + v3 typed refs。任何命中都不能递交。
     # typed ref 大小写敏感，且纯数字 AC-* 留给 state 精确 ID 检查，避免误伤 AC-3 音频标准。

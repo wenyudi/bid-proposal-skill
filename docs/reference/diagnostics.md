@@ -84,6 +84,7 @@
 |:---|:---|:---|
 | `encoding` | 硬项 | 文件编码 |
 | `structure` | 硬项 | 标题、项目信息、目录和对照表 |
+| `heading_hierarchy` | 硬项 | 章为 H2，子节为 H3 `N.x`，子子节为 H4 `(x)`；章内不得出现同级 H2 |
 | `no_internal_leak` | 硬项 | 叙事、模式、版本、时间、URL、内部模型词 |
 | `no_private_raw_leak` | 硬项 | private/internal/匿名前 canonical 原句 |
 | `chapter_count` | 硬项 | v3 必须精确等于 `strategy.sections`；profile 最低章数仅 legacy |

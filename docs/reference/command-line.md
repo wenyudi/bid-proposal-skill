@@ -193,7 +193,7 @@ qa-proposal REPORT [--mode quick|standard|deep]
             [--lang LANG] [--state-dir DIR]
 ```
 
-检查编码、卷册结构、内部模型泄露、private raw 泄露、内部 ID、编号、篇幅、范围守卫和客户稿禁项。提供 `--state-dir` 才能扫描 canonical private 原句和完整实体 ID。
+检查编码、卷册结构、章/子节层级、内部模型泄露、private raw 泄露、内部 ID、编号、篇幅、范围守卫和客户稿禁项。提供 `--state-dir` 才能扫描 canonical private 原句和完整实体 ID。
 
 ### `human-todo`
 

@@ -24,7 +24,7 @@ import uuid
 
 ENGINE = "v3"
 ENGINE_VERSION = "3.1"
-POLICY_VERSION = "proposal-v3.1/policy-1"
+POLICY_VERSION = "proposal-v3.1/policy-2"
 CONTEXT_POLICY_VERSION = "proposal-v3.1/context-1"
 REALIZATION_POLICY_VERSION = "proposal-v3.1/realization-1"
 FIT_POLICY_VERSION = "proposal-v3.1/customer-fit-1"
@@ -33,7 +33,9 @@ FIT_POLICY_VERSION = "proposal-v3.1/customer-fit-1"
 # v3.0 state remains readable; only explicit bootstrap/migration writes the
 # new canonical schemas.
 COMPAT_ENGINE_VERSIONS = {"3.0", ENGINE_VERSION}
-COMPAT_POLICY_VERSIONS = {"proposal-v3/policy-1", POLICY_VERSION}
+COMPAT_POLICY_VERSIONS = {
+    "proposal-v3/policy-1", "proposal-v3.1/policy-1", POLICY_VERSION,
+}
 
 SAFE_PUBLICATION_VISIBILITIES = {
     "public", "tender", "authorized_source", "approved_anonymized", "named",

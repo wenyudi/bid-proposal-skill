@@ -1469,6 +1469,35 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(second["snapshot_reused"])
         self.assertFalse(artifact_registry_exists)
 
+    def test_previous_31_policy_remains_readable_but_snapshot_is_refrozen(self):
+        documents = _lean_documents()
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            run_path = os.path.join(directory, "run-manifest.json")
+            run = prop_v3._read_json(run_path)
+            run.update(
+                engine_version="3.1",
+                policy_version="proposal-v3.1/policy-1",
+            )
+            _write_json(run_path, run)
+
+            checked = prop_v3.check_canonical(directory, stage="generation")
+            compiled = prop_v3.compile_context(
+                directory, "section", target_id="CH-01"
+            )
+            frozen = prop_v3._read_json(os.path.join(
+                directory, "derived", "manifests",
+                "generation-snapshot.json",
+            ))
+            persisted_run = prop_v3._read_json(run_path)
+
+        self.assertTrue(checked["passed"], checked["issues"])
+        self.assertFalse(compiled["snapshot_reused"])
+        self.assertEqual(frozen["policy_version"], prop_v3.POLICY_VERSION)
+        self.assertEqual(
+            persisted_run["policy_version"], "proposal-v3.1/policy-1"
+        )
+
     def test_section_narrative_role_overrides_or_scopes_secondary_guide(self):
         fixed_documents = _lean_documents()
         fixed_documents["strategy.json"]["narrative"].update(

@@ -143,4 +143,4 @@ $PY {TOOLSDIR}/prop_tools.py finalize-run --state-dir "$TMPDIR" --report "$REPOR
 只要不是 submission-ready，首句必须写“已生成草案，不可直接递交”，不能用“方案完成”掩盖风险。
 
 ---
-`proposal skill · 3.1.0 · lean direct-default`
+`proposal skill · 3.1.1 · lean direct-default`
