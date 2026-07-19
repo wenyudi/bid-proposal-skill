@@ -786,6 +786,65 @@ def migrate_state(source_dir, output_dir, mode="standard", lang="zh"):
             shutil.rmtree(staging, ignore_errors=True)
 
 
+def _bootstrap_documents(proposal, proposal_path):
+    """Load inline v1 or componentized v2 Task 1 canonical documents."""
+    if not isinstance(proposal, dict):
+        return None, ["bootstrap proposal must be a JSON object"]
+    inline = proposal.get("canonical")
+    component_refs = proposal.get("canonical_files")
+    if inline is not None and component_refs is not None:
+        return None, ["bootstrap proposal cannot mix canonical and canonical_files"]
+    if isinstance(inline, dict):
+        return inline, []
+    if not isinstance(component_refs, dict):
+        return None, [
+            "bootstrap proposal must contain canonical or canonical_files object"
+        ]
+    if proposal.get("schema_version") != "bootstrap-proposal/v2":
+        return None, [
+            "componentized bootstrap requires schema_version bootstrap-proposal/v2"
+        ]
+
+    proposal_dir = os.path.dirname(os.path.abspath(proposal_path))
+    proposal_root = os.path.realpath(proposal_dir)
+    documents = {}
+    seen_paths = set()
+    issues = []
+    for filename in CANONICAL_FILES:
+        relative = component_refs.get(filename)
+        if not isinstance(relative, str) or not relative.strip():
+            issues.append("bootstrap canonical_files missing: %s" % filename)
+            continue
+        if os.path.isabs(relative):
+            issues.append("bootstrap component path must be relative: %s" % filename)
+            continue
+        resolved = os.path.realpath(os.path.join(proposal_dir, relative))
+        try:
+            contained = os.path.commonpath([proposal_root, resolved]) == proposal_root
+        except ValueError:
+            contained = False
+        if not contained:
+            issues.append("bootstrap component escapes proposal directory: %s" % filename)
+            continue
+        if resolved in seen_paths:
+            issues.append("bootstrap component path reused: %s" % filename)
+            continue
+        seen_paths.add(resolved)
+        if not os.path.isfile(resolved):
+            issues.append("bootstrap component missing: %s" % filename)
+            continue
+        try:
+            document = _read_json(resolved)
+        except (OSError, ValueError) as exc:
+            issues.append("bootstrap component unreadable %s: %s" % (filename, exc))
+            continue
+        if not isinstance(document, dict):
+            issues.append("bootstrap component must be an object: %s" % filename)
+            continue
+        documents[filename] = document
+    return (documents if not issues else None), issues
+
+
 def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
     """Atomically create canonical state from a Task 1 bootstrap proposal."""
     existing_authorities = [
@@ -796,10 +855,13 @@ def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
         return {"passed": False, "issues": [
             "bootstrap target already contains state: " + ", ".join(existing_authorities)
         ]}
-    proposal = _read_json(proposal_path)
-    documents = proposal.get("canonical") if isinstance(proposal, dict) else None
-    if not isinstance(documents, dict):
-        return {"passed": False, "issues": ["bootstrap proposal must contain canonical object"]}
+    try:
+        proposal = _read_json(proposal_path)
+    except (OSError, ValueError) as exc:
+        return {"passed": False, "issues": ["bootstrap proposal unreadable: %s" % exc]}
+    documents, component_issues = _bootstrap_documents(proposal, proposal_path)
+    if component_issues:
+        return {"passed": False, "issues": component_issues}
     missing = [name for name in CANONICAL_FILES if name not in documents]
     if missing:
         return {"passed": False, "issues": ["bootstrap missing: " + ", ".join(missing)]}

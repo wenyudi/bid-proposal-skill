@@ -508,6 +508,83 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(tender, "原始标书输入")
         self.assertRegex(manifest["sources"][0]["hash"], r"^sha256:[0-9a-f]{64}$")
 
+    def test_componentized_bootstrap_installs_all_documents_atomically(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tender_path = os.path.join(directory, "tender.txt")
+            with open(tender_path, "w", encoding="utf-8") as handle:
+                handle.write("组件化标书输入")
+            proposals = os.path.join(directory, "proposals")
+            components = os.path.join(proposals, "task1.components")
+            os.makedirs(components)
+            canonical = _valid_documents()
+            for evidence in canonical["intel-pool.json"]["evidence"]:
+                evidence["source_ref"] = "SRC-TENDER"
+            for filename, document in canonical.items():
+                _write_json(os.path.join(components, filename), document)
+            proposal_path = os.path.join(proposals, "task1.bootstrap.json")
+            _write_json(proposal_path, {
+                "schema_version": "bootstrap-proposal/v2",
+                "canonical_files": {
+                    filename: "task1.components/" + filename
+                    for filename in prop_v3.CANONICAL_FILES
+                },
+                "source_manifest": {
+                    "schema_version": "source-manifest/v1", "revision": 1,
+                    "sources": [{
+                        "id": "SRC-TENDER", "path": "tender.txt",
+                        "kind": "tender", "visibility": "tender", "hash": None,
+                    }],
+                },
+            })
+
+            result = prop_v3.bootstrap_state(directory, proposal_path)
+            installed = {
+                filename: prop_v3._read_json(os.path.join(directory, filename))
+                for filename in prop_v3.CANONICAL_FILES
+            }
+
+        self.assertTrue(result["passed"], result.get("issues"))
+        self.assertEqual(
+            installed["customer-value.json"]["schema_version"],
+            "customer-value/v2",
+        )
+        self.assertEqual(
+            installed["strategy.json"]["schema_version"], "strategy/v4"
+        )
+
+    def test_componentized_bootstrap_rejects_escape_without_partial_install(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proposals = os.path.join(directory, "proposals")
+            components = os.path.join(proposals, "task1.components")
+            os.makedirs(components)
+            canonical = _valid_documents()
+            for filename, document in canonical.items():
+                _write_json(os.path.join(components, filename), document)
+            outside = os.path.join(directory, "outside.json")
+            _write_json(outside, canonical["requirements.json"])
+            proposal_path = os.path.join(proposals, "task1.bootstrap.json")
+            refs = {
+                filename: "task1.components/" + filename
+                for filename in prop_v3.CANONICAL_FILES
+            }
+            refs["requirements.json"] = "../outside.json"
+            _write_json(proposal_path, {
+                "schema_version": "bootstrap-proposal/v2",
+                "canonical_files": refs,
+            })
+
+            result = prop_v3.bootstrap_state(directory, proposal_path)
+            installed = [
+                filename for filename in prop_v3.CANONICAL_FILES
+                if os.path.exists(os.path.join(directory, filename))
+            ]
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(installed, [])
+        self.assertTrue(any(
+            "escapes proposal directory" in issue for issue in result["issues"]
+        ))
+
     def test_bootstrap_rejects_model_supplied_source_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:
             tender_path = os.path.join(directory, "tender.txt")

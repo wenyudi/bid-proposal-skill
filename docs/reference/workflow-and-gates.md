@@ -7,7 +7,7 @@ v3 是默认引擎。无引擎标志和 `-v3` 都进入本流程；只有显式 
 | 阶段 | 主要输入 | 主要产物 | canonical 写权限 | 通过条件 |
 |:---|:---|:---|:---|:---|
 | 摄入 | 标书、素材、`[notes]`、casebase | source manifest、临时 run | 主 agent | 必须有标书；来源可追溯 |
-| Task 1 | 标书与规则、标型先验 | `task1.bootstrap.json`、五域初态 | 通过 bootstrap / 主 agent | draft schema、引用和策略结构有效 |
+| Task 1 | 标书与规则、标型先验 | 五个小组件 + `task1.bootstrap.json` 索引 | 通过 bootstrap / 主 agent | 组件逐份可读，整体 draft schema、引用和策略结构有效 |
 | Gate 1 | 只有投标人能决定的边界 | gate1 ChangeSet | `gate1` / 主 agent | open、blocked、fog 清零；答案同步真实对象 |
 | Task 2 | research brief、公开源、案例 proof task | Evidence、EvidenceLink、gap、反证 | `task2` 仅 Evidence 与 link | public 原文有 URL；用途、scope、强度可校验 |
 | Task 2.5 | value-selection brief | lead/supporting/reserve、Claim、Action、内嵌 DecisionJob/visible output | `task2.5` 的窄权限 | 不自批 Gate、不扩 authority 或已授权语义 |

@@ -25,7 +25,7 @@ bootstrap-state --state-dir DIR --proposal FILE
                 [--mode quick|standard|deep] [--lang LANG]
 ```
 
-从 Task 1 的 bootstrap proposal 原子建立五份 canonical。proposal 必须包含 `canonical` 对象和全部五个文件键；完整候选状态通过 draft 校验后才安装。
+从 Task 1 的 bootstrap proposal 原子建立五份 canonical。v2 proposal 用 `canonical_files` 引用索引同目录内的五个相对 JSON 组件，便于同一 Task 1 agent 逐份落盘和校验；绝对路径、越出 proposal 目录或重用组件路径都会拒绝。工具仍可读只含内联 `canonical` 的 v1 历史 proposal。两种形式都要读齐五域、通过整体 draft 校验后才一次安装，不会产生部分 canonical。
 
 ### `migrate-state`
 

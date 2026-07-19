@@ -129,5 +129,5 @@ submission customer-fit 固定评价十个问题：need_alignment、role_decisio
 
 ---
 ```
-proposal skill · 3.1.1 · lean policy
+proposal skill · 3.1.2 · lean policy
 ```

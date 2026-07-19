@@ -36,5 +36,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.1.1 · lean direct-default
+proposal skill · 3.1.2 · lean direct-default
 ```

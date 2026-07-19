@@ -61,8 +61,8 @@ v3.1 是默认引擎；`-v3` 是兼容 no-op，只有显式 `-legacy` 才读 `LE
 
 ### 1. 摄入、bootstrap 与 Gate 1
 
-1. 建时间戳 `$TMPDIR`；保存标书/素材清单。没有标书就向用户索要并停止，不能凭项目名猜。
-2. 主 agent 读本文件、`RULES.md`、`TYPES.md`、`DECISIONS.md`。用 `prompts/task1_teardown.md` 派一个高推理 Task 1 agent，只写 `proposals/task1.bootstrap.json`。
+1. 建时间戳 `$TMPDIR` 与 `proposals/task1.components/`；保存标书/素材清单。没有标书就向用户索要并停止，不能凭项目名猜。
+2. 主 agent 读本文件、`RULES.md`、`TYPES.md`、`DECISIONS.md`。用 `prompts/task1_teardown.md` 派一个高推理 Task 1 agent，逐份写五个组件和小索引 `proposals/task1.bootstrap.json`。
 3. 建状态并校验：
 
 ```bash
@@ -143,4 +143,4 @@ $PY {TOOLSDIR}/prop_tools.py finalize-run --state-dir "$TMPDIR" --report "$REPOR
 只要不是 submission-ready，首句必须写“已生成草案，不可直接递交”，不能用“方案完成”掩盖风险。
 
 ---
-`proposal skill · 3.1.1 · lean direct-default`
+`proposal skill · 3.1.2 · lean direct-default`

@@ -21,15 +21,20 @@
 6. 评分项决定章节骨架；每章内嵌一个 candidate primary DecisionJob、最多一个 secondary，说明目标角色从什么判断推进到什么判断。叙事只控制表达，不改变评分覆盖、Claim 强度和交付边界。
 7. 先写 `decision_map.destination`，再把只有人能决定的边界写成单题决策。可查事实进入 research gap，不问用户。
 
-## 输出
+## 输出与落盘顺序
 
-只写 `{TMPDIR}/proposals/task1.bootstrap.json`。不要直接写五份 canonical；主 agent 会用 `bootstrap-state` 原子建立它们。
+不要在一次超大 tool call 中写内联 canonical。使用同一个 Task 1 agent 按以下顺序逐份落盘，不增加互相调用：
 
-顶层结构：
+1. 建 `{TMPDIR}/proposals/task1.components/`。
+2. 依次写 `requirements.json`、`customer-value.json`、`delivery-plan.json`、`strategy.json`、`intel-pool.json`；每份都是下文定义的完整 canonical 对象。
+3. 每写完一份立即 read 并做 JSON 解析；失败只修当前份，不重写已验证组件。
+4. 最后写小索引 `{TMPDIR}/proposals/task1.bootstrap.json`。不要直接写运行目录下的五份 canonical；主 agent 会让 `bootstrap-state` 读齐组件、整体校验后原子安装。
+
+索引结构：
 
 ```json
 {
-  "schema_version": "bootstrap-proposal/v1",
+  "schema_version": "bootstrap-proposal/v2",
   "producer": "task1",
   "source_manifest": {
     "schema_version": "source-manifest/v1",
@@ -38,17 +43,17 @@
       {"id": "SRC-TENDER-01", "path": "实际路径或tender.txt", "kind": "tender|clarification|material|notes|casebase", "visibility": "tender|authorized_source|internal|private", "hash": null}
     ]
   },
-  "canonical": {
-    "requirements.json": {},
-    "customer-value.json": {},
-    "delivery-plan.json": {},
-    "strategy.json": {},
-    "intel-pool.json": {}
+  "canonical_files": {
+    "requirements.json": "task1.components/requirements.json",
+    "customer-value.json": "task1.components/customer-value.json",
+    "delivery-plan.json": "task1.components/delivery-plan.json",
+    "strategy.json": "task1.components/strategy.json",
+    "intel-pool.json": "task1.components/intel-pool.json"
   }
 }
 ```
 
-每个 canonical 必须含精确 `schema_version` 和 `revision: 1`。所有实体有全局唯一、稳定、带类型的 `id`；外键只写 ID，不嵌入对象副本。推荐 `REQ-M-* / REQ-S-* / ROLE-* / NEED-* / CRIT-* / VP-* / CL-* / MET-* / EL-* / EV-* / DR-* / DA-* / RES-* / DEP-* / AC-* / DJ-* / CH-*`。这些 ID 只用于内部状态，正文不得出现。
+五个组件必须含精确 `schema_version` 和 `revision: 1`。所有实体有全局唯一、稳定、带类型的 `id`；外键只写 ID，不嵌入对象副本。推荐 `REQ-M-* / REQ-S-* / ROLE-* / NEED-* / CRIT-* / VP-* / CL-* / MET-* / EL-* / EV-* / DR-* / DA-* / RES-* / DEP-* / AC-* / DJ-* / CH-*`。这些 ID 只用于内部状态，正文不得出现。
 
 `source_manifest.sources[]` 每项必须有唯一 id、实际 path/kind/visibility；`hash` 留 null，由 `bootstrap-state` 对本地文件或目录计算 sha256，禁止模型编造 hash。路径不存在会让 bootstrap 校验失败。
 
@@ -204,7 +209,7 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
 - 每个非空 authority_ref 都能解析到明确授权该对象/用途的 Requirement、verified Evidence 或 resolved Gate；Requirement 的 `authority_uses/authorizes_refs` 与被授权对象双向语义一致。
 - destination 具体；决策迷雾归位；只问人才能决定的事项。
 
-写完用 read 确认 JSON 完整。回答只输出：
+写完用 read 确认五个组件和索引 JSON 完整。回答只输出：
 
 ```text
 Bootstrap: {TMPDIR}/proposals/task1.bootstrap.json
