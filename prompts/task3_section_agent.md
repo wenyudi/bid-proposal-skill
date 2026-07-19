@@ -9,7 +9,7 @@
 
 ## 写法
 
-1. 先读 `common.narrative_guide`。它只决定讲法，不裁剪评分项，也不覆盖事实与承诺边界。
+1. 先读 `common.narrative_guide`；其中 `mode` 已合并全案主叙事、本章 `narrative_role` 与固定 logic/evidence 规则，`secondary` 仅是辅助讲法。它们都不裁剪评分项，也不覆盖事实与承诺边界。
 2. 围绕 `must_use.decision_jobs` 推进评委判断：承接 entry judgment，本章结束时达到 expected judgment；不要在正文暴露 DecisionJob、VP、canonical 等内部词。
 3. `requirements` 必须实质回答；`claims/actions` 只能自然改写，不得扩大 scope、知识确定性或 commitment。
 4. `draft_ready` Claim、`intended/planned` Action 可以用于安全草案，但必须保持拟议/待确认语气。未知资源继续写成边界或待确认条件，禁止补造 low/high、容量、履历或授权。

@@ -25,6 +25,7 @@ def _valid_documents():
         "mandatory": [{
             "id": "M-01", "item": "提供完整执行方案", "type": "实质性",
             "authority_uses": ["commitment_authority"],
+            "authorizes_refs": ["AC-CLOSED-LOOP"],
         }],
         "scoring": [{
             "id": "S-01", "item": "执行方案完整、可行", "weight": 30,
@@ -529,6 +530,74 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(any("source hash mismatch" in issue for issue in result["issues"]))
 
+    def test_snapshot_reuse_rechecks_sealed_source_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, _lean_documents())
+            source_path = os.path.join(directory, "tender.md")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                handle.write("冻结标书内容")
+            _write_json(os.path.join(directory, "source-manifest.json"), {
+                "schema_version": "source-manifest/v1", "revision": 1,
+                "sources": [{
+                    "id": "SRC-TENDER", "path": source_path,
+                    "kind": "tender", "visibility": "tender",
+                    "hash": prop_v3.path_hash(source_path),
+                }],
+            })
+            first = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                handle.write("运行中被改写的标书内容")
+            drifted = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                handle.write("冻结标书内容")
+            os.unlink(source_path)
+            missing = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+
+        self.assertTrue(first["passed"], first.get("issues"))
+        self.assertFalse(drifted["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "manifest.source_changed"
+            for item in drifted.get("diagnostics", [])
+        ), drifted)
+        self.assertFalse(missing["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "manifest.source_path_missing"
+            for item in missing.get("diagnostics", [])
+        ), missing)
+
+    def test_changeset_staging_resolves_relative_sources_from_live_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, _lean_documents())
+            source_path = os.path.join(directory, "tender.md")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                handle.write("事务期间保持不变的标书")
+            _write_json(os.path.join(directory, "source-manifest.json"), {
+                "schema_version": "source-manifest/v1", "revision": 1,
+                "sources": [{
+                    "id": "SRC-TENDER", "path": "tender.md",
+                    "kind": "tender", "visibility": "tender",
+                    "hash": prop_v3.path_hash(source_path),
+                }],
+            })
+            changeset_path = os.path.join(directory, "main-change.json")
+            _write_json(changeset_path, {
+                "schema_version": "changeset/v1",
+                "changeset_id": "CS-MAIN-NARRATIVE",
+                "producer": "main", "base_revisions": {"strategy.json": 1},
+                "validate_stage": "draft",
+                "operations": [{
+                    "file": "strategy.json", "op": "replace",
+                    "path": "/narrative/rationale",
+                    "value": "保持同一事实边界，只调整表达理由",
+                }],
+            })
+            result = prop_v3.apply_changeset(directory, changeset_path)
+
+        self.assertTrue(result["passed"], result.get("issues"))
+
     def test_generation_gate_and_section_context_use_canonical_public_projection(self):
         with tempfile.TemporaryDirectory() as directory:
             _make_state(directory)
@@ -815,10 +884,19 @@ class ProposalV3Tests(unittest.TestCase):
             _make_state(directory, documents)
             invalid = prop_v3.check_canonical(directory, stage="draft")
 
-            requirements["deliverables"][0].update(
-                authority_uses=["commitment_authority"],
-                authorizes_refs=["AC-CLOSED-LOOP"],
-            )
+            requirements["deliverables"][0]["authority_uses"] = [
+                "commitment_authority"]
+            _make_state(directory, documents)
+            use_only = prop_v3.check_canonical(directory, stage="draft")
+
+            requirements["deliverables"][0].pop("authority_uses")
+            requirements["deliverables"][0]["authorizes_refs"] = [
+                "AC-CLOSED-LOOP"]
+            _make_state(directory, documents)
+            ref_only = prop_v3.check_canonical(directory, stage="draft")
+
+            requirements["deliverables"][0]["authority_uses"] = [
+                "commitment_authority"]
             _make_state(directory, documents)
             repaired = prop_v3.check_canonical(directory, stage="draft")
 
@@ -828,6 +906,8 @@ class ProposalV3Tests(unittest.TestCase):
             if item["severity"] == "fatal"
         }
         self.assertIn("acceptance.authority_scope", invalid_rules)
+        self.assertFalse(use_only["passed"])
+        self.assertFalse(ref_only["passed"])
         self.assertTrue(repaired["passed"], repaired["issues"])
 
     def test_anonymized_and_allowed_use_evidence_are_hard_gated(self):
@@ -1389,6 +1469,42 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(second["snapshot_reused"])
         self.assertFalse(artifact_registry_exists)
 
+    def test_section_narrative_role_overrides_or_scopes_secondary_guide(self):
+        fixed_documents = _lean_documents()
+        fixed_documents["strategy.json"]["narrative"].update(
+            mode="story", secondary="evidence")
+        fixed_documents["strategy.json"]["sections"][0][
+            "narrative_role"] = "fixed:evidence"
+        secondary_documents = _lean_documents()
+        secondary_documents["strategy.json"]["narrative"].update(
+            mode="story", secondary="evidence")
+        secondary_documents["strategy.json"]["sections"][0][
+            "narrative_role"] = "secondary:evidence"
+
+        with tempfile.TemporaryDirectory() as directory:
+            fixed_dir = os.path.join(directory, "fixed")
+            secondary_dir = os.path.join(directory, "secondary")
+            os.makedirs(fixed_dir)
+            os.makedirs(secondary_dir)
+            _make_state(fixed_dir, fixed_documents)
+            _make_state(secondary_dir, secondary_documents)
+            fixed = prop_v3.compile_context(
+                fixed_dir, "section", target_id="CH-01")
+            secondary = prop_v3.compile_context(
+                secondary_dir, "section", target_id="CH-01")
+
+        self.assertTrue(fixed["passed"], fixed.get("issues"))
+        self.assertEqual(
+            fixed["brief"]["common"]["narrative_guide"]["mode"],
+            "evidence")
+        self.assertEqual(
+            fixed["brief"]["common"]["narrative_guide"]["source"],
+            "section_fixed")
+        self.assertTrue(secondary["passed"], secondary.get("issues"))
+        secondary_guide = secondary["brief"]["common"]["narrative_guide"]
+        self.assertEqual(secondary_guide["mode"], "story")
+        self.assertEqual(secondary_guide["secondary"]["mode"], "evidence")
+
     def test_lean_lead_requires_small_visible_output_contract(self):
         documents = _lean_documents()
         documents["strategy.json"]["sections"][0]["visible_outputs"] = []
@@ -1399,6 +1515,32 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertFalse(checked["passed"])
         self.assertTrue(any(
             item["rule_id"] == "visible_output.lead_missing"
+            for item in checked["diagnostics"]
+        ))
+
+    def test_visible_output_rejects_private_evidence_grounding(self):
+        documents = _lean_documents()
+        documents["intel-pool.json"]["evidence"].append({
+            "id": "EV-PRIVATE-GROUNDING", "kind": "private_note",
+            "title": "内部偏好", "content": "未经授权的原始沟通内容",
+            "source": "沟通纪要", "visibility": "private",
+            "quality": "asserted_from_text", "status": "active",
+            "allowed_uses": ["matching"],
+        })
+        output = documents["strategy.json"]["sections"][0][
+            "visible_outputs"][0]
+        output.update(
+            grounding_mode="evidence",
+            grounding_refs=["EV-PRIVATE-GROUNDING"],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(
+                directory, stage="generation")
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "visible_output.private_grounding"
             for item in checked["diagnostics"]
         ))
 

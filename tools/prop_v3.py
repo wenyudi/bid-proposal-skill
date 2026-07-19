@@ -179,6 +179,23 @@ def _write_json_atomic(path, value):
     _write_text_atomic(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
 
 
+def recovery_point_nonempty(path):
+    return os.path.isdir(path) and bool(os.listdir(path))
+
+
+def restore_retiring_recovery(retiring_path, last_good_path):
+    """Restore an interrupted last-good rotation without replacing good data."""
+    if (not os.path.exists(retiring_path)
+            or recovery_point_nonempty(last_good_path)):
+        return False
+    if os.path.exists(last_good_path):
+        shutil.rmtree(last_good_path, ignore_errors=True)
+    if os.path.exists(last_good_path):
+        return False
+    os.replace(retiring_path, last_good_path)
+    return True
+
+
 def _canonical_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
@@ -739,7 +756,8 @@ def migrate_state(source_dir, output_dir, mode="standard", lang="zh"):
         }
         _write_json_atomic(os.path.join(staging, "run-manifest.json"), run)
         _write_json_atomic(os.path.join(staging, "legacy-to-v3-map.json"), mapping)
-        checked = check_canonical(staging, stage="draft")
+        checked = check_canonical(
+            staging, stage="draft", source_base_dir=output_dir)
         if not checked["passed"]:
             return {"passed": False, "issues": checked["issues"], "diagnostics": checked.get("diagnostics", [])}
         _ensure_layout(output_dir)
@@ -818,7 +836,8 @@ def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
             "realization", "requirement_realization", "safe_projection",
             "scoped_authority", "customer_fit"])
         _write_json_atomic(os.path.join(staging, "run-manifest.json"), run)
-        checked = check_canonical(staging, stage="draft")
+        checked = check_canonical(
+            staging, stage="draft", source_base_dir=state_dir)
         if not checked["passed"]:
             return {"passed": False, "issues": checked["issues"], "diagnostics": checked.get("diagnostics", [])}
         _ensure_layout(state_dir)
@@ -1003,7 +1022,9 @@ def _validate_schema(documents, diagnostics):
             ))
 
 
-def _validate_manifests(state_dir, documents, diagnostics):
+def _validate_manifests(state_dir, documents, diagnostics,
+                        source_base_dir=None):
+    source_base_dir = os.path.abspath(source_base_dir or state_dir)
     source_path = os.path.join(state_dir, "source-manifest.json")
     run_path = os.path.join(state_dir, "run-manifest.json")
     if not os.path.isfile(source_path):
@@ -1069,7 +1090,7 @@ def _validate_manifests(state_dir, documents, diagnostics):
         source_item_path = item.get("path")
         if source_item_path:
             resolved = (source_item_path if os.path.isabs(source_item_path)
-                        else os.path.join(state_dir, source_item_path))
+                        else os.path.join(source_base_dir, source_item_path))
             if os.path.exists(resolved):
                 try:
                     actual_hash = path_hash(resolved)
@@ -1086,6 +1107,13 @@ def _validate_manifests(state_dir, documents, diagnostics):
                         "immutable source identity or an explicit new source revision",
                         [ref], ["compile"], "main",
                         "re-bootstrap/revise the source manifest; never silently accept drift"))
+            else:
+                diagnostics.append(_diagnostic(
+                    "manifest.source_path_missing", "unsupported", "fatal",
+                    "%s source path no longer exists" % ref,
+                    "readable sealed source at its recorded path",
+                    [ref], ["compile"], "main",
+                    "restore the recorded source or start a new run with an explicit source revision"))
         if not item.get("visibility"):
             diagnostics.append(_diagnostic(
                 "manifest.source_visibility", "schema", "fatal",
@@ -1334,23 +1362,13 @@ def _authority_valid(authority_ref, subject_ref, documents, registry,
     target = registry.get(authority_ref)
     if target and target.get("type") == "requirement":
         requirement = target.get("entity") or {}
-        subject = registry.get(subject_ref, {}).get("entity") or {}
-        subject_type = registry.get(subject_ref, {}).get("type")
         explicitly_authorized = subject_ref in set(_ref_list(requirement, "authorizes_refs"))
         use_allowed = purpose in _as_list(requirement.get("authority_uses"))
-        direct_action_basis = (subject_type == "delivery_action"
-                               and authority_ref in _ref_list(subject, "requirement_refs"))
-        acceptance_basis = False
-        if subject_type == "acceptance_contract":
-            for action in _as_list((documents.get("delivery-plan.json") or {}).get("actions")):
-                if (isinstance(action, dict)
-                        and subject_ref in _ref_list(action, "acceptance_refs")
-                        and authority_ref in _ref_list(action, "requirement_refs")):
-                    acceptance_basis = True
-                    break
-        if explicitly_authorized or (use_allowed and (direct_action_basis or acceptance_basis)):
+        if explicitly_authorized and use_allowed:
             return True, "scoped tender requirement"
-        return False, "Requirement does not explicitly authorize this subject/use"
+        return False, (
+            "Requirement must include both authority_uses=%s and authorizes_refs=%s"
+            % (purpose, subject_ref))
     if target and target.get("type") == "evidence":
         evidence = target.get("entity") or {}
         if not _evidence_is_current(evidence):
@@ -2177,6 +2195,22 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     _expect_ref(registry, output_ref, grounding_ref,
                                 {"requirement", "evidence"}, diagnostics,
                                 "grounding_refs")
+                    grounding = registry.get(grounding_ref) or {}
+                    if grounding.get("type") == "evidence":
+                        evidence = grounding.get("entity") or {}
+                        if (not _evidence_is_current(evidence)
+                                or not _evidence_projection_ready(
+                                    evidence, "proposal_narrative")):
+                            diagnostics.append(_diagnostic(
+                                "visible_output.private_grounding", "unsupported",
+                                "blocker",
+                                "%s uses non-public Evidence %s as grounding"
+                                % (output_ref, grounding_ref),
+                                "active Evidence with an authorized customer-visible projection",
+                                [output_ref, grounding_ref],
+                                ["task3", "submission"], "task2.5",
+                                "replace it with a tender Requirement or authorized public Evidence",
+                            ))
                 if not _ref_list(output, "grounding_refs"):
                     diagnostics.append(_diagnostic(
                         "visible_output.grounding", "unsupported", "blocker",
@@ -2809,7 +2843,8 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
     return diagnostics
 
 
-def check_canonical(state_dir, stage="draft", realization_dir=None, write_derived=False):
+def check_canonical(state_dir, stage="draft", realization_dir=None,
+                    write_derived=False, source_base_dir=None):
     if stage not in ("draft", "generation", "submission"):
         return {"passed": False, "issues": ["stage must be draft, generation, or submission"]}
     documents, load_issues = load_state(state_dir)
@@ -2817,7 +2852,8 @@ def check_canonical(state_dir, stage="draft", realization_dir=None, write_derive
     for issue in load_issues:
         diagnostics.append(_diagnostic("state.missing", "schema", "fatal", issue, "all five canonical files", blocks=["compile"], owner="main"))
     _validate_schema(documents, diagnostics)
-    _validate_manifests(state_dir, documents, diagnostics)
+    _validate_manifests(
+        state_dir, documents, diagnostics, source_base_dir=source_base_dir)
     registry = _build_registry(documents, diagnostics)
     _validate_relations(documents, registry, diagnostics)
     _validate_lifecycle(documents, registry, diagnostics, stage)
@@ -3301,7 +3337,8 @@ def apply_changeset(state_dir, changeset_path):
             if os.path.isfile(source_path):
                 shutil.copy2(source_path, os.path.join(validation_dir, filename))
         stage = changeset.get("validate_stage") or "draft"
-        checked = check_canonical(validation_dir, stage=stage)
+        checked = check_canonical(
+            validation_dir, stage=stage, source_base_dir=state_dir)
     finally:
         shutil.rmtree(validation_dir, ignore_errors=True)
     if not checked["passed"]:
@@ -3670,6 +3707,10 @@ def _reusable_generation_snapshot(state_dir, documents):
         state_dir, "derived", "manifests", "generation-snapshot.json")
     if not os.path.isfile(path):
         return None
+    manifest_diagnostics = []
+    _validate_manifests(state_dir, documents, manifest_diagnostics)
+    if any(item.get("severity") == "fatal" for item in manifest_diagnostics):
+        return None
     try:
         snapshot = _read_json(path)
     except (OSError, ValueError):
@@ -3852,9 +3893,9 @@ def _collect_by_refs(items, refs):
     return [copy.deepcopy(item) for item in items if isinstance(item, dict) and item.get("id") in refs]
 
 
-def _narrative_guide(strategy):
+def _narrative_guide(strategy, section=None):
     narrative = strategy.get("narrative") or {}
-    mode = narrative.get("mode") or "logic"
+    primary_mode = narrative.get("mode") or "logic"
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "narratives.json")
@@ -3862,6 +3903,44 @@ def _narrative_guide(strategy):
         library = _read_json(path)
     except (OSError, ValueError):
         library = {}
+    role = str((section or {}).get("narrative_role") or "").strip()
+    role_lower = role.lower()
+    mode = primary_mode
+    source = "strategy_primary"
+    fixed_match = re.search(
+        r"(?:fixed|mode)\s*[:=]\s*(logic|story|vision|evidence)",
+        role_lower)
+    secondary_match = re.search(
+        r"secondary\s*[:=]\s*(logic|story|vision|evidence)",
+        role_lower)
+    fixed_text = " ".join(str(value or "") for value in (
+        (section or {}).get("title"), role,
+        " ".join(_as_list((section or {}).get("sub"))),
+    ))
+    if fixed_match:
+        mode = fixed_match.group(1)
+        source = "section_fixed"
+    elif re.search(r"报价|合规|资质|资格|响应对照|price|compliance|qualification",
+                   fixed_text, re.IGNORECASE):
+        mode = "evidence"
+        source = "section_fixed"
+    elif role_lower in library:
+        mode = role_lower
+        source = "section_narrative_role"
+    else:
+        signals = {
+            "evidence": ("证据", "数据", "口径", "验收", "依据"),
+            "story": ("场景", "故事", "体验", "共鸣"),
+            "vision": ("愿景", "战略", "蓝图", "长期"),
+            "logic": ("逻辑", "论证", "机制", "路径", "判断"),
+        }
+        role_mode = next((
+            candidate for candidate, terms in signals.items()
+            if any(term in role for term in terms)
+        ), None)
+        if role_mode:
+            mode = role_mode
+            source = "section_narrative_role"
     guide = copy.deepcopy(library.get(mode) or {})
     if not guide and mode == "custom":
         guide = {
@@ -3869,10 +3948,28 @@ def _narrative_guide(strategy):
             "chapter_moves": [], "tone": "follow the approved custom rationale",
             "risks": ["do not trade away Requirement coverage or truth boundaries"],
         }
-    return {"mode": mode, **guide}
+    result = {
+        "mode": mode, "source": source,
+        "declared_primary_mode": primary_mode, **guide,
+    }
+    secondary = narrative.get("secondary")
+    if isinstance(secondary, dict):
+        secondary = secondary.get("mode")
+    secondary_mode = secondary_match.group(1) if secondary_match else secondary
+    if (secondary_mode in library and secondary_mode != mode
+            and (section is None or secondary_match)):
+        secondary_guide = library[secondary_mode]
+        result["secondary"] = {
+            "mode": secondary_mode,
+            "use": "auxiliary presentation only; never change semantic authority",
+            "core": secondary_guide.get("core"),
+            "tone": secondary_guide.get("tone"),
+            "risks": copy.deepcopy(secondary_guide.get("risks") or []),
+        }
+    return result
 
 
-def _brief_common(documents, include_narrative_guide=False):
+def _brief_common(documents, include_narrative_guide=False, section=None):
     strategy = documents["strategy.json"]
     decisions = []
     for decision in _as_list(strategy.get("open_questions")):
@@ -3922,7 +4019,7 @@ def _brief_common(documents, include_narrative_guide=False):
         ],
     }
     if include_narrative_guide:
-        common["narrative_guide"] = _narrative_guide(strategy)
+        common["narrative_guide"] = _narrative_guide(strategy, section)
     return common
 
 
@@ -4091,6 +4188,26 @@ def _compile_section(documents, section_id):
                 public_evidence.append(link_projection)
         elif link.get("relation") == "refutes" and _evidence_is_current(evidence):
             counter_evidence.append(link_projection)
+    projected_grounding_refs = {
+        item.get("source_ref") for item in public_evidence
+        if isinstance(item, dict) and item.get("source_ref")
+    }
+    for output in _as_list(section.get("visible_outputs")):
+        if not isinstance(output, dict):
+            continue
+        for evidence_ref in _ref_list(output, "grounding_refs"):
+            if evidence_ref in projected_grounding_refs:
+                continue
+            projection = _public_projection(evidence_by_ref.get(evidence_ref) or {})
+            if projection:
+                projection.update({
+                    "target_ref": output.get("id"),
+                    "relation": "supports",
+                    "support_scope": output.get("truth_boundary"),
+                    "relevance_reason": "visible output grounding contract",
+                })
+                public_evidence.append(projection)
+                projected_grounding_refs.add(evidence_ref)
     requirement_refs = _ref_list(section, "addresses")
     requirements = []
     for collection in ("mandatory", "scoring", "deliverables"):
@@ -4311,8 +4428,10 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
         "input_revisions": revisions, "input_hashes": hashes,
         "compiler_version": ENGINE_VERSION, "context_policy_version": CONTEXT_POLICY_VERSION,
         "common": _brief_common(
-            documents, include_narrative_guide=target in (
-                "section", "exec-summary")),
+            documents,
+            include_narrative_guide=target in ("section", "exec-summary"),
+            section=((payload.get("must_use") or {}).get("section")
+                     if target == "section" else None)),
         "must_use": payload.get("must_use") or {}, "may_use": payload.get("may_use") or {},
         "forbidden": payload.get("forbidden") or {},
         "expected_outputs": payload.get("expected_outputs") or [],
@@ -4644,6 +4763,16 @@ def audit_realization(state_dir, section_ref, section_path, hints_path=None,
         for item in _as_list((brief.get("must_use") or {}).get("visible_outputs"))
         if isinstance(item, dict) and item.get("id")
     }
+    brief_must_use = brief.get("must_use") or {}
+    safe_grounding_refs = {
+        item.get("id") for item in _as_list(brief_must_use.get("requirements"))
+        if isinstance(item, dict) and item.get("id")
+    }
+    safe_grounding_refs.update(
+        item.get("source_ref")
+        for item in _as_list(brief_must_use.get("public_evidence"))
+        if isinstance(item, dict) and item.get("source_ref")
+    )
     visible_realizations = []
     visible_by_ref = {}
     visible_items = ((semantic.get("visible_output_evaluations") or [])
@@ -4718,11 +4847,20 @@ def audit_realization(state_dir, section_ref, section_path, hints_path=None,
             issues.append("visible output %s has unanchored required fields" % output_ref)
         grounding_presented = set(_ref_list(
             evaluation, "grounding_refs_presented"))
-        unknown_grounding = grounding_presented - set(
-            contract.get("grounding_refs") or [])
+        contract_grounding = set(contract.get("grounding_refs") or [])
+        unsafe_contract_grounding = contract_grounding - safe_grounding_refs
+        if unsafe_contract_grounding:
+            issues.append(
+                "visible output %s contract contains non-public grounding: %s"
+                % (output_ref, ", ".join(sorted(unsafe_contract_grounding))))
+        unknown_grounding = grounding_presented - contract_grounding
         if unknown_grounding:
             issues.append("visible output %s uses unapproved grounding: %s" % (
                 output_ref, ", ".join(sorted(unknown_grounding))))
+        nonpublic_grounding = grounding_presented - safe_grounding_refs
+        if nonpublic_grounding:
+            issues.append("visible output %s presents non-public grounding: %s" % (
+                output_ref, ", ".join(sorted(nonpublic_grounding))))
         if status_value == "filled" and not grounding_presented:
             issues.append("visible output %s filled without observed grounding" % output_ref)
         visible_realizations.append({
@@ -5091,17 +5229,6 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True,
     moved_target = False
     retired_last_good = False
 
-    def recovery_nonempty(path):
-        return os.path.isdir(path) and bool(os.listdir(path))
-
-    def restore_retiring():
-        if not os.path.exists(retiring) or recovery_nonempty(last_good):
-            return
-        if os.path.exists(last_good):
-            shutil.rmtree(last_good, ignore_errors=True)
-        if not os.path.exists(last_good):
-            os.replace(retiring, last_good)
-
     try:
         for filename in CANONICAL_FILES + ("source-manifest.json", "run-manifest.json", "legacy-to-v3-map.json"):
             source = os.path.join(state_dir, filename)
@@ -5130,12 +5257,12 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True,
         })
         # Reconcile a prior interrupted rotation before starting a new one.
         if os.path.exists(retiring):
-            if recovery_nonempty(last_good):
+            if recovery_point_nonempty(last_good):
                 shutil.rmtree(retiring, ignore_errors=True)
                 if os.path.exists(retiring):
                     raise OSError("cannot clear stale recovery point: %s" % retiring)
             else:
-                restore_retiring()
+                restore_retiring_recovery(retiring, last_good)
         if os.path.exists(last_good):
             os.replace(last_good, retiring)
             retired_last_good = True
@@ -5160,10 +5287,10 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True,
                 pass
         if retired_last_good:
             try:
-                restore_retiring()
+                restore_retiring_recovery(retiring, last_good)
             except Exception:
                 pass
-        if recovery_nonempty(last_good):
+        if recovery_point_nonempty(last_good):
             recovery_status = "last-good preserved"
         else:
             recovery_status = "last-good may be lost; inspect %s" % last_good

@@ -164,13 +164,13 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
   },
   "open_questions": [],
   "sections": [
-    {"id": "CH-01", "n": 1, "title": "含主张的章标题", "addresses": ["REQ-S-PLAN"], "sub": ["不含编号的主张式子节"], "decision_job": {"id": "DJ-UNDERSTAND-01", "job_kind": "understand|believe|value|deliver|safe|choose", "role_refs": ["ROLE-BUSINESS"], "criterion_refs": ["CRIT-DELIVERY"], "value_proposition_refs": ["VP-CLOSED-LOOP"], "claim_refs": ["CL-CLOSED-LOOP"], "action_refs": ["DA-CLOSED-LOOP"], "entry_judgment": "本章开始前的判断", "expected_judgment": "本章结束后的新判断", "evidence_burden": "", "transition": {"inherits": "", "must_advance": "", "hands_off": ""}}, "secondary_decision_job": null, "visible_outputs": [], "narrative_role": "", "intel_needs": []}
+    {"id": "CH-01", "n": 1, "title": "含主张的章标题", "addresses": ["REQ-S-PLAN"], "sub": ["不含编号的主张式子节"], "decision_job": {"id": "DJ-UNDERSTAND-01", "job_kind": "understand|believe|value|deliver|safe|choose", "role_refs": ["ROLE-BUSINESS"], "criterion_refs": ["CRIT-DELIVERY"], "value_proposition_refs": ["VP-CLOSED-LOOP"], "claim_refs": ["CL-CLOSED-LOOP"], "action_refs": ["DA-CLOSED-LOOP"], "entry_judgment": "本章开始前的判断", "expected_judgment": "本章结束后的新判断", "evidence_burden": "", "transition": {"inherits": "", "must_advance": "", "hands_off": ""}}, "secondary_decision_job": null, "visible_outputs": [], "narrative_role": "primary|secondary:evidence|fixed:logic|fixed:evidence", "intel_needs": []}
   ],
   "change_log": []
 }
 ```
 
-章节数完全由标书实际结构和 `sections` 决定，不设 v3 固定下限、不为凑数新增孤儿章。每章必须映射 Requirement；内嵌一个 `decision_job`，最多一个 `secondary_decision_job`。Task 1 的 `visible_outputs` 可为空或只记 candidate burden；Task 2.5 为每个 lead VP 在所属章收敛至少一个 required 契约：`id/purpose/supports_refs/required_fields/grounding_refs/grounding_mode(tender|evidence|illustrative)/truth_boundary/requiredness`。外部附件不放进该契约，进入人工待办。全案旅程可回访 understand → believe → value → deliver → safe → choose，不要求六阶段一一对应。报价、合规、资质章固定 logic/evidence 呈现。
+章节数完全由标书实际结构和 `sections` 决定，不设 v3 固定下限、不为凑数新增孤儿章。每章必须映射 Requirement；内嵌一个 `decision_job`，最多一个 `secondary_decision_job`。`narrative_role` 用 `primary`、`secondary:<strategy.secondary>` 或 `fixed:logic|fixed:evidence`，报价、合规、资质章必须 fixed。Task 1 的 `visible_outputs` 可为空或只记 candidate burden；Task 2.5 为每个 lead VP 在所属章收敛至少一个 required 契约：`id/purpose/supports_refs/required_fields/grounding_refs/grounding_mode(tender|evidence|illustrative)/truth_boundary/requiredness`。外部附件不放进该契约，进入人工待办。全案旅程可回访 understand → believe → value → deliver → safe → choose，不要求六阶段一一对应。
 
 `open_questions` 仍严格采用 DECISIONS.md 的 schema；每题必须有不可变 `id:"GATE-*"`，以及 title/q/why_matters/ai_assumption/depends_on/status/resolved/assumption_risk、`visibility: internal|private`、不暴露原答复的 `safe_constraint` 和 `affected_refs`。数量可为 0。涉及能力、资源、报价、案例权限、关键 KPI 和新增承诺时，列全受影响 VP/Claim/Action/Resource/Acceptance/Evidence ID；后续 committed/confirmed/公开匿名只能引用真实 resolved Gate、明确标书 Requirement 或 verified 且 scoped 的 Evidence，不能填写虚构 `GATE-*`。
 

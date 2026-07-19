@@ -48,7 +48,8 @@ class QAGateCorpusTests(unittest.TestCase):
     def test_canonical_and_legacy_ids_are_blocked(self):
         result = self._qa(
             "内部映射 REQ-M-QUALIFICATION、VP-CLOSED-LOOP 与 "
-            "GATE-CAPABILITY-TEAM 不得进入正文；评分编号 S1、S3 与 M2 也不得出现。"
+            "GATE-CAPABILITY-TEAM、OUT-RESPONSIBILITY-CARD 不得进入正文；"
+            "评分编号 S1、S3 与 M2 也不得出现。"
         )
 
         check = result["checks"]["no_id_leak"]
@@ -57,6 +58,7 @@ class QAGateCorpusTests(unittest.TestCase):
             "REQ-M-QUALIFICATION",
             "VP-CLOSED-LOOP",
             "GATE-CAPABILITY-TEAM",
+            "OUT-RESPONSIBILITY-CARD",
             "S1",
             "S3",
             "M2",

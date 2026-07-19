@@ -29,7 +29,9 @@ Criterion ────┘                ↓
                   Section(DecisionJob + visible output) → realization
 ```
 
-Requirement 轨和客户价值轨并行存在：章节映射到 Requirement 只证明结构覆盖，DecisionPath 只证明 Role × Need × Criterion 连接；submission 还要求正文独立审计为 addressed / entailed，并把 required visible output 的字段判为 filled。
+Requirement 轨和客户价值轨并行存在：章节映射到 Requirement 只证明结构覆盖，DecisionPath 只证明 Role × Need × Criterion 连接；submission 还要求正文独立审计为 addressed / entailed，并把 required visible output 的字段判为 filled。visible output 的 grounding 只能引用标书 Requirement 或具有有效客户可见投影的 active Evidence，private/internal Evidence 不能借 semantic sidecar 充当正文依据。
+
+Section 的 `narrative_role` 使用 `primary`、`secondary:<mode>`、`fixed:logic` 或 `fixed:evidence`。编译器把它与全案 narrative 合并为本章唯一 effective guide；报价、合规、资质章固定为 logic/evidence，secondary 只有 presentation authority。
 
 ## 核心状态轴
 

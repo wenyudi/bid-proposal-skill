@@ -570,26 +570,16 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     moved_previous = False
     retired_last_good = False
 
-    def _recovery_nonempty(path):
-        return os.path.isdir(path) and bool(os.listdir(path))
-
-    def _restore_retiring():
-        if not os.path.exists(retiring_dir) or _recovery_nonempty(last_good_dir):
-            return
-        if os.path.exists(last_good_dir):
-            shutil.rmtree(last_good_dir, ignore_errors=True)
-        if not os.path.exists(last_good_dir):
-            os.replace(retiring_dir, last_good_dir)
-
     try:
         # Reconcile a prior interrupted rotation before starting a new one.
         if os.path.exists(retiring_dir):
-            if _recovery_nonempty(last_good_dir):
+            if prop_v3.recovery_point_nonempty(last_good_dir):
                 shutil.rmtree(retiring_dir, ignore_errors=True)
                 if os.path.exists(retiring_dir):
                     raise OSError(f"Cannot clear stale recovery point: {retiring_dir}")
             else:
-                _restore_retiring()
+                prop_v3.restore_retiring_recovery(
+                    retiring_dir, last_good_dir)
         if previous_path:
             os.makedirs(last_good_root, exist_ok=True)
             if os.path.exists(last_good_dir):
@@ -612,7 +602,8 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
                 pass
         if retired_last_good:
             try:
-                _restore_retiring()
+                prop_v3.restore_retiring_recovery(
+                    retiring_dir, last_good_dir)
             except Exception:
                 pass
         if staging_dir and os.path.exists(staging_dir):
@@ -1171,7 +1162,7 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
     # typed ref 大小写敏感，且纯数字 AC-* 留给 state 精确 ID 检查，避免误伤 AC-3 音频标准。
     typed_id_pattern = (
         r'(?<![A-Za-z0-9])'
-        r'(?:REQ|ROLE|NEED|CRIT|VP|CL|MET|EL|EV|DR|DA|RES|DEP|AC|DJ|CH|'
+        r'(?:REQ|ROLE|NEED|CRIT|VP|CL|MET|EL|EV|DR|DA|RES|DEP|AC|DJ|CH|OUT|'
         r'GATE|SRC|RN|NC|RC)-(?=[A-Z0-9_.-]*[A-Z])[A-Z0-9_.-]+'
         r'(?![A-Za-z0-9])'
         r'|(?<![A-Za-z0-9])(?:CH|RN|NC|RC)-\d{1,3}(?![A-Za-z0-9])'
