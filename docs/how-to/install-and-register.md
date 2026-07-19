@@ -2,7 +2,7 @@
 
 仅 clone 仓库不会让宿主自动执行 proposal 流程。你还需要注册一个 skill 入口，并让入口指向仓库这个唯一事实来源。
 
-以下步骤只覆盖仓库中已有明确映射的 Claude Code 和 pi。其他宿主应先确认自己的 skill、子 agent、联网抓取与文件工具注册机制，不要直接套用未经验证的命令。
+以下步骤覆盖 Codex、Claude Code 和 pi。Codex 直接注册整个仓库；Claude Code 与 pi 使用一个指向仓库的薄入口，避免复制 prompt。
 
 ## 1. 克隆仓库
 
@@ -18,7 +18,25 @@ python3 -m unittest discover -s tests
 
 测试应全部通过。后续入口只引用这个目录，更新时在仓库内执行常规 `git pull`，无需复制 prompts。
 
-## 2. 建立跨宿主入口
+## 2. 注册到 Codex
+
+Codex 从 `${CODEX_HOME:-$HOME/.codex}/skills` 发现 skill。先确认目标不存在，再把整个仓库软链进去；把示例仓库路径替换为实际绝对路径：
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+ls -ld "${CODEX_HOME:-$HOME/.codex}/skills/proposal"
+ln -s /绝对路径/proposal "${CODEX_HOME:-$HOME/.codex}/skills/proposal"
+```
+
+若 `ls` 已显示同名目标，先确认它是否指向本仓库，不要覆盖其他版本。`agents/openai.yaml` 提供 Codex 的展示名称和默认调用提示；主流程仍只以仓库根目录的 `SKILL.md` 为准。
+
+新开 Codex 会话后用 `$proposal` 调用，例如：
+
+```text
+$proposal /绝对路径/一份测试标书.md -quick
+```
+
+## 3. 建立 Claude Code / pi 入口
 
 创建入口目录：
 
@@ -39,7 +57,7 @@ description: 政企传媒技术标 v3 生成：拆标书硬要求，建立多角
 完整定义位于 `{REPO}`，它是唯一事实来源。
 
 1. Read `{REPO}/SKILL.md`、`{REPO}/RULES.md`、`{REPO}/TYPES.md`、`{REPO}/profiles.json`；Task 1 前 Read `{REPO}/DECISIONS.md`。用户显式 `-legacy` 时改读 `{REPO}/LEGACY.md`，两套引擎不得混线。
-2. 严格执行 SKILL.md：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择 → generation gate/snapshot → 并行 Task 3 → 独立 realization audit → realized-only 综述 → 装配/硬检/fit → 四视角红队/Gate 2 → `_state` 归档。
+2. 严格执行 SKILL.md：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择/成果契约 → safe-draft snapshot → 并行 Task 3 → 批量独立 realization audit → realized-only 综述 → 装配 → 自适应红队/Gate 2 → `validate-run` / `finalize-run`。
 3. 所有仓库相对路径从 `{REPO}` 解析；Python 优先 `python3`，若不可用再选择当前平台的 Python 3。
 4. canonical 只由主 agent 通过 ChangeSet 写。Task 2 必须抓取原文；Task 3 只读 compiled brief；realization auditor 必须与 writer 分离；红队只提交 root diagnostic。
 5. `-auto` 的 assumed 决策阻断直接递交。private notes、URL、canonical ID、策略/模式/工具痕迹不得进入递交稿；下划线内部内容不得递交。
@@ -58,7 +76,7 @@ description: 政企传媒技术标 v3 生成：拆标书硬要求，建立多角
 
 入口文件应很短。不要把仓库中的主 prompt 复制进去，否则仓库更新后会出现两份不一致的事实来源。
 
-## 3. 注册到 Claude Code
+## 4. 注册到 Claude Code
 
 Claude Code 使用 `~/.claude/skills/`。先检查目标是否已存在：
 
@@ -77,9 +95,9 @@ ln -s ../../.agents/skills/proposal ~/.claude/skills/proposal
 
 pi 原生读取 `~/.agents/skills/`，不需要 Claude Code 这一步软链。
 
-## 4. 验证注册
+## 5. 验证注册
 
-关闭旧会话并新开一个会话，然后输入：
+关闭旧会话并新开一个会话。Claude Code / pi 输入：
 
 ```text
 /proposal /绝对路径/一份测试标书.md -quick

@@ -109,8 +109,3 @@ EvidenceProposal: {TMPDIR}/proposals/task2.intel.json
 LinksProposal: {TMPDIR}/proposals/task2.links.json
 Evidence: <数> · Links: <数> · Gaps: <数> · Sources: <数>
 ```
-
----
-```
-proposal skill · v3 direct-default
-```

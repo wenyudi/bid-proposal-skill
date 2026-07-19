@@ -183,6 +183,7 @@ def check_encoding(path):
 
 # ── 字数 ─────────────────────────────────────────────────────────────────
 def _clean_md(text):
+    text = re.sub(r'^[ \t]*\|?[ \t:|-]+\|[ \t:|-]*$', '', text, flags=re.MULTILINE)
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^>\s?', '', text, flags=re.MULTILINE)
     text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)
@@ -200,20 +201,6 @@ def word_count_text(text):
 
 def word_count(path):
     return word_count_text(read_text(path))
-
-
-# ── GitHub 锚点 ─────────────────────────────────────────────────────────────
-def github_anchor(text):
-    text = text.lower()
-    out = []
-    for ch in text:
-        cat = unicodedata.category(ch)
-        if cat.startswith(('L', 'N')) or ch in (' ', '_', '-'):
-            out.append(ch)
-    s = ''.join(out)
-    s = re.sub(r'\s+', '-', s)
-    s = re.sub(r'-+', '-', s).strip('-')
-    return s
 
 
 # ── 版本 ─────────────────────────────────────────────────────────────────
@@ -467,97 +454,101 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     # 上一份成功卷册同时进入隐藏的 .last-good；失败构建不碰当前交付物。
     os.makedirs(base_dir, exist_ok=True)
     staging_dir = tempfile.mkdtemp(prefix='.proposal-bundle-staging-', dir=base_dir)
-    parts_dir = os.path.join(staging_dir, L['parts_dir'])
-    output_path = os.path.join(staging_dir, L['combined_name'])
-    os.makedirs(parts_dir, exist_ok=True)
-    write_text_atomic(output_path, full)
+    try:
+        parts_dir = os.path.join(staging_dir, L['parts_dir'])
+        output_path = os.path.join(staging_dir, L['combined_name'])
+        os.makedirs(parts_dir, exist_ok=True)
+        write_text_atomic(output_path, full)
 
-    # 分册（便于拼 Word / 单章重写）
-    idx = 0
-    part_files = []
+        # 分册（便于拼 Word / 单章重写）
+        idx = 0
+        part_files = []
 
-    def _emit(name, body):
-        nonlocal idx
-        fn = f"{idx:02d}-{re.sub(r'[<>:\"/\\\\|?*]', '-', name)}.md"
-        write_text_atomic(os.path.join(parts_dir, fn), body.rstrip() + "\n")
-        part_files.append(fn)
-        idx += 1
+        def _emit(name, body):
+            nonlocal idx
+            fn = f"{idx:02d}-{re.sub(r'[<>:\"/\\\\|?*]', '-', name)}.md"
+            write_text_atomic(os.path.join(parts_dir, fn), body.rstrip() + "\n")
+            part_files.append(fn)
+            idx += 1
 
-    _emit(L['toc_label_file'], f"{L['toc']}\n\n{toc_text}")
-    _emit(L['matrix_label_file'], f"{L['matrix']}\n\n{L['matrix_note']}\n\n{matrix_text}")
-    if exec_text:
-        _emit(L['exec_summary_label'], exec_text)
-    for sec, body in zip(sections, chapter_texts):
-        _emit(toc_label(lang, sec.get('n'), sec.get('title', '')), body)
+        _emit(L['toc_label_file'], f"{L['toc']}\n\n{toc_text}")
+        _emit(L['matrix_label_file'], f"{L['matrix']}\n\n{L['matrix_note']}\n\n{matrix_text}")
+        if exec_text:
+            _emit(L['exec_summary_label'], exec_text)
+        for sec, body in zip(sections, chapter_texts):
+            _emit(toc_label(lang, sec.get('n'), sec.get('title', '')), body)
 
-    # ⚠️ 内部研判（不递交）：把所有会暴露底牌的东西关在这里
-    nar = strategy.get('narrative') or {}
-    entries, _ = extract_refs(intel)
-    budget_str = (L['budget_within'].format(v=cap.get('value'), u=cap.get('unit', ''))
-                  if cap.get('value') is not None else L['budget_range'])
-    brief = [
-        L['brief_title'], '', L['brief_warn'], '',
-        f"## {L['brief_params']}", '',
-        f"- {L['gen']}：{gen_time}",
-        f"- {L['mode']}：{mode}",
-        f"- {L['narrative']}：{nar.get('mode', '-')}"
-        + (f" + {nar.get('secondary')}" if nar.get('secondary') else ''),
-        f"- {L['through_line']}：{nar.get('through_line', '-')}",
-        f"- {L['budget_resp']}：{budget_str}",
-        f"- {L['chars']}：{wc}",
-        f"- {L['version']}：v{read_version()}",
-    ]
+        # ⚠️ 内部研判（不递交）：把所有会暴露底牌的东西关在这里
+        nar = strategy.get('narrative') or {}
+        entries, _ = extract_refs(intel)
+        budget_str = (L['budget_within'].format(v=cap.get('value'), u=cap.get('unit', ''))
+                      if cap.get('value') is not None else L['budget_range'])
+        brief = [
+            L['brief_title'], '', L['brief_warn'], '',
+            f"## {L['brief_params']}", '',
+            f"- {L['gen']}：{gen_time}",
+            f"- {L['mode']}：{mode}",
+            f"- {L['narrative']}：{nar.get('mode', '-')}"
+            + (f" + {nar.get('secondary')}" if nar.get('secondary') else ''),
+            f"- {L['through_line']}：{nar.get('through_line', '-')}",
+            f"- {L['budget_resp']}：{budget_str}",
+            f"- {L['chars']}：{wc}",
+            f"- {L['version']}：v{read_version()}",
+        ]
 
-    # 决策地图只进内部研判：保留用户确认与 -auto 假设，TMPDIR 清理后仍可追溯。
-    decision_map = strategy.get('decision_map') or {}
-    decisions = strategy.get('open_questions') or []
-    if decision_map or decisions:
-        brief.extend(['', f"## {L['brief_decisions']}", ''])
-        destination = decision_map.get('destination')
-        if destination:
-            brief.append(f"- **{L['decision_destination']}**：{destination}")
-        status_labels = {
-            'resolved': L['decision_resolved'],
-            'assumed': L['decision_assumed'],
-            'open': L['decision_open'],
-        }
-        for status in ('resolved', 'assumed', 'open'):
-            for decision in decisions:
-                if decision.get('status', 'open') != status:
-                    continue
-                title = decision.get('title') or decision.get('q') or '-'
-                answer = decision.get('resolved') or decision.get('ai_assumption') or '-'
-                risk = decision.get('why_matters') or ''
-                suffix = f" — {risk}" if status in ('assumed', 'open') and risk else ''
-                brief.append(f"- **{status_labels[status]} · {title}**：{answer}{suffix}")
-        fog = decision_map.get('not_yet_specified') or []
-        if fog:
-            names = [item.get('name', '-') if isinstance(item, dict) else str(item) for item in fog]
-            brief.append(f"- **{L['decision_fog']}**：{'；'.join(names)}")
-        out_of_scope = out_of_scope_items(strategy)
-        if out_of_scope:
-            rendered = []
-            for item in out_of_scope:
-                text = item['item']
-                if item['reason']:
-                    text += f"（{item['reason']}）"
-                rendered.append(text)
-            brief.append(f"- **{L['decision_out']}**：{'；'.join(rendered)}")
+        # 决策地图只进内部研判：保留用户确认与 -auto 假设，TMPDIR 清理后仍可追溯。
+        decision_map = strategy.get('decision_map') or {}
+        decisions = strategy.get('open_questions') or []
+        if decision_map or decisions:
+            brief.extend(['', f"## {L['brief_decisions']}", ''])
+            destination = decision_map.get('destination')
+            if destination:
+                brief.append(f"- **{L['decision_destination']}**：{destination}")
+            status_labels = {
+                'resolved': L['decision_resolved'],
+                'assumed': L['decision_assumed'],
+                'open': L['decision_open'],
+            }
+            for status in ('resolved', 'assumed', 'open'):
+                for decision in decisions:
+                    if decision.get('status', 'open') != status:
+                        continue
+                    title = decision.get('title') or decision.get('q') or '-'
+                    answer = decision.get('resolved') or decision.get('ai_assumption') or '-'
+                    risk = decision.get('why_matters') or ''
+                    suffix = f" — {risk}" if status in ('assumed', 'open') and risk else ''
+                    brief.append(f"- **{status_labels[status]} · {title}**：{answer}{suffix}")
+            fog = decision_map.get('not_yet_specified') or []
+            if fog:
+                names = [item.get('name', '-') if isinstance(item, dict) else str(item) for item in fog]
+                brief.append(f"- **{L['decision_fog']}**：{'；'.join(names)}")
+            out_of_scope = out_of_scope_items(strategy)
+            if out_of_scope:
+                rendered = []
+                for item in out_of_scope:
+                    text = item['item']
+                    if item['reason']:
+                        text += f"（{item['reason']}）"
+                    rendered.append(text)
+                brief.append(f"- **{L['decision_out']}**：{'；'.join(rendered)}")
 
-    brief.extend(['', f"## {L['brief_sources']}", '', L['brief_sources_note'], ''])
-    if entries:
-        for name, src, yr, url in entries:
-            label = name if not src or src == name else f"{name} · {src}"
-            if yr:
-                label += f" · {yr}"
-            brief.append(f"- [{label}]({url})")
-    else:
-        brief.append(L['no_src'])
-    staging_brief = os.path.join(staging_dir, L['brief_name'])
-    write_text_atomic(staging_brief, '\n'.join(brief) + '\n')
-    enc = check_encoding(output_path)
-    if not enc['passed']:
-        issues.append(f"Encoding issue: {enc['issues']}")
+        brief.extend(['', f"## {L['brief_sources']}", '', L['brief_sources_note'], ''])
+        if entries:
+            for name, src, yr, url in entries:
+                label = name if not src or src == name else f"{name} · {src}"
+                if yr:
+                    label += f" · {yr}"
+                brief.append(f"- [{label}]({url})")
+        else:
+            brief.append(L['no_src'])
+        staging_brief = os.path.join(staging_dir, L['brief_name'])
+        write_text_atomic(staging_brief, '\n'.join(brief) + '\n')
+        enc = check_encoding(output_path)
+        if not enc['passed']:
+            issues.append(f"Encoding issue: {enc['issues']}")
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
 
     if issues:
         shutil.rmtree(staging_dir, ignore_errors=True)
@@ -575,16 +566,41 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
     previous_path = previous[-1] if previous else None
     last_good_root = os.path.join(base_dir, '.last-good')
     last_good_dir = os.path.join(last_good_root, safe_title)
+    retiring_dir = last_good_dir + '.retiring'
     moved_previous = False
+    retired_last_good = False
+
+    def _recovery_nonempty(path):
+        return os.path.isdir(path) and bool(os.listdir(path))
+
+    def _restore_retiring():
+        if not os.path.exists(retiring_dir) or _recovery_nonempty(last_good_dir):
+            return
+        if os.path.exists(last_good_dir):
+            shutil.rmtree(last_good_dir, ignore_errors=True)
+        if not os.path.exists(last_good_dir):
+            os.replace(retiring_dir, last_good_dir)
+
     try:
+        # Reconcile a prior interrupted rotation before starting a new one.
+        if os.path.exists(retiring_dir):
+            if _recovery_nonempty(last_good_dir):
+                shutil.rmtree(retiring_dir, ignore_errors=True)
+                if os.path.exists(retiring_dir):
+                    raise OSError(f"Cannot clear stale recovery point: {retiring_dir}")
+            else:
+                _restore_retiring()
         if previous_path:
             os.makedirs(last_good_root, exist_ok=True)
             if os.path.exists(last_good_dir):
-                shutil.rmtree(last_good_dir, ignore_errors=True)
+                os.replace(last_good_dir, retiring_dir)
+                retired_last_good = True
             os.replace(previous_path, last_good_dir)
             moved_previous = True
         os.replace(staging_dir, bundle_dir)
         staging_dir = None
+        if os.path.exists(retiring_dir):
+            shutil.rmtree(retiring_dir, ignore_errors=True)
         for old in previous[:-1]:
             if old != bundle_dir:
                 shutil.rmtree(old, ignore_errors=True)
@@ -592,6 +608,11 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
         if moved_previous and previous_path and not os.path.exists(previous_path):
             try:
                 os.replace(last_good_dir, previous_path)
+            except Exception:
+                pass
+        if retired_last_good:
+            try:
+                _restore_retiring()
             except Exception:
                 pass
         if staging_dir and os.path.exists(staging_dir):
@@ -691,7 +712,7 @@ def self_score(requirements_path, strategy_path, report_path, mode):
     prof = _load_profile(mode)
     target_per = prof.get('max_chars', 20000) / total_secs
 
-    is_v3 = strategy.get('schema_version') == 'strategy/v3'
+    is_v3 = strategy.get('schema_version') in ('strategy/v3', 'strategy/v4')
 
     # 差异化点 → 覆盖的评分 id（仅 legacy；v3 由 customer-fit 评价组合充分性）
     diff_ids = set()
@@ -766,7 +787,7 @@ PLACEHOLDER_RE = re.compile(r'【([^】\n]{1,80})】')
 
 
 def human_todo(requirements_path, strategy_path, report_path, mode, output_path, lang,
-               intel_path=None, state_dir=None):
+               intel_path=None, state_dir=None, canonical_result=None):
     """汇总策略假设、情报缺口、正文占位符与自评薄弱项。
     顺序：废标风险 > 未确认策略假设 > 情报缺口 > 高/低权重丢分 > 竞争力薄弱。"""
     req = read_json(requirements_path)
@@ -779,6 +800,20 @@ def human_todo(requirements_path, strategy_path, report_path, mode, output_path,
     mand_by_id = {m.get('id'): m for m in (req.get('mandatory') or []) if m.get('id')}
 
     blocking, scoring_loss = [], []
+    first_chapter = re.search(
+        r'^## (?:[一二三四五六七八九十]+、|\d+\. ).+$',
+        report,
+        re.MULTILINE,
+    )
+    front_matter = report[:first_chapter.start()] if first_chapter else report
+    front_label = '卷首/方案综述' if lang == 'zh' else 'Front matter / Executive summary'
+    for ph in PLACEHOLDER_RE.findall(front_matter):
+        blocking.append((
+            front_label,
+            ph,
+            '废标风险（卷首或方案综述占位符未替换）',
+        ))
+
     for n, text in split_chapters(report):
         sec = sections.get(n, {})
         ch_label = toc_label(lang, n, sec.get('title', ''))
@@ -838,9 +873,11 @@ def human_todo(requirements_path, strategy_path, report_path, mode, output_path,
 
     v3_diagnostics = []
     if state_dir:
-        realization_dir = os.path.join(state_dir, 'derived', 'realization')
-        checked = prop_v3.check_canonical(
-            state_dir, stage='submission', realization_dir=realization_dir)
+        checked = canonical_result
+        if not isinstance(checked, dict) or checked.get('stage') != 'submission':
+            realization_dir = os.path.join(state_dir, 'derived', 'realization')
+            checked = prop_v3.check_canonical(
+                state_dir, stage='submission', realization_dir=realization_dir)
         for diagnostic in checked.get('diagnostics') or []:
             if diagnostic.get('severity') not in ('fatal', 'blocker', 'major'):
                 continue
@@ -1076,14 +1113,20 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
         (r'(模式|深度模式)\s*[:：]?\s*(quick|standard|deep)', '内部深度模式'),
         (r'(版本|工具版本)\s*[:：]?\s*v?\d+\.\d+\.\d+', '工具版本号'),
         (r'阅读\s*\d+\s*分钟', '研报式阅读时间'),
-        (r'生成时间\s*[:：]', '生成时间戳'),
+        (r'^[>\-* \t]*(?:\*\*投标方案\*\*[ \t]*·[ \t]*)?'
+         r'生成时间\s*[:：]\s*\d{4}(?:[-/.年]\d{1,2})?', '生成时间戳'),
         (r'^>\s*\*\*投标方案\*\*\s*·', '研报式元数据块'),
-        (r'https?://', 'URL（投标文件不带网址书目，来源改行内标注）'),
-        (r'\b(?:DecisionJob|ValueProposition|customer[- ]fit|canonical|realization manifest)\b',
+        (r'\b(?:DecisionJob|ValueProposition|customer[- ]fit|realization manifest|'
+         r'canonical(?:[ -](?:state|ready)))\b',
          'v3 内部模型或审计术语'),
     ]:
         if re.search(pat, report, re.MULTILINE | re.IGNORECASE):
             leaks.append(why)
+    for line_no, line in enumerate(lines, 1):
+        if re.search(r'https?://', line, re.IGNORECASE):
+            leaks.append(
+                f"URL（第 {line_no} 行；投标文件不带网址书目，来源改行内标注）"
+            )
     checks['no_internal_leak'] = {"passed": len(leaks) == 0, "leaked": leaks,
                                   "hint": "这些只能进 _内部研判.md，不能进递交稿"}
 
@@ -1098,22 +1141,58 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
     # 章节数
     chapter_headings = re.findall(r'^## (?:[一二三四五六七八九十]+、|\d+\. )', report, re.MULTILINE)
     prof = _load_profile(mode)
-    min_ch = prof.get('min_chapters', 6)
-    checks['chapter_count'] = {"passed": len(chapter_headings) >= min_ch,
-                               "count": len(chapter_headings), "min": min_ch}
+    strategy_for_count = (read_json(strategy_path)
+                          if strategy_path and os.path.exists(strategy_path)
+                          else {})
+    if strategy_for_count.get('schema_version') in ('strategy/v3', 'strategy/v4'):
+        expected_chapters = len(strategy_for_count.get('sections') or [])
+        checks['chapter_count'] = {
+            "passed": len(chapter_headings) == expected_chapters,
+            "count": len(chapter_headings), "expected": expected_chapters,
+            "rule": "exact strategy.sections count",
+        }
+    else:
+        min_ch = prof.get('legacy_min_chapters', prof.get('min_chapters', 6))
+        checks['chapter_count'] = {
+            "passed": len(chapter_headings) >= min_ch,
+            "count": len(chapter_headings), "min": min_ch,
+            "rule": "legacy profile minimum",
+        }
 
     # 子节汉字编号（应为阿拉伯数字 N.x）
-    zh_sub = [i + 1 for i, l in enumerate(lines) if re.match(r'^### [一二三四五六七八九十]', l)]
+    zh_sub = [
+        i + 1 for i, line in enumerate(lines)
+        if re.match(r'^### [一二三四五六七八九十]+\s*[、.．)）]', line)
+    ]
     checks['subsection_numbering'] = {"passed": len(zh_sub) == 0,
                                       "issues": [f"line {n} 用汉字编号子节" for n in zh_sub[:5]]}
 
     # 内部 id 泄露：legacy S/M/D 编号 + v3 typed refs。任何命中都不能递交。
-    id_pattern = (r'(?<![A-Za-z0-9])(?:[SMD]\d{1,2}|'
-                  r'(?:REQ|ROLE|NEED|CRIT|VP|CL|MET|EL|EV|DR|DA|RES|DEP|AC|DJ|CH|'
-                  r'GATE|SRC|RN|NC|RC)-[A-Z0-9_.-]+)'
-                  r'(?![A-Za-z0-9])')
-    leak = re.findall(id_pattern, report, re.IGNORECASE)
+    # typed ref 大小写敏感，且纯数字 AC-* 留给 state 精确 ID 检查，避免误伤 AC-3 音频标准。
+    typed_id_pattern = (
+        r'(?<![A-Za-z0-9])'
+        r'(?:REQ|ROLE|NEED|CRIT|VP|CL|MET|EL|EV|DR|DA|RES|DEP|AC|DJ|CH|'
+        r'GATE|SRC|RN|NC|RC)-(?=[A-Z0-9_.-]*[A-Z])[A-Z0-9_.-]+'
+        r'(?![A-Za-z0-9])'
+        r'|(?<![A-Za-z0-9])(?:CH|RN|NC|RC)-\d{1,3}(?![A-Za-z0-9])'
+    )
+    leak = re.findall(typed_id_pattern, report)
+
+    # S3/M2 既可能是 legacy ID，也可能是常见技术名词；只豁免明确的技术搭配。
+    legacy_tech_context = {
+        'S3': r'(?:对象存储\s*S3|S3\s*对象存储)',
+        'M2': r'(?:芯片\s*M2|M2\s*芯片)',
+    }
+    for match in re.finditer(r'(?<!\w)[SMD]\d{1,2}(?!\w)', report):
+        ref = match.group(0)
+        context = report[max(0, match.start() - 12):match.end() + 12]
+        tech_pattern = legacy_tech_context.get(ref)
+        if tech_pattern and re.search(tech_pattern, context):
+            continue
+        leak.append(ref)
+
     exact_ids = set()
+    id_check_degraded = False
     if state_dir:
         try:
             documents, _ = prop_v3.load_state(state_dir)
@@ -1138,12 +1217,20 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
                 if isinstance(item, dict) and (item.get('id') or item.get('ref')):
                     exact_ids.add(item.get('id') or item.get('ref'))
         except Exception:
-            exact_ids = set()
+            id_check_degraded = True
     for ref in exact_ids:
         if re.search(r'(?<![A-Za-z0-9])' + re.escape(ref) + r'(?![A-Za-z0-9])', report):
             leak.append(ref)
-    checks['no_id_leak'] = {"passed": len(leak) == 0, "warning": False,
-                            "found": sorted(set(leak))[:10]}
+    checks['no_id_leak'] = {
+        "passed": len(leak) == 0 and not id_check_degraded,
+        "warning": False,
+        "found": sorted(set(leak))[:10],
+        "degraded": id_check_degraded,
+    }
+    if id_check_degraded:
+        checks['no_id_leak']["hint"] = (
+            "state 加载失败，无法完成精确 ID 检查；请修复 state 后重新运行 QA"
+        )
 
     # 字数
     wc = word_count_text(report)
@@ -1156,7 +1243,7 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
         strat = read_json(strategy_path)
         dc = len(strat.get('differentiators') or [])
         min_diff = prof.get('min_differentiators', 3)
-        if strat.get('schema_version') == 'strategy/v3':
+        if strat.get('schema_version') in ('strategy/v3', 'strategy/v4'):
             checks['differentiators'] = {
                 "passed": True, "warning": True, "deprecated": True,
                 "count": dc, "min": None,
@@ -1198,8 +1285,11 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
         checks['buyer_focus'] = buyer_focus(report, read_json(requirements_path), lang)
 
     # CTA / 排除项残留（销售提案措辞混入投标文件 → 不懂规则 / 负偏离风险）——警告级
-    bad_phrases = ['下一步行动', '下周会议', '期待与您沟通', '签约条款', '排除项', '不包含以下服务']
+    bad_phrases = ['下一步行动', '下周会议', '期待与您沟通', '签约条款']
     found_bad = [p for p in bad_phrases if p in report]
+    for phrase in ('排除项', '不包含以下服务'):
+        if re.search(r'^[ \t#>*\-]*' + re.escape(phrase), report, re.MULTILINE):
+            found_bad.append(phrase)
     checks['no_sales_cta'] = {"passed": len(found_bad) == 0, "warning": True, "found": found_bad,
                               "hint": "投标是密封递交，无 CTA；『排除项』易被认定实质性负偏离"}
 
@@ -1319,10 +1409,17 @@ def check_strategy(path, mode=None, require_settled=False, allow_assumed=False):
     if not isinstance(sections, list) or not sections:
         issues.append("缺 sections[]")
     else:
+        section_numbers = []
         for i, section in enumerate(sections):
             if not isinstance(section, dict):
                 issues.append(f"sections[{i}] 必须是对象")
                 continue
+            number = section.get('n')
+            if (not isinstance(number, int) or isinstance(number, bool)
+                    or number <= 0):
+                issues.append(f"sections[{i}] 缺 n 或 n 非正整数")
+            else:
+                section_numbers.append((i, number))
             if not section.get('narrative_role'):
                 issues.append(f"sections[{i}] 缺 narrative_role")
             addresses = section.get('addresses')
@@ -1330,6 +1427,16 @@ def check_strategy(path, mode=None, require_settled=False, allow_assumed=False):
                 issues.append(f"sections[{i}].addresses 必须是非空数组")
             elif any(not _has_text(item) for item in addresses):
                 issues.append(f"sections[{i}].addresses 含非法 id")
+
+        first_index_by_number = {}
+        for i, number in section_numbers:
+            if number in first_index_by_number:
+                first = first_index_by_number[number]
+                issues.append(
+                    f"sections[{i}].n 重复: {number}（首次见于 sections[{first}]）"
+                )
+            else:
+                first_index_by_number[number] = i
 
     decision_map = strategy.get('decision_map')
     fog = []
@@ -1574,10 +1681,17 @@ def apply_auto_decisions(path):
 # ── detect-engine ───────────────────────────────────────────────────────────
 def detect_engine():
     import urllib.request as _req
+    probe_url = os.environ.get("PROPOSAL_SEARCH_PROBE_URL")
+    if not probe_url:
+        return {
+            "engine": "none",
+            "available": False,
+            "hint": "set PROPOSAL_SEARCH_PROBE_URL to enable probing",
+        }
     try:
-        r = _req.Request("https://search.h33.top/search?q=test&format=json",
+        r = _req.Request(probe_url,
                          headers={"User-Agent": "Mozilla/5.0"}, method="GET")
-        with _req.urlopen(r, timeout=15) as resp:
+        with _req.urlopen(r, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             if isinstance(data, dict) and "results" in data:
                 return {"engine": "searxng", "available": True}
@@ -1595,6 +1709,164 @@ def json_get(path, key_path):
     return val
 
 
+def _gate2_attestation(path):
+    if not path:
+        return {
+            "passed": False, "attested": False,
+            "issues": ["Gate 2 human disposition is not attested"],
+        }
+    try:
+        document = read_json(path)
+    except Exception as exc:
+        return {"passed": False, "attested": False,
+                "issues": [f"Gate 2 attestation unreadable: {exc}"]}
+    open_causes = document.get('open_root_causes') or []
+    schema_ok = document.get('schema_version') == 'gate2-decision/v1'
+    passed = schema_ok and document.get('status') == 'resolved' and not open_causes
+    return {
+        "passed": passed, "attested": True,
+        "status": document.get('status'),
+        "open_root_causes": open_causes,
+        "issues": [] if passed else [
+            "Gate 2 schema/status is invalid or root causes remain unresolved"
+        ],
+        "path": os.path.abspath(path),
+        "hash": prop_v3.file_hash(path),
+    }
+
+
+def validate_run(state_dir, report_path, mode='standard', lang='zh',
+                 judgments_path=None, gate2_path=None, todo_output=None,
+                 output_path=None):
+    """Run the report-level acceptance stack once for one state/report pair."""
+    state_dir = os.path.abspath(state_dir)
+    report_path = os.path.abspath(report_path)
+    requirements_path = os.path.join(state_dir, 'requirements.json')
+    strategy_path = os.path.join(state_dir, 'strategy.json')
+    intel_path = os.path.join(state_dir, 'intel-pool.json')
+    realization_dir = os.path.join(state_dir, 'derived', 'realization')
+    if not os.path.isfile(report_path):
+        return {"passed": False, "issues": ["report does not exist"]}
+
+    canonical = prop_v3.check_canonical(
+        state_dir, stage='submission', realization_dir=realization_dir,
+        write_derived=True)
+    compliance = check_compliance(
+        requirements_path, strategy_path, report_path)
+    qa = qa_proposal(
+        report_path, mode, strategy_path, lang, requirements_path, state_dir)
+    fit = prop_v3.customer_fit(
+        state_dir, checkpoint='submission', judgments_path=judgments_path,
+        realization_dir=realization_dir, checked_result=canonical,
+        coverage_result=canonical.get('coverage'))
+    if todo_output is None:
+        todo_output = os.path.join(state_dir, 'derived', 'human-todo.md')
+    todo = human_todo(
+        requirements_path, strategy_path, report_path, mode, todo_output, lang,
+        intel_path, state_dir, canonical_result=canonical)
+    gate2 = _gate2_attestation(gate2_path)
+    todo_clear = (todo.get('blocking_count', 0) == 0
+                  and todo.get('assumption_count', 0) == 0
+                  and todo.get('canonical_blocker_count', 0) == 0)
+    component_passed = {
+        "compliance": bool(compliance.get('passed')),
+        "qa": bool(qa.get('passed')),
+        "canonical_submission": bool(canonical.get('submission_ready')),
+        "customer_fit": bool(fit.get('passed')),
+        "human_todo_clear": todo_clear,
+        "gate2": bool(gate2.get('passed')),
+    }
+    submission_ready = all(component_passed.values())
+    result = {
+        "schema_version": prop_v3.SCHEMA_VERSIONS['validation'],
+        "passed": submission_ready,
+        "submission_ready": submission_ready,
+        "safe_draft_ready": bool(canonical.get('safe_draft_ready')),
+        "state_hash": canonical.get('state_hash'),
+        "report_hash": prop_v3.file_hash(report_path),
+        "report_path": report_path,
+        "component_passed": component_passed,
+        "compliance": compliance,
+        "qa": qa,
+        "canonical": canonical,
+        "customer_fit": fit.get('scorecard'),
+        "human_todo": todo,
+        "gate2": gate2,
+        "issues": [name for name, passed in component_passed.items()
+                   if not passed],
+    }
+    if output_path is None:
+        output_path = os.path.join(
+            state_dir, 'derived', 'manifests', 'run-validation.json')
+    write_json_atomic(output_path, result)
+    result['output_path'] = os.path.abspath(output_path)
+    return result
+
+
+def finalize_run(state_dir, report_path, bundle_dir, mode='standard', lang='zh',
+                 judgments_path=None, gate2_path=None, todo_output=None,
+                 validation_output=None, receipt_output=None, allow_draft=False):
+    """Validate, atomically archive, and issue a report/state-bound receipt."""
+    validation = validate_run(
+        state_dir, report_path, mode, lang, judgments_path, gate2_path,
+        todo_output, validation_output)
+    if not validation.get('state_hash') or not validation.get('report_hash'):
+        return {
+            "passed": False, "submission_ready": False,
+            "issues": validation.get('issues') or
+            ["validation did not produce state/report hashes"],
+            "validation": validation,
+        }
+    if not validation.get('submission_ready') and not allow_draft:
+        return {
+            "passed": False, "submission_ready": False,
+            "safe_draft_ready": validation.get('safe_draft_ready', False),
+            "issues": validation.get('issues') or ["final validation failed"],
+            "validation": validation,
+        }
+    canonical = validation.get('canonical') or {}
+    archived = prop_v3.archive_state(
+        state_dir, bundle_dir, require_submission_ready=not allow_draft,
+        checked_result=canonical)
+    delivery_status = ('submission_ready'
+                       if validation.get('submission_ready') else 'draft_only')
+    receipt = {
+        "schema_version": prop_v3.SCHEMA_VERSIONS['receipt'],
+        "state_hash": validation.get('state_hash'),
+        "report_hash": validation.get('report_hash'),
+        "validation_hash": prop_v3.content_hash({
+            key: value for key, value in validation.items()
+            if key != 'output_path'
+        }),
+        "delivery_status": delivery_status,
+        "submission_ready": bool(validation.get('submission_ready')),
+        "archive_passed": bool(archived.get('passed')),
+        "archive_path": archived.get('state_archive'),
+        "policy_version": prop_v3.POLICY_VERSION,
+    }
+    receipt['receipt_hash'] = prop_v3.content_hash(receipt)
+    if receipt_output is None:
+        receipt_output = os.path.join(
+            os.path.abspath(bundle_dir), '_acceptance-receipt.json')
+    if archived.get('passed'):
+        write_json_atomic(receipt_output, receipt)
+        archived_receipt = os.path.join(
+            archived['state_archive'], 'derived', 'manifests',
+            'acceptance-receipt.json')
+        write_json_atomic(archived_receipt, receipt)
+    return {
+        "passed": bool(archived.get('passed')),
+        "submission_ready": bool(validation.get('submission_ready')),
+        "delivery_status": delivery_status,
+        "issues": archived.get('issues') or [],
+        "validation": validation,
+        "archive": archived,
+        "receipt": receipt,
+        "receipt_output": (os.path.abspath(receipt_output)
+                           if archived.get('passed') else None),
+    }
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 def _print_result(result):
     print("PASS" if result.get('passed') else "FAIL")
@@ -1605,7 +1877,7 @@ def _print_result(result):
 
 def main():
     _init_stdout()
-    parser = argparse.ArgumentParser(description='proposal tools 3.0 — canonical/context/realization/装配/合规/QA')
+    parser = argparse.ArgumentParser(description='proposal tools 3.1 — lean canonical/context/acceptance pipeline')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p = sub.add_parser('check-encoding'); p.add_argument('file')
@@ -1660,6 +1932,22 @@ def main():
     p.add_argument('--lang', default='zh')
     p.add_argument('--intel', default=None)
     p.add_argument('--state-dir', default=None)
+
+    for command in ('validate-run', 'finalize-run'):
+        p = sub.add_parser(command)
+        p.add_argument('--state-dir', required=True)
+        p.add_argument('--report', required=True)
+        p.add_argument('--mode', default='standard',
+                       choices=['quick', 'standard', 'deep'])
+        p.add_argument('--lang', default='zh')
+        p.add_argument('--judgments', default=None)
+        p.add_argument('--gate2', default=None)
+        p.add_argument('--todo-output', default=None)
+        p.add_argument('--validation-output', default=None)
+        if command == 'finalize-run':
+            p.add_argument('--bundle-dir', required=True)
+            p.add_argument('--receipt-output', default=None)
+            p.add_argument('--allow-draft', action='store_true')
 
     # v3 is the default pipeline.  Historic commands remain available for the
     # explicit ``-legacy`` workflow and for old bundle maintenance.
@@ -1747,6 +2035,19 @@ def main():
               f"weak={r['weak_count']} canonical_blockers={r['canonical_blocker_count']} "
               f"canonical_major={r['canonical_major_count']} -> {r['output_path']}")
         sys.exit(0)
+    elif args.command == 'validate-run':
+        r = validate_run(
+            args.state_dir, args.report, args.mode, args.lang, args.judgments,
+            args.gate2, args.todo_output, args.validation_output)
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        sys.exit(0 if r.get('passed') else 1)
+    elif args.command == 'finalize-run':
+        r = finalize_run(
+            args.state_dir, args.report, args.bundle_dir, args.mode, args.lang,
+            args.judgments, args.gate2, args.todo_output,
+            args.validation_output, args.receipt_output, args.allow_draft)
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        sys.exit(0 if r.get('passed') else 1)
 
 
 if __name__ == '__main__':

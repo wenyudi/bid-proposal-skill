@@ -54,11 +54,13 @@ Task 2 会围绕本标的实际证据缺口抓取公开原文，并把 Evidence 
 - supporting 补足 lead 无法单独覆盖的重要判断；
 - reserve 留在内部，不为了显得丰富而塞进客户稿。
 
+Task 2.5 还会为每个 lead 指定一个最小客户可见成果（例如已填样例、分镜、节奏表或看板），只约束评委必须看到的字段与真实性边界，不把正文变成内部检查表。
+
 如果研究发现新增成本、能力或授权边界，流程只会重新打开受影响的 Gate 1 问题。它不会另加一套固定关卡，也不会用文案绕过缺口。
 
 ## 4. 等待分章写作与独立审计
 
-generation gate 通过后，所有章节从同一份快照获得各自的最小 brief。章节 writer 看不到 private 原文和无关的内部图谱。
+达到 safe-draft generation gate 后，所有章节从同一份快照获得各自的最小 brief。章节 writer 看不到 private 原文和无关的内部图谱，只写 Markdown。
 
 每章写完后，另一个未参与写作的 auditor 会检查：
 
@@ -66,12 +68,13 @@ generation gate 通过后，所有章节从同一份快照获得各自的最小 
 - Claim 和 Action 是否被文本准确表达；
 - scope、承诺强度和证据是否被扩大；
 - 是否出现 brief 白名单之外的新主张。
+- required 客户可见成果是否真正填实全部字段，而非只写“将建立”。
 
 只有状态为 `valid` 的正式章节才能进入方案综述。你无需手工把内部 ID 或审计标签写进正文。
 
 ## 5. 完成 Gate 2
 
-装配、合规、QA 和 submission 检查后，buyer、expert、audit、rival 四个视角会提出合并后的根因诊断。硬性致命问题先回到其 owner 修复；其余问题在 Gate 2 一次处理一条。
+装配后，profile 会启动 1/2/4 个红队角色（quick 合并、standard 两组、deep 四视角）并提出合并后的根因诊断。硬性致命问题先回到其 owner 修复；其余问题在 Gate 2 一次处理一条。
 
 每题会给出推荐处置及得失：
 
@@ -91,12 +94,13 @@ generation gate 通过后，所有章节从同一份快照获得各自的最小 
 ├── 分册/
 ├── _内部研判.md
 ├── _人工待办.md
+├── _acceptance-receipt.json
 └── _state/
 ```
 
 先检查以下三点：
 
-1. 最终汇报明确 `submission_ready=true`；
+1. receipt 明确 `delivery_status=submission_ready`，state/report hash 对应当前文件；
 2. `_人工待办.md` 没有未解决的真实性、mandatory、预算、授权或占位符硬项；
 3. `技术方案-完整版.md` 中的投标人名称、日期、资质、人员和报价已经由人工核验。
 

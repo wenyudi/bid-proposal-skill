@@ -1,5 +1,5 @@
 ---
-description: 政企传媒投标方案 v3 — 客户价值与交付底座、研究后亮点选择、兑现审计和硬门定稿
+description: 政企传媒投标方案 v3.1 — 客户价值、正文成果、独立审计与 receipt 终验
 ---
 
 <command-instruction>
@@ -23,8 +23,8 @@ Parse `$ARGUMENTS`:
   - `-vision`   → 愿景共创（未来图景+伙伴关系，适合多年框架/长期代运营）
   - `-evidence` → 数据实证（可核验结果说话，适合效果导向/投放增长类）
 - 关卡标志：
-  - `-auto` → 全自动跑完，跳过两道人工关卡；v3 由 `apply-auto-state` 生成 assumed、同步降级失效授权并进入内部待办
-  - 无标志  → 默认停 ⛳ Gate 1 决策地图（Task1 后）与 ⛳ Gate 2 红队定稿（Task4 后）；每轮只问一个决策并给推荐答案；quick 模式只停 Gate 1
+  - `-auto` → 自动生成安全草案，跳过人工确认；`apply-auto-state` 生成 assumed、降级失效授权并进入待办，receipt 必须为 draft_only
+  - 无标志  → 默认停 ⛳ Gate 1 与 ⛳ Gate 2；每轮只问一个决策并给推荐。quick 合并红队调用，但要 submission-ready 仍需 Gate 2 attestation
 - 引擎标志：
   - 无标志 / `-v3` → v3（默认；`-v3` 仅作兼容 no-op）
   - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`；不得与 v3 状态或章节混用
@@ -36,5 +36,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.0.0 · v3 direct-default
+proposal skill · 3.1.0 · lean direct-default
 ```

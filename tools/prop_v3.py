@@ -18,15 +18,22 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 import uuid
 
 
 ENGINE = "v3"
-ENGINE_VERSION = "3.0"
-POLICY_VERSION = "proposal-v3/policy-1"
-CONTEXT_POLICY_VERSION = "proposal-v3/context-1"
-REALIZATION_POLICY_VERSION = "proposal-v3/realization-1"
-FIT_POLICY_VERSION = "proposal-v3/customer-fit-1"
+ENGINE_VERSION = "3.1"
+POLICY_VERSION = "proposal-v3.1/policy-1"
+CONTEXT_POLICY_VERSION = "proposal-v3.1/context-1"
+REALIZATION_POLICY_VERSION = "proposal-v3.1/realization-1"
+FIT_POLICY_VERSION = "proposal-v3.1/customer-fit-1"
+
+# v3.1 is a lean physical model, not a flag-day archive migration.  Historic
+# v3.0 state remains readable; only explicit bootstrap/migration writes the
+# new canonical schemas.
+COMPAT_ENGINE_VERSIONS = {"3.0", ENGINE_VERSION}
+COMPAT_POLICY_VERSIONS = {"proposal-v3/policy-1", POLICY_VERSION}
 
 SAFE_PUBLICATION_VISIBILITIES = {
     "public", "tender", "authorized_source", "approved_anonymized", "named",
@@ -36,6 +43,9 @@ ALLOWED_EVIDENCE_USES = {
     "commitment_authority", "anonymized_publication", "named_publication",
     "qualification_attachment", "numeric_result", "client_name", "logo",
     "testimonial", "capability_reasoning",
+}
+THIRD_PARTY_EVIDENCE_KINDS = {
+    "third_party_case", "buyer_case", "industry_case",
 }
 
 CANONICAL_FILES = (
@@ -48,9 +58,9 @@ CANONICAL_FILES = (
 
 SCHEMA_VERSIONS = {
     "requirements.json": "requirements/v3",
-    "customer-value.json": "customer-value/v1",
+    "customer-value.json": "customer-value/v2",
     "delivery-plan.json": "delivery-plan/v1",
-    "strategy.json": "strategy/v3",
+    "strategy.json": "strategy/v4",
     "intel-pool.json": "intel-pool/v3",
     "source-manifest.json": "source-manifest/v1",
     "run-manifest.json": "run-manifest/v1",
@@ -60,12 +70,22 @@ SCHEMA_VERSIONS = {
     "realization": "realization/v1",
     "coverage": "coverage/v1",
     "fit": "customer-fit/v1",
+    "validation": "run-validation/v1",
+    "receipt": "acceptance-receipt/v1",
+}
+
+ACCEPTED_SCHEMA_VERSIONS = {
+    "requirements.json": {"requirements/v3"},
+    "customer-value.json": {"customer-value/v1", "customer-value/v2"},
+    "delivery-plan.json": {"delivery-plan/v1"},
+    "strategy.json": {"strategy/v3", "strategy/v4"},
+    "intel-pool.json": {"intel-pool/v3"},
 }
 
 ENTITY_COLLECTIONS = {
     "requirements.json": ("mandatory", "scoring", "deliverables"),
     "customer-value.json": (
-        "roles", "needs", "criteria", "role_need_links",
+        "roles", "needs", "criteria", "decision_paths", "role_need_links",
         "need_criterion_links", "role_criterion_links", "value_propositions",
         "claims", "metrics", "evidence_links", "role_conflicts",
     ),
@@ -84,6 +104,7 @@ COLLECTION_TYPES = {
     "roles": "customer_role",
     "needs": "customer_need",
     "criteria": "decision_criterion",
+    "decision_paths": "decision_path",
     "role_need_links": "role_need_link",
     "need_criterion_links": "need_criterion_link",
     "role_criterion_links": "role_criterion_link",
@@ -123,6 +144,16 @@ def _read_json(path):
         return json.load(handle)
 
 
+def _read_json_or_issue(path, label):
+    try:
+        return _read_json(path), None
+    except (OSError, ValueError) as exc:
+        return None, {
+            "passed": False,
+            "issues": ["%s unreadable: %s" % (label, exc)],
+        }
+
+
 def _read_text(path):
     with open(path, "r", encoding="utf-8-sig") as handle:
         return handle.read()
@@ -152,12 +183,32 @@ def _canonical_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _estimate_tokens(text):
+    quarter_tokens = sum(
+        4 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+        for char in text
+    )
+    return max(1, (quarter_tokens + 3) // 4)
+
+
 def content_hash(value):
     if isinstance(value, str):
         payload = value.encode("utf-8")
     else:
         payload = _canonical_json(value).encode("utf-8")
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def _safe_path_component(value):
+    """Return one stable, collision-resistant ASCII path component."""
+    raw = str(value)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "-", raw).strip(".")
+    changed = safe != raw or not safe or len(safe) > 120
+    if not changed:
+        return safe
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
+    stem = (safe or "item")[:100].rstrip(".-") or "item"
+    return "%s-%s" % (stem, digest)
 
 
 def file_hash(path):
@@ -202,10 +253,6 @@ def _seal_source_manifest(manifest, base_dir):
     return sealed
 
 
-def _now_iso():
-    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
-
-
 def _nonempty(value):
     return isinstance(value, str) and bool(value.strip())
 
@@ -238,10 +285,10 @@ def _evidence_is_current(evidence):
     if valid_until:
         match = re.match(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?", str(valid_until))
         if match:
-            year = int(match.group(1))
-            month = int(match.group(2) or 12)
-            day = int(match.group(3) or calendar.monthrange(year, month)[1])
             try:
+                year = int(match.group(1))
+                month = int(match.group(2) or 12)
+                day = int(match.group(3) or calendar.monthrange(year, month)[1])
                 if datetime.date(year, month, day) < datetime.date.today():
                     return False
             except ValueError:
@@ -289,7 +336,7 @@ def _evidence_support_usable(link, evidence, risk_level="medium",
         return False
     if proof_task == "bidder_capability" and (
             evidence.get("third_party") is True
-            or evidence.get("kind") in ("third_party_case", "buyer_case", "industry_case")):
+            or evidence.get("kind") in THIRD_PARTY_EVIDENCE_KINDS):
         return False
     if link.get("strength") in (None, "weak", "unknown"):
         return False
@@ -312,10 +359,9 @@ def _default_document(filename):
     elif filename == "customer-value.json":
         base.update({
             "roles": [], "needs": [], "criteria": [],
-            "role_need_links": [], "need_criterion_links": [],
-            "role_criterion_links": [], "value_propositions": [],
+            "decision_paths": [], "value_propositions": [],
             "claims": [], "metrics": [], "evidence_links": [],
-            "role_conflicts": [], "change_log": [],
+            "change_log": [],
         })
     elif filename == "delivery-plan.json":
         base.update({
@@ -328,7 +374,7 @@ def _default_document(filename):
             "title": "", "depth_mode": "standard",
             "narrative": {"mode": "logic", "rationale": "", "through_line": ""},
             "decision_map": {"destination": "", "not_yet_specified": [], "out_of_scope": []},
-            "open_questions": [], "decision_jobs": [], "sections": [],
+            "open_questions": [], "sections": [],
             "change_log": [],
         })
     elif filename == "intel-pool.json":
@@ -460,6 +506,48 @@ def _legacy_evidence(legacy, used):
     return records
 
 
+def _upgrade_to_lean_documents(documents):
+    """Return an explicit v3.1 copy; never rewrite an existing archive in place."""
+    upgraded = copy.deepcopy(documents)
+    cv = upgraded.get("customer-value.json") or {}
+    if cv.get("schema_version") != "customer-value/v2":
+        cv["decision_paths"] = _effective_decision_paths(cv)
+        for collection in (
+                "role_need_links", "need_criterion_links",
+                "role_criterion_links", "role_conflicts"):
+            cv.pop(collection, None)
+        cv["schema_version"] = "customer-value/v2"
+    upgraded["customer-value.json"] = cv
+
+    strategy = upgraded.get("strategy.json") or {}
+    if strategy.get("schema_version") != "strategy/v4":
+        legacy_jobs = {
+            item.get("id"): item
+            for item in _as_list(strategy.get("decision_jobs"))
+            if isinstance(item, dict) and item.get("id")
+        }
+        for section in _as_list(strategy.get("sections")):
+            if not isinstance(section, dict):
+                continue
+            primary_refs = _ref_list(section, "primary_decision_job_ref")
+            secondary_refs = _ref_list(section, "secondary_decision_job_ref")
+            if primary_refs and primary_refs[0] in legacy_jobs:
+                job = copy.deepcopy(legacy_jobs[primary_refs[0]])
+                job.pop("section_ref", None)
+                section["decision_job"] = job
+            if secondary_refs and secondary_refs[0] in legacy_jobs:
+                job = copy.deepcopy(legacy_jobs[secondary_refs[0]])
+                job.pop("section_ref", None)
+                section["secondary_decision_job"] = job
+            section.pop("primary_decision_job_ref", None)
+            section.pop("secondary_decision_job_ref", None)
+            section.setdefault("visible_outputs", [])
+        strategy.pop("decision_jobs", None)
+        strategy["schema_version"] = "strategy/v4"
+    upgraded["strategy.json"] = strategy
+    return upgraded
+
+
 def _migrate_legacy_documents(source_dir):
     used = set()
     mapping = {"schema_version": "legacy-to-v3-map/v1", "source_dir": os.path.abspath(source_dir), "entities": []}
@@ -495,9 +583,10 @@ def _migrate_legacy_documents(source_dir):
 
     old_strategy = read_or_default("strategy.json")
     strategy = copy.deepcopy(old_strategy) if isinstance(old_strategy, dict) else _default_document("strategy.json")
-    strategy["schema_version"] = SCHEMA_VERSIONS["strategy.json"]
+    # Treat copied legacy structure as v3, then explicitly normalize it once
+    # through _upgrade_to_lean_documents at the end of this adapter.
+    strategy["schema_version"] = "strategy/v3"
     strategy["revision"] = 1
-    strategy.setdefault("decision_jobs", [])
     strategy.setdefault("sections", [])
     strategy.setdefault("decision_map", {"destination": "", "not_yet_specified": [], "out_of_scope": []})
     strategy.setdefault("open_questions", [])
@@ -551,12 +640,12 @@ def _migrate_legacy_documents(source_dir):
             "inference_confidence": "low", "publication_status": "internal_only",
             "provenance": {"adapter": "strategy.buyer_insight"},
         })
-        cv["role_need_links"].append({
-            "id": _stable_id("RN", legacy_role_ref + legacy_need_ref, used),
-            "role_ref": legacy_role_ref, "need_ref": legacy_need_ref,
-            "priority_band": "unknown", "confidence": "low",
-            "requiredness": "exploratory", "criterion_refs": [],
-        })
+        cv.setdefault("extensions", {}).setdefault(
+            "legacy_path_candidates", []).append({
+                "role_ref": legacy_role_ref, "need_ref": legacy_need_ref,
+                "confidence": "low",
+                "note": "Task 1 must bind a real criterion before creating a decision_path",
+            })
 
     for index, diff in enumerate(_as_list(strategy.get("differentiators"))):
         if isinstance(diff, str):
@@ -590,13 +679,13 @@ def _migrate_legacy_documents(source_dir):
 
     delivery = _default_document("delivery-plan.json")
     delivery["extensions"] = {"execution_model": "legacy_text", "migration_confidence": "inferred"}
-    return {
+    return _upgrade_to_lean_documents({
         "requirements.json": req,
         "customer-value.json": cv,
         "delivery-plan.json": delivery,
         "strategy.json": strategy,
         "intel-pool.json": intel,
-    }, mapping
+    }), mapping
 
 
 def migrate_state(source_dir, output_dir, mode="standard", lang="zh"):
@@ -694,6 +783,7 @@ def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
     missing = [name for name in CANONICAL_FILES if name not in documents]
     if missing:
         return {"passed": False, "issues": ["bootstrap missing: " + ", ".join(missing)]}
+    documents = _upgrade_to_lean_documents(documents)
 
     parent = os.path.dirname(os.path.abspath(state_dir))
     os.makedirs(parent, exist_ok=True)
@@ -785,6 +875,23 @@ def _diagnostic(rule_id, kind, severity, observed, expected, refs=None,
     }
 
 
+def _blocking_diagnostics(diagnostics, stage):
+    if stage == "draft":
+        return [item for item in diagnostics if item.get("severity") == "fatal"]
+    if stage == "generation":
+        return [
+            item for item in diagnostics
+            if item.get("severity") == "fatal"
+            or bool({"compile", "task3"} & set(item.get("blocks") or []))
+        ]
+    if stage == "submission":
+        return [
+            item for item in diagnostics
+            if item.get("severity") in ("fatal", "blocker")
+        ]
+    raise ValueError("unknown diagnostic stage: %s" % stage)
+
+
 def _build_registry(documents, diagnostics):
     registry = {}
     locations = {}
@@ -827,6 +934,26 @@ def _build_registry(documents, diagnostics):
                     "file": filename, "entity": entity,
                 }
                 locations[ref] = "%s.%s[%s]" % (filename, collection, index)
+    strategy = documents.get("strategy.json") or {}
+    for index, job in enumerate(_effective_section_jobs(strategy)):
+        if not job.get("_embedded_slot"):
+            continue
+        ref = _entity_id(job)
+        location = "strategy.json.sections[*].%s_decision_job" % (
+            "secondary" if job.get("_embedded_slot") == "secondary" else "primary")
+        if ref in registry:
+            diagnostics.append(_diagnostic(
+                "schema.duplicate_id", "contradictory", "fatal",
+                "duplicate id %s at %s and %s" % (
+                    ref, locations[ref], location),
+                "globally unique entity id", refs=[ref], blocks=["compile"],
+                owner="strategy.json"))
+            continue
+        registry[ref] = {
+            "type": "decision_job", "collection": "embedded_decision_jobs",
+            "file": "strategy.json", "entity": job,
+        }
+        locations[ref] = location
     return registry
 
 
@@ -860,11 +987,12 @@ def _validate_schema(documents, diagnostics):
         document = documents.get(filename)
         if not isinstance(document, dict):
             continue
-        if document.get("schema_version") != SCHEMA_VERSIONS[filename]:
+        if document.get("schema_version") not in ACCEPTED_SCHEMA_VERSIONS[filename]:
             diagnostics.append(_diagnostic(
                 "schema.version", "schema", "fatal",
                 "%s schema_version=%r" % (filename, document.get("schema_version")),
-                SCHEMA_VERSIONS[filename], blocks=["compile"], owner=filename,
+                "one of %s" % sorted(ACCEPTED_SCHEMA_VERSIONS[filename]),
+                blocks=["compile"], owner=filename,
             ))
         revision = document.get("revision")
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
@@ -998,15 +1126,17 @@ def _validate_manifests(state_dir, documents, diagnostics):
                 "run engine=%r" % run.get("engine"), "frozen v3 engine",
                 blocks=["compile"], owner="main",
             ))
-        if run and run.get("engine_version") != ENGINE_VERSION:
+        if run and run.get("engine_version") not in COMPAT_ENGINE_VERSIONS:
             diagnostics.append(_diagnostic(
                 "manifest.engine_version", "contradictory", "fatal",
-                "run engine_version=%r" % run.get("engine_version"), ENGINE_VERSION,
+                "run engine_version=%r" % run.get("engine_version"),
+                "one of %s" % sorted(COMPAT_ENGINE_VERSIONS),
                 blocks=["compile"], owner="main"))
-        if run and run.get("policy_version") != POLICY_VERSION:
+        if run and run.get("policy_version") not in COMPAT_POLICY_VERSIONS:
             diagnostics.append(_diagnostic(
                 "manifest.policy_version", "contradictory", "fatal",
-                "run policy_version=%r" % run.get("policy_version"), POLICY_VERSION,
+                "run policy_version=%r" % run.get("policy_version"),
+                "one of %s" % sorted(COMPAT_POLICY_VERSIONS),
                 blocks=["compile"], owner="main",
                 repair="migrate the run explicitly; do not mix policy snapshots"))
         if run and run.get("fallback_policy") != "explicit":
@@ -1062,6 +1192,34 @@ def _validate_relations(documents, registry, diagnostics):
             for criterion_ref in _ref_list(link, "criterion_refs"):
                 _expect_ref(registry, source, criterion_ref, {"decision_criterion"}, diagnostics, "criterion_refs")
 
+    seen_paths = set()
+    for index, path in enumerate(_effective_decision_paths(cv)):
+        source = path.get("id") or "decision_paths[%s]" % index
+        if source in seen_paths:
+            diagnostics.append(_diagnostic(
+                "decision_path.duplicate", "contradictory", "fatal",
+                "duplicate decision path id %s" % source,
+                "unique PATH-* id", [source], ["compile"], "task1"))
+        seen_paths.add(source)
+        _expect_ref(registry, source, path.get("role_ref"),
+                    {"customer_role"}, diagnostics, "role_ref")
+        _expect_ref(registry, source, path.get("need_ref"),
+                    {"customer_need"}, diagnostics, "need_ref")
+        _expect_ref(registry, source, path.get("criterion_ref"),
+                    {"decision_criterion"}, diagnostics, "criterion_ref")
+        if path.get("requiredness") not in (
+                "required", "expected", "exploratory"):
+            diagnostics.append(_diagnostic(
+                "decision_path.requiredness", "schema", "fatal",
+                "%s requiredness=%r" % (source, path.get("requiredness")),
+                "required|expected|exploratory", [source], ["compile"],
+                "task1"))
+        if path.get("confidence") not in ("high", "medium", "low", "unknown"):
+            diagnostics.append(_diagnostic(
+                "decision_path.confidence", "schema", "fatal",
+                "%s confidence=%r" % (source, path.get("confidence")),
+                "high|medium|low|unknown", [source], ["compile"], "task1"))
+
     for collection in ENTITY_COLLECTIONS["customer-value.json"]:
         for entity in _as_list(cv.get(collection)):
             if not isinstance(entity, dict) or not _entity_id(entity):
@@ -1111,7 +1269,7 @@ def _validate_relations(documents, registry, diagnostics):
                 if isinstance(demand, dict):
                     _expect_ref(registry, ref, demand.get("resource_ref"), {"resource_envelope"}, diagnostics, "resource_demands.resource_ref")
 
-    for job in _as_list(strategy.get("decision_jobs")):
+    for job in _effective_section_jobs(strategy):
         if not isinstance(job, dict) or not _entity_id(job):
             continue
         ref = _entity_id(job)
@@ -1131,9 +1289,10 @@ def _validate_relations(documents, registry, diagnostics):
         ref = _entity_id(section)
         for target_ref in _ref_list(section, "addresses"):
             _expect_ref(registry, ref, target_ref, {"requirement"}, diagnostics, "addresses")
-        for field in ("primary_decision_job_ref", "secondary_decision_job_ref"):
-            for target_ref in _ref_list(section, field):
-                _expect_ref(registry, ref, target_ref, {"decision_job"}, diagnostics, field)
+        if strategy.get("schema_version") != "strategy/v4":
+            for field in ("primary_decision_job_ref", "secondary_decision_job_ref"):
+                for target_ref in _ref_list(section, field):
+                    _expect_ref(registry, ref, target_ref, {"decision_job"}, diagnostics, field)
 
     for evidence in _as_list((documents.get("intel-pool.json") or {}).get("evidence")):
         if not isinstance(evidence, dict) or not _entity_id(evidence):
@@ -1202,7 +1361,7 @@ def _authority_valid(authority_ref, subject_ref, documents, registry,
             return False, "authority Evidence is not allowed for %s" % purpose
         if purpose == "bidder_capability" and (
                 evidence.get("third_party") is True
-                or evidence.get("kind") in ("third_party_case", "buyer_case", "industry_case")):
+                or evidence.get("kind") in THIRD_PARTY_EVIDENCE_KINDS):
             return False, "third-party Evidence cannot authorize bidder capability"
         linked = any(
             isinstance(link, dict) and link.get("evidence_ref") == authority_ref
@@ -1243,10 +1402,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
         item.get("id"): item for item in _as_list(cv.get("criteria"))
         if isinstance(item, dict) and item.get("id")
     }
-    role_need_links = [
-        item for item in _as_list(cv.get("role_need_links"))
-        if isinstance(item, dict)
-    ]
+    decision_paths = _effective_decision_paths(cv)
 
     gate_ids = set()
     for index, decision in enumerate(_as_list(strategy.get("open_questions"))):
@@ -1270,11 +1426,67 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                 [gate_ref], ["compile"], "task1"))
         else:
             gate_ids.add(gate_ref)
-        if decision.get("status", "open") not in ("open", "resolved", "assumed"):
+        status = decision.get("status", "open")
+        if status not in ("open", "resolved", "assumed"):
             diagnostics.append(_diagnostic(
                 "decision.status", "schema", "fatal",
-                "%s has invalid status %r" % (gate_ref or index, decision.get("status")),
+                "%s has invalid status %r" % (gate_ref or index, status),
                 "open|resolved|assumed", [gate_ref] if gate_ref else [], ["compile"], "task1"))
+            continue
+        resolved = decision.get("resolved")
+        risk = decision.get("assumption_risk")
+        if not isinstance(risk, bool):
+            diagnostics.append(_diagnostic(
+                "decision.assumption_risk", "schema", "fatal",
+                "%s assumption_risk is not boolean" % (gate_ref or index),
+                "explicit boolean matching Gate status",
+                [gate_ref] if gate_ref else [], ["compile"], "gate1"))
+        if status == "open":
+            if resolved is not None:
+                diagnostics.append(_diagnostic(
+                    "decision.open_residue", "contradictory", "fatal",
+                    "%s open decision retains resolved value" % (gate_ref or index),
+                    "resolved=null when status=open",
+                    [gate_ref] if gate_ref else [], ["compile"], "gate1"))
+            if risk is not False:
+                diagnostics.append(_diagnostic(
+                    "decision.open_risk", "contradictory", "fatal",
+                    "%s open decision retains assumption_risk" % (gate_ref or index),
+                    "assumption_risk=false when status=open",
+                    [gate_ref] if gate_ref else [], ["compile"], "gate1"))
+        elif status == "resolved":
+            if not _nonempty(resolved):
+                diagnostics.append(_diagnostic(
+                    "decision.resolved_empty", "schema", "fatal",
+                    "%s resolved decision has no answer" % (gate_ref or index),
+                    "non-empty human answer when status=resolved",
+                    [gate_ref] if gate_ref else [], ["compile"], "gate1"))
+            if risk is not False:
+                diagnostics.append(_diagnostic(
+                    "decision.resolved_risk", "contradictory", "fatal",
+                    "%s resolved decision retains assumption_risk" % (gate_ref or index),
+                    "assumption_risk=false when status=resolved",
+                    [gate_ref] if gate_ref else [], ["compile"], "gate1"))
+        else:
+            if not _nonempty(resolved):
+                diagnostics.append(_diagnostic(
+                    "decision.assumed_empty", "schema", "fatal",
+                    "%s assumed decision has no conservative answer" % (gate_ref or index),
+                    "non-empty ai_assumption copied to resolved",
+                    [gate_ref] if gate_ref else [], ["compile"], "main"))
+            elif (_nonempty(decision.get("ai_assumption"))
+                  and resolved != decision.get("ai_assumption")):
+                diagnostics.append(_diagnostic(
+                    "decision.assumed_mismatch", "contradictory", "fatal",
+                    "%s assumed decision differs from ai_assumption" % (gate_ref or index),
+                    "resolved equals ai_assumption when status=assumed",
+                    [gate_ref] if gate_ref else [], ["compile"], "main"))
+            if risk is not True:
+                diagnostics.append(_diagnostic(
+                    "decision.assumed_risk", "contradictory", "fatal",
+                    "%s assumed decision lacks assumption_risk" % (gate_ref or index),
+                    "assumption_risk=true when status=assumed",
+                    [gate_ref] if gate_ref else [], ["compile"], "main"))
 
     if stage in ("generation", "submission"):
         decision_map = strategy.get("decision_map") or {}
@@ -1291,25 +1503,27 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             diagnostics.append(_diagnostic(
                 "decision.open", "uncovered", "blocker",
                 "%s Gate 1 decisions remain open" % len(open_decisions),
-                "decision frontier settled before generation",
-                [item.get("title") for item in open_decisions if item.get("title")],
-                ["task3", "submission"], "gate1",
-                "resolve each human-only decision or use explicit auto assumptions",
+                "decision frontier settled before direct submission",
+                [item.get("id") or item.get("ref") for item in open_decisions
+                 if item.get("id") or item.get("ref")],
+                ["submission"], "gate1",
+                "keep generation explicitly draft-only, then resolve each human-only decision",
             ))
         if fog:
             diagnostics.append(_diagnostic(
                 "decision.fog", "uncovered", "blocker",
                 "%s not_yet_specified decisions remain" % len(fog),
-                "fog promoted to a decision, research gap, or out_of_scope",
-                [], ["task3", "submission"], "task1",
-                "route every unresolved area before generation",
+                "fog promoted to a decision, research gap, or out_of_scope before submission",
+                [], ["submission"], "task1",
+                "keep generation draft-only and route every unresolved area before submission",
             ))
         if assumed_decisions:
             diagnostics.append(_diagnostic(
                 "decision.assumed", "overcommitted", "blocker",
                 "%s decisions use auto assumptions" % len(assumed_decisions),
                 "human confirmation before direct submission",
-                [item.get("title") for item in assumed_decisions if item.get("title")],
+                [item.get("id") or item.get("ref") for item in assumed_decisions
+                 if item.get("id") or item.get("ref")],
                 ["submission"], "gate1",
                 "confirm assumptions or keep the output marked draft-only",
             ))
@@ -1332,10 +1546,10 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             diagnostics.append(_diagnostic("vp.status", "schema", "fatal", "%s status=%r" % (ref, status), sorted(VP_STATES), [ref], ["compile"], "task2.5"))
             continue
         if status in ("selected", "publishable"):
-            missing = []
+            path_missing = []
             for field in ("role_refs", "need_refs", "criterion_refs"):
                 if not _ref_list(vp, field):
-                    missing.append(field)
+                    path_missing.append(field)
             valid_capability_actions = [
                 target_ref for target_ref in _ref_list(vp, "action_refs")
                 if registry.get(target_ref, {}).get("entity", {}).get("selection_status") == "selected"
@@ -1349,8 +1563,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                         and evidence.get("quality") in ("high", "verified")
                         and _evidence_allowed_for(evidence, "bidder_capability")
                         and evidence.get("third_party") is not True
-                        and evidence.get("kind") not in (
-                            "third_party_case", "buyer_case", "industry_case")):
+                        and evidence.get("kind") not in THIRD_PARTY_EVIDENCE_KINDS):
                     valid_capability_evidence.append(evidence_ref)
             valid_capability_authorities = []
             for authority_ref in _ref_list(vp, "authority_refs"):
@@ -1358,16 +1571,21 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     authority_ref, ref, documents, registry, "bidder_capability")
                 if authority_ok:
                     valid_capability_authorities.append(authority_ref)
-            if not (valid_capability_actions or valid_capability_evidence
-                    or valid_capability_authorities):
-                missing.append("capability_evidence_refs|action_refs|authority_refs")
-            if missing:
+            if path_missing:
                 diagnostics.append(_diagnostic(
                     "vp.selected_path", "orphan", "blocker",
-                    "%s selected with missing %s" % (ref, ", ".join(missing)),
-                    "Role + Need + Criterion + capability boundary", [ref], ["task3", "submission"],
-                    "task2.5", "complete or demote this value proposition",
+                    "%s selected with missing %s" % (ref, ", ".join(path_missing)),
+                    "Role + Need + Criterion", [ref], ["task3", "submission"],
+                    "task2.5", "complete the customer path or demote this value proposition",
                 ))
+            if not (valid_capability_actions or valid_capability_evidence
+                    or valid_capability_authorities):
+                diagnostics.append(_diagnostic(
+                    "vp.capability_boundary", "unsupported", "blocker",
+                    "%s selected with an unconfirmed capability boundary" % ref,
+                    "confirmed capability before direct submission", [ref],
+                    ["submission"], "gate1",
+                    "keep the draft non-committal, then confirm capability or demote the VP"))
             for need_ref in _ref_list(vp, "need_refs"):
                 need = needs_by_id.get(need_ref) or {}
                 publication = need.get("publication_status")
@@ -1424,15 +1642,13 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             ))
         for lead in leads:
             matching_priority = False
-            for relation in role_need_links:
-                if (relation.get("role_ref") in _ref_list(lead, "role_refs")
-                        and relation.get("need_ref") in _ref_list(lead, "need_refs")
-                        and (relation.get("requiredness") == "required"
-                             or relation.get("priority_band") in ("critical", "high"))):
-                    relation_criteria = set(_ref_list(relation, "criterion_refs"))
-                    if not relation_criteria or relation_criteria.intersection(_ref_list(lead, "criterion_refs")):
-                        matching_priority = True
-                        break
+            for path in decision_paths:
+                if (path.get("role_ref") in _ref_list(lead, "role_refs")
+                        and path.get("need_ref") in _ref_list(lead, "need_refs")
+                        and path.get("criterion_ref") in _ref_list(lead, "criterion_refs")
+                        and path.get("requiredness") in ("required", "expected")):
+                    matching_priority = True
+                    break
             if not matching_priority:
                 diagnostics.append(_diagnostic(
                     "portfolio.lead_priority", "orphan", "blocker",
@@ -1465,7 +1681,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     "%s has unknown allowed_uses %s" % (evidence_ref, unknown_uses),
                     sorted(ALLOWED_EVIDENCE_USES), [evidence_ref], ["compile"], "task1"))
         if ((evidence.get("third_party") is True
-             or evidence.get("kind") in ("third_party_case", "buyer_case", "industry_case"))
+             or evidence.get("kind") in THIRD_PARTY_EVIDENCE_KINDS)
                 and "bidder_capability" in _as_list(allowed_uses)):
             diagnostics.append(_diagnostic(
                 "evidence.third_party_capability", "unsupported", "blocker",
@@ -1551,13 +1767,21 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             diagnostics.append(_diagnostic("claim.epistemic", "schema", "fatal", "%s epistemic_status=%r" % (ref, claim.get("epistemic_status")), sorted(EPISTEMIC_STATES), [ref], ["compile"], "task2.5"))
         if claim.get("commitment_level") not in COMMITMENT_LEVELS:
             diagnostics.append(_diagnostic("claim.commitment", "schema", "fatal", "%s commitment_level=%r" % (ref, claim.get("commitment_level")), sorted(COMMITMENT_LEVELS), [ref], ["compile"], "task2.5"))
-        if status != "publishable":
+        if status not in ("draft_ready", "publishable"):
             continue
+
+        if status == "draft_ready" and claim.get("commitment_level") == "committed":
+            diagnostics.append(_diagnostic(
+                "claim.draft_commitment", "overcommitted", "blocker",
+                "%s is draft_ready but committed" % ref,
+                "draft_ready Claim uses none|intended until authority is confirmed",
+                [ref], ["task3", "submission"], "gate1",
+                "demote the commitment or confirm and promote the Claim"))
 
         vp_refs = _ref_list(claim, "value_proposition_refs")
         selected = [target for target in vp_refs if registry.get(target, {}).get("entity", {}).get("status") in ("selected", "publishable")]
         if not selected:
-            diagnostics.append(_diagnostic("claim.vp", "orphan", "blocker", "%s publishable without selected ValueProposition" % ref, "at least one selected ValueProposition", [ref], ["task3", "submission"], "task2.5", "link to a selected VP or withdraw the claim"))
+            diagnostics.append(_diagnostic("claim.vp", "orphan", "blocker", "%s %s without selected ValueProposition" % (ref, status), "at least one selected ValueProposition", [ref], ["task3", "submission"], "task2.5", "link to a selected VP or withdraw the claim"))
 
         evidence_link_ids = set(_ref_list(claim, "evidence_link_refs"))
         evidence_link_ids.update(
@@ -1566,7 +1790,9 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
         )
         evidence_links = [link_by_id.get(item) for item in evidence_link_ids]
         evidence_links = [item for item in evidence_links if item and item.get("relation", "supports") == "supports"]
-        needs_evidence = claim.get("content_kind") in ("fact", "insight", "target") or claim.get("risk_level") in ("high", "critical")
+        needs_evidence = (status == "publishable" and (
+            claim.get("content_kind") in ("fact", "insight", "target")
+            or claim.get("risk_level") in ("high", "critical")))
         if needs_evidence and not evidence_links:
             diagnostics.append(_diagnostic("claim.evidence", "unsupported", "blocker", "%s publishable without supporting EvidenceLink" % ref, "risk-appropriate Evidence", [ref], ["task3", "submission"], "task2", "add relevant, valid Evidence or demote the claim"))
         if needs_evidence and evidence_links:
@@ -1595,10 +1821,13 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     "replace stale/weak Evidence or demote the Claim",
                 ))
 
-        if claim.get("epistemic_status") == "assumed":
+        if status == "publishable" and claim.get("epistemic_status") == "assumed":
             diagnostics.append(_diagnostic("claim.assumed", "overcommitted", "blocker", "%s assumed but publishable" % ref, "assumptions remain internal", [ref], ["task3", "submission"], "gate1", "confirm, evidence, or withdraw the claim"))
 
-        measurement_required = bool(claim.get("measurement_required")) or claim.get("content_kind") == "target" or bool(claim.get("quantitative"))
+        measurement_required = (status == "publishable" and (
+            bool(claim.get("measurement_required"))
+            or claim.get("content_kind") == "target"
+            or bool(claim.get("quantitative"))))
         if measurement_required:
             metric_refs = _ref_list(claim, "metric_refs")
             if not metric_refs:
@@ -1620,7 +1849,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                         ["task3", "submission"], "gate1",
                         "confirm the metric basis or make the Claim non-quantitative"))
 
-        if claim.get("commitment_level") == "committed":
+        if status == "publishable" and claim.get("commitment_level") == "committed":
             authority_ok, authority_reason = _authority_valid(
                 claim.get("authority_ref"), ref, documents, registry,
                 "bidder_capability" if _claim_proof_task(claim) == "bidder_capability"
@@ -1652,6 +1881,9 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             diagnostics.append(_diagnostic("action.commitment", "schema", "fatal", "%s commitment_level=%r" % (ref, action.get("commitment_level")), "intended|committed", [ref], ["compile"], "task2.5"))
         if action.get("selection_status") != "selected":
             continue
+        action_blocks = (["task3", "submission"]
+                         if action.get("commitment_level") == "committed"
+                         else ["submission"])
         listed_resource_refs = set(_ref_list(action, "resource_refs"))
         demand_resource_refs = {
             item.get("resource_ref") for item in _as_list(action.get("resource_demands"))
@@ -1664,7 +1896,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     ref, sorted(demand_resource_refs - listed_resource_refs)),
                 "resource_refs exactly include every demand envelope",
                 [ref] + sorted(demand_resource_refs - listed_resource_refs),
-                ["task3", "submission"], "task2.5",
+                action_blocks, "task2.5",
                 "synchronize resource_refs and resource_demands"))
         if ((action.get("required") or action.get("commitment_level") == "committed")
                 and listed_resource_refs - demand_resource_refs):
@@ -1674,7 +1906,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     ref, sorted(listed_resource_refs - demand_resource_refs)),
                 "bounded demand for every required/committed resource",
                 [ref] + sorted(listed_resource_refs - demand_resource_refs),
-                ["task3", "submission"], "task2.5",
+                action_blocks, "task2.5",
                 "add low/high demand or remove the unused resource reference"))
         accountable = _ref_list(action, "accountable_role_ref")
         if len(accountable) != 1:
@@ -1707,7 +1939,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                 diagnostics.append(_diagnostic(
                     "action.time_window", "unmeasured", "blocker",
                     "%s required/committed without a bounded time_window" % ref,
-                    "explicit delivery window", [ref], ["task3", "submission"],
+                    "explicit delivery window", [ref], action_blocks,
                     "task2.5", "add a tender/Gate-authorized delivery window"))
             demands = [item for item in _as_list(action.get("resource_demands")) if isinstance(item, dict)]
             if not demands and not (action.get("resource_treatment") or {}).get("cost_not_applicable"):
@@ -1715,7 +1947,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     "action.resource_treatment", "unmeasured", "blocker",
                     "%s required/committed without resource demand or authorized not-applicable treatment" % ref,
                     "bounded resource_demands or cost_not_applicable with authority/reason",
-                    [ref], ["task3", "submission"], "task2.5",
+                    [ref], action_blocks, "task2.5",
                     "map owned resources/cost or document an authorized not-applicable treatment"))
             treatment = action.get("resource_treatment") or {}
             if treatment.get("cost_not_applicable") and (
@@ -1724,7 +1956,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                 diagnostics.append(_diagnostic(
                     "action.resource_treatment_authority", "unsupported", "blocker",
                     "%s cost_not_applicable treatment lacks reason/authority" % ref,
-                    "explicit reason and real authority", [ref], ["task3", "submission"],
+                    "explicit reason and real authority", [ref], action_blocks,
                     "gate1", "confirm the no-cost boundary or map a budget demand"))
 
         budget_cap = (documents.get("requirements.json") or {}).get("budget_cap") or {}
@@ -1746,7 +1978,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     "budget.action_unmapped", "unmeasured", "blocker",
                     "%s selected without explicit portfolio budget treatment" % ref,
                     "bounded budget demand or authorized cost_not_applicable",
-                    [ref] + sorted(budget_refs), ["task3", "submission"],
+                    [ref] + sorted(budget_refs), action_blocks,
                     "task2.5", "map this Action cost so portfolio totals cannot omit it"))
             for demand in budget_demands:
                 if not isinstance(demand.get("low"), (int, float)) or not isinstance(demand.get("high"), (int, float)):
@@ -1754,7 +1986,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                         "budget.action_unbounded", "unmeasured", "blocker",
                         "%s has unbounded portfolio budget demand" % ref,
                         "numeric low/high budget demand", [ref, demand.get("resource_ref")],
-                        ["task3", "submission"], "gate1",
+                        action_blocks, "gate1",
                         "confirm bounded cost or remove the Action from the selected portfolio"))
             if treatment.get("cost_not_applicable"):
                 if not _nonempty(treatment.get("reason")):
@@ -1762,7 +1994,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                         "budget.no_cost_reason", "unmeasured", "blocker",
                         "%s no-cost treatment has no reason" % ref,
                         "explicit reason for cost_not_applicable", [ref],
-                        ["task3", "submission"], "task2.5",
+                        action_blocks, "task2.5",
                         "document why this Action adds no portfolio cost"))
                 treatment_ok, treatment_reason = _authority_valid(
                     treatment.get("authority_ref"), ref, documents, registry,
@@ -1772,7 +2004,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                         "budget.no_cost_authority", "unsupported", "blocker",
                         "%s no-cost treatment has invalid authority: %s" % (ref, treatment_reason),
                         "real authority scoped to this Action", [ref, treatment.get("authority_ref")],
-                        ["task3", "submission"], "gate1",
+                        action_blocks, "gate1",
                         "confirm the no-cost treatment or map budget demand"))
 
     selected_resource_refs = set()
@@ -1799,35 +2031,58 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                     "gate1", "confirm capacity or demote the resource status"))
 
     for acceptance_ref, acceptance in acceptances.items():
-        if not any(acceptance_ref in _ref_list(action, "acceptance_refs")
-                   for action in actions.values() if action.get("selection_status") == "selected"):
+        selected_reference = any(
+            acceptance_ref in _ref_list(action, "acceptance_refs")
+            for action in actions.values()
+            if action.get("selection_status") == "selected"
+        )
+        asserted_authority = _nonempty(acceptance.get("authority_ref"))
+        if not selected_reference and not asserted_authority:
             continue
         authority_ok, authority_reason = _authority_valid(
             acceptance.get("authority_ref"), acceptance_ref, documents, registry,
             "commitment_authority")
         if not authority_ok:
-            diagnostics.append(_diagnostic(
-                "acceptance.authority", "overcommitted", "blocker",
-                "%s has invalid authority: %s" % (acceptance_ref, authority_reason),
-                "tender Requirement, verified material, or resolved Gate authority",
-                [acceptance_ref, acceptance.get("authority_ref")], ["task3", "submission"],
-                "gate1", "bind acceptance to a real authority or narrow it"))
+            if asserted_authority:
+                diagnostics.append(_diagnostic(
+                    "acceptance.authority_scope", "contradictory", "fatal",
+                    "%s asserts invalid authority: %s" % (
+                        acceptance_ref, authority_reason),
+                    "authority explicitly scoped to this AcceptanceContract and use",
+                    [acceptance_ref, acceptance.get("authority_ref")], ["compile"],
+                    "task1", "scope the Requirement/Evidence/Gate to this acceptance, or clear the unsupported authority_ref"))
+            else:
+                diagnostics.append(_diagnostic(
+                    "acceptance.authority", "overcommitted", "blocker",
+                    "%s has invalid authority: %s" % (acceptance_ref, authority_reason),
+                    "tender Requirement, verified material, or resolved Gate authority",
+                    [acceptance_ref], ["task3", "submission"],
+                    "gate1", "bind acceptance to a real authority or narrow it"))
 
     if stage in ("generation", "submission"):
         sections = [item for item in _as_list(strategy.get("sections")) if isinstance(item, dict)]
-        jobs = {item.get("id"): item for item in _as_list(strategy.get("decision_jobs")) if isinstance(item, dict)}
+        effective_jobs = _effective_section_jobs(strategy)
+        jobs = {item.get("id"): item for item in effective_jobs if item.get("id")}
         for section in sections:
             ref = _entity_id(section) or "section-%s" % section.get("n")
-            primary = _ref_list(section, "primary_decision_job_ref")
-            secondary = _ref_list(section, "secondary_decision_job_ref")
+            if strategy.get("schema_version") == "strategy/v4":
+                primary = ([section.get("decision_job")]
+                           if isinstance(section.get("decision_job"), dict) else [])
+                secondary = ([section.get("secondary_decision_job")]
+                             if isinstance(section.get("secondary_decision_job"), dict)
+                             else [])
+            else:
+                primary = _ref_list(section, "primary_decision_job_ref")
+                secondary = _ref_list(section, "secondary_decision_job_ref")
             if len(primary) != 1:
                 diagnostics.append(_diagnostic("section.primary_job", "orphan", "blocker", "%s has %s primary DecisionJobs" % (ref, len(primary)), "exactly one primary DecisionJob", [ref], ["task3", "submission"], "task2.5", "compile one primary customer decision job"))
             if len(secondary) > 1:
                 diagnostics.append(_diagnostic("section.secondary_job", "redundant", "blocker", "%s has %s secondary DecisionJobs" % (ref, len(secondary)), "zero or one secondary DecisionJob", [ref], ["task3"], "task2.5"))
-            for job_ref in primary + secondary:
-                job = jobs.get(job_ref) or {}
-                if job.get("section_ref") != ref:
-                    diagnostics.append(_diagnostic("section.job_backref", "contradictory", "blocker", "%s points to %s but job.section_ref=%r" % (ref, job_ref, job.get("section_ref")), "bidirectional section/job binding", [ref, job_ref], ["task3"], "task2.5"))
+            if strategy.get("schema_version") != "strategy/v4":
+                for job_ref in primary + secondary:
+                    job = jobs.get(job_ref) or {}
+                    if job.get("section_ref") != ref:
+                        diagnostics.append(_diagnostic("section.job_backref", "contradictory", "blocker", "%s points to %s but job.section_ref=%r" % (ref, job_ref, job.get("section_ref")), "bidirectional section/job binding", [ref, job_ref], ["task3"], "task2.5"))
         for job in jobs.values():
             ref = _entity_id(job)
             if job.get("job_kind") not in JOB_KINDS:
@@ -1840,11 +2095,121 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             if missing:
                 diagnostics.append(_diagnostic("job.path", "orphan", "blocker", "%s missing %s" % (ref, ", ".join(missing)), "role + criterion + expected judgment + VP/Claim", [ref], ["task3", "submission"], "task2.5"))
 
+        output_ids = set()
+        required_output_vps = set()
+        for section in sections:
+            section_ref = _entity_id(section) or "section-%s" % section.get("n")
+            raw_outputs = section.get("visible_outputs", [])
+            if not isinstance(raw_outputs, list):
+                diagnostics.append(_diagnostic(
+                    "visible_output.collection", "schema", "fatal",
+                    "%s visible_outputs is not an array" % section_ref,
+                    "array of lightweight customer-visible output contracts",
+                    [section_ref], ["compile"], "task2.5"))
+                continue
+            for index, output in enumerate(raw_outputs):
+                if not isinstance(output, dict):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.schema", "schema", "fatal",
+                        "%s visible_outputs[%s] is not an object" % (section_ref, index),
+                        "visible output object", [section_ref], ["compile"], "task2.5"))
+                    continue
+                output_ref = output.get("id")
+                if not _nonempty(output_ref) or output_ref in output_ids:
+                    diagnostics.append(_diagnostic(
+                        "visible_output.id", "schema", "fatal",
+                        "%s has missing or duplicate visible output id %r" % (
+                            section_ref, output_ref),
+                        "globally unique OUT-* id", [section_ref, output_ref],
+                        ["compile"], "task2.5"))
+                    continue
+                output_ids.add(output_ref)
+                requiredness = output.get("requiredness")
+                if requiredness not in ("required", "expected"):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.requiredness", "schema", "fatal",
+                        "%s requiredness=%r" % (output_ref, requiredness),
+                        "required|expected", [output_ref], ["compile"], "task2.5"))
+                required_fields = output.get("required_fields")
+                if (not isinstance(required_fields, list) or not required_fields
+                        or any(not _nonempty(field) for field in required_fields)
+                        or len(set(required_fields)) != len(required_fields)):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.fields", "schema", "fatal",
+                        "%s required_fields is empty, malformed, or duplicated" % output_ref,
+                        "non-empty unique field names", [output_ref], ["compile"],
+                        "task2.5"))
+                if not _nonempty(output.get("purpose")):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.purpose", "schema", "fatal",
+                        "%s has no evaluator-facing purpose" % output_ref,
+                        "what the evaluator must be able to inspect", [output_ref],
+                        ["compile"], "task2.5"))
+                if not _nonempty(output.get("truth_boundary")):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.truth_boundary", "schema", "fatal",
+                        "%s has no truth boundary" % output_ref,
+                        "explicit facts/commitments that must not be expanded",
+                        [output_ref], ["compile"], "task2.5"))
+                if output.get("grounding_mode") not in (
+                        "tender", "evidence", "illustrative"):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.grounding_mode", "schema", "fatal",
+                        "%s grounding_mode=%r" % (
+                            output_ref, output.get("grounding_mode")),
+                        "tender|evidence|illustrative", [output_ref], ["compile"],
+                        "task2.5"))
+                supports = _ref_list(output, "supports_refs")
+                if not supports:
+                    diagnostics.append(_diagnostic(
+                        "visible_output.supports", "orphan", "blocker",
+                        "%s has no supported VP/Requirement" % output_ref,
+                        "at least one ValueProposition or Requirement ref",
+                        [output_ref], ["task3", "submission"], "task2.5"))
+                for target_ref in supports:
+                    _expect_ref(registry, output_ref, target_ref,
+                                {"value_proposition", "requirement"}, diagnostics,
+                                "supports_refs")
+                    if requiredness == "required" and registry.get(
+                            target_ref, {}).get("type") == "value_proposition":
+                        required_output_vps.add(target_ref)
+                for grounding_ref in _ref_list(output, "grounding_refs"):
+                    _expect_ref(registry, output_ref, grounding_ref,
+                                {"requirement", "evidence"}, diagnostics,
+                                "grounding_refs")
+                if not _ref_list(output, "grounding_refs"):
+                    diagnostics.append(_diagnostic(
+                        "visible_output.grounding", "unsupported", "blocker",
+                        "%s has no tender/Evidence grounding boundary" % output_ref,
+                        "at least one Requirement or Evidence ref",
+                        [output_ref], ["task3", "submission"], "task2.5"))
+        lead_refs = {
+            item.get("id") for item in selected_vps
+            if item.get("portfolio_role") == "lead" and item.get("id")
+        }
+        missing_visible_leads = (lead_refs - required_output_vps
+                                 if strategy.get("schema_version") == "strategy/v4"
+                                 else set())
+        for lead_ref in sorted(missing_visible_leads):
+            diagnostics.append(_diagnostic(
+                "visible_output.lead_missing", "uncovered", "blocker",
+                "%s lead has no required customer-visible output" % lead_ref,
+                "at least one required visible output that lets the evaluator inspect the lead value",
+                [lead_ref], ["task3", "submission"], "task2.5",
+                "add a small project-specific output contract to the owning section"))
+
 
 def _resource_diagnostics(documents):
     diagnostics = []
     delivery = documents.get("delivery-plan.json") or {}
     resources = {item.get("id"): item for item in _as_list(delivery.get("resource_envelopes")) if isinstance(item, dict)}
+    has_committed_selected = any(
+        isinstance(item, dict)
+        and item.get("selection_status") == "selected"
+        and item.get("commitment_level") == "committed"
+        for item in _as_list(delivery.get("actions")))
+    resource_blocks = (["task3", "submission"] if has_committed_selected
+                       else ["submission"])
     totals = {}
     contributing = {}
     for action in _as_list(delivery.get("actions")):
@@ -1861,7 +2226,7 @@ def _resource_diagnostics(documents):
                     "resource.window_missing", "unmeasured", "blocker",
                     "%s demand for %s has no time window" % (_entity_id(action), resource_ref),
                     "demand window aligned to the ResourceEnvelope",
-                    [_entity_id(action), resource_ref], ["task3", "submission"],
+                    [_entity_id(action), resource_ref], resource_blocks,
                     "task2.5", "add a bounded demand window"))
                 window = "unspecified"
             resource_window = resource.get("time_window")
@@ -1871,7 +2236,7 @@ def _resource_diagnostics(documents):
                     "%s demand window %s does not match %s window %s" % (
                         _entity_id(action), window, resource_ref, resource_window),
                     "matching comparable windows", [_entity_id(action), resource_ref],
-                    ["task3", "submission"], "task2.5",
+                    resource_blocks, "task2.5",
                     "normalize or split the ResourceEnvelope by time window"))
             demand_unit = demand.get("unit")
             if _nonempty(demand_unit) and _nonempty(resource.get("unit")) \
@@ -1881,14 +2246,14 @@ def _resource_diagnostics(documents):
                     "%s demand unit %s does not match %s unit %s" % (
                         _entity_id(action), demand_unit, resource_ref, resource.get("unit")),
                     "matching resource units", [_entity_id(action), resource_ref],
-                    ["task3", "submission"], "task2.5",
+                    resource_blocks, "task2.5",
                     "normalize the demand without changing its real quantity"))
             key = (resource_ref, window)
             low = demand.get("low")
             high = demand.get("high")
             if not isinstance(low, (int, float)) or not isinstance(high, (int, float)):
                 if action.get("commitment_level") == "committed":
-                    diagnostics.append(_diagnostic("resource.unknown_demand", "overcommitted", "blocker", "%s has unknown demand for %s" % (_entity_id(action), demand.get("resource_ref")), "numeric low/high demand", [_entity_id(action), demand.get("resource_ref")], ["task3", "submission"], "gate1", "confirm a bounded resource demand"))
+                    diagnostics.append(_diagnostic("resource.unknown_demand", "overcommitted", "blocker", "%s has unknown demand for %s" % (_entity_id(action), demand.get("resource_ref")), "numeric low/high demand", [_entity_id(action), demand.get("resource_ref")], resource_blocks, "gate1", "confirm a bounded resource demand"))
                 continue
             if low < 0 or high < low:
                 diagnostics.append(_diagnostic(
@@ -1896,7 +2261,7 @@ def _resource_diagnostics(documents):
                     "%s has invalid demand %.2f–%.2f for %s" % (
                         _entity_id(action), low, high, resource_ref),
                     "0 <= low <= high", [_entity_id(action), resource_ref],
-                    ["task3", "submission"], "task2.5",
+                    resource_blocks, "task2.5",
                     "correct the bounded demand range"))
                 continue
             totals.setdefault(key, [0.0, 0.0])
@@ -1910,10 +2275,10 @@ def _resource_diagnostics(documents):
         cap_low, cap_high = capacity.get("low"), capacity.get("high")
         refs = [resource_ref] + contributing.get((resource_ref, window), [])
         if not isinstance(cap_low, (int, float)) or not isinstance(cap_high, (int, float)):
-            diagnostics.append(_diagnostic("resource.unknown_capacity", "overcommitted", "blocker", "%s has no bounded capacity for %s" % (resource_ref, window), "capacity low/high in matching unit", refs, ["task3", "submission"], "gate1", "confirm the portfolio capacity envelope"))
+            diagnostics.append(_diagnostic("resource.unknown_capacity", "overcommitted", "blocker", "%s has no bounded capacity for %s" % (resource_ref, window), "capacity low/high in matching unit", refs, resource_blocks, "gate1", "confirm the portfolio capacity envelope"))
             continue
         if demand_low > cap_high:
-            diagnostics.append(_diagnostic("resource.overload", "overcommitted", "blocker", "demand %.2f–%.2f exceeds capacity %.2f–%.2f in %s" % (demand_low, demand_high, cap_low, cap_high, window), "portfolio demand within confirmed capacity", refs, ["task3", "submission"], "gate1", "reduce, sequence, or add confirmed capacity"))
+            diagnostics.append(_diagnostic("resource.overload", "overcommitted", "blocker", "demand %.2f–%.2f exceeds capacity %.2f–%.2f in %s" % (demand_low, demand_high, cap_low, cap_high, window), "portfolio demand within confirmed capacity", refs, resource_blocks, "gate1", "reduce, sequence, or add confirmed capacity"))
         elif demand_high > cap_low:
             diagnostics.append(_diagnostic("resource.possible_overload", "overcommitted", "major", "demand %.2f–%.2f overlaps capacity %.2f–%.2f in %s" % (demand_low, demand_high, cap_low, cap_high, window), "confirm peak demand or capacity", refs, [], "gate1", "tighten the range before committing"))
 
@@ -1932,7 +2297,7 @@ def _resource_diagnostics(documents):
                     len(budget_resources), cap_value, budget_cap.get("unit") or ""),
                 "exactly one portfolio_budget ResourceEnvelope",
                 [item.get("id") for item in budget_resources],
-                ["task3", "submission"], "task2.5",
+                resource_blocks, "task2.5",
                 "create one confirmed budget envelope and map selected Action demand",
             ))
         else:
@@ -1946,7 +2311,7 @@ def _resource_diagnostics(documents):
                     "%s uses %s but tender cap uses %s" % (
                         budget_ref, resource_unit, cap_unit),
                     "matching budget units", [budget_ref],
-                    ["task3", "submission"], "task2.5",
+                    resource_blocks, "task2.5",
                     "normalize the budget unit without changing the tender amount",
                 ))
             capacity = budget.get("capacity") or {}
@@ -1959,7 +2324,7 @@ def _resource_diagnostics(documents):
                     "budget.capacity", "unmeasured", "blocker",
                     "%s has no valid numeric low/high bound" % budget_ref,
                     "0 <= portfolio budget low <= high <= tender cap", [budget_ref],
-                    ["task3", "submission"], "gate1",
+                    resource_blocks, "gate1",
                     "confirm a bounded single recommended budget",
                 ))
             elif capacity_high > cap_value:
@@ -1968,7 +2333,7 @@ def _resource_diagnostics(documents):
                     "%s high %.2f exceeds tender cap %.2f %s" % (
                         budget_ref, capacity_high, cap_value, cap_unit),
                     "budget envelope within tender cap", [budget_ref],
-                    ["task3", "submission"], "gate1",
+                    resource_blocks, "gate1",
                     "reduce the plan or confirm a lawful cap interpretation",
                 ))
             budget_demands = [
@@ -1980,7 +2345,7 @@ def _resource_diagnostics(documents):
                     "budget.demand_missing", "unmeasured", "blocker",
                     "%s is not linked to selected Action demand" % budget_ref,
                     "selected portfolio cost mapped to the budget envelope",
-                    [budget_ref], ["task3", "submission"], "task2.5",
+                    [budget_ref], resource_blocks, "task2.5",
                     "add bounded budget demand to the selected Action portfolio",
                 ))
             else:
@@ -1993,7 +2358,7 @@ def _resource_diagnostics(documents):
                             demand_low, demand_high, cap_value, cap_unit),
                         "single recommended portfolio within tender cap",
                         [budget_ref] + [ref for key in budget_demands for ref in contributing.get(key, [])],
-                        ["task3", "submission"], "gate1",
+                        resource_blocks, "gate1",
                         "reduce or reallocate selected Action demand",
                     ))
     return diagnostics
@@ -2092,26 +2457,15 @@ def _delivery_structure_diagnostics(documents):
 
 def _coverage_obligations(documents):
     cv = documents.get("customer-value.json") or {}
-    links = []
-    need_criteria = {}
-    for item in _as_list(cv.get("need_criterion_links")):
-        if isinstance(item, dict) and item.get("need_ref") and item.get("criterion_ref"):
-            need_criteria.setdefault(item["need_ref"], []).append(item["criterion_ref"])
-    for relation in _as_list(cv.get("role_need_links")):
-        if not isinstance(relation, dict) or not relation.get("role_ref") or not relation.get("need_ref"):
-            continue
-        criteria = _ref_list(relation, "criterion_refs") or need_criteria.get(relation.get("need_ref"), [])
-        requiredness = relation.get("requiredness")
-        if requiredness not in ("required", "expected", "exploratory"):
-            requiredness = "required" if relation.get("priority_band") == "critical" else ("expected" if relation.get("priority_band") in ("high", "medium") else "exploratory")
-        for criterion_ref in criteria:
-            links.append({
-                "role_ref": relation["role_ref"], "need_ref": relation["need_ref"],
-                "criterion_ref": criterion_ref, "requiredness": requiredness,
-                "confidence": relation.get("confidence") or "unknown",
-                "source_ref": relation.get("id"),
-            })
-    return links
+    return [{
+        "role_ref": path.get("role_ref"),
+        "need_ref": path.get("need_ref"),
+        "criterion_ref": path.get("criterion_ref"),
+        "requiredness": path.get("requiredness") or "exploratory",
+        "confidence": path.get("confidence") or "unknown",
+        "source_ref": path.get("id"),
+        "source_refs": _ref_list(path, "source_refs"),
+    } for path in _effective_decision_paths(cv)]
 
 
 def _authoritative_realization_manifests(realization_dir):
@@ -2136,6 +2490,18 @@ def _authoritative_realization_manifests(realization_dir):
             ))
             continue
         if manifest.get("schema_version") != SCHEMA_VERSIONS["realization"]:
+            continue
+        expected_attestation = content_hash({
+            key: value for key, value in manifest.items()
+            if key != "attestation_hash"
+        })
+        if manifest.get("attestation_hash") != expected_attestation:
+            diagnostics.append(_diagnostic(
+                "realization.attestation", "contradictory", "fatal",
+                "%s authoritative manifest attestation is missing or changed" % filename,
+                "tool-emitted self-attestation matching manifest content",
+                blocks=["submission"], owner="task3",
+                repair="re-run audit-realization; do not hand-edit the manifest"))
             continue
         section_ref = manifest.get("section_ref")
         if not section_ref:
@@ -2165,7 +2531,8 @@ def coverage_diagnostics(documents, realization_dir=None):
     requirements = documents.get("requirements.json") or {}
     diagnostics = []
     sections = {item.get("id"): item for item in _as_list(strategy.get("sections")) if isinstance(item, dict)}
-    jobs = {item.get("id"): item for item in _as_list(strategy.get("decision_jobs")) if isinstance(item, dict)}
+    jobs = {item.get("id"): item for item in _effective_section_jobs(strategy)
+            if item.get("id")}
     vps = [item for item in _as_list(cv.get("value_propositions")) if isinstance(item, dict) and item.get("status") in ("selected", "publishable")]
     claims = [item for item in _as_list(cv.get("claims")) if isinstance(item, dict) and item.get("status") == "publishable"]
 
@@ -2266,43 +2633,9 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
     strategy = documents.get("strategy.json") or {}
     manifests, loader_diagnostics = _authoritative_realization_manifests(realization_dir)
     diagnostics.extend(loader_diagnostics)
-    expected_snapshot_id, _, _ = _expected_snapshot_id(documents)
+    expected_snapshot_id, _, _ = _expected_snapshot_id(documents, state_dir)
 
-    artifacts_path = os.path.join(state_dir, "derived", "manifests", "artifacts.json")
-    artifacts = {}
-    if os.path.isfile(artifacts_path):
-        try:
-            artifact_doc = _read_json(artifacts_path)
-            artifacts = {
-                item.get("artifact_id"): item
-                for item in _as_list(artifact_doc.get("artifacts"))
-                if isinstance(item, dict) and item.get("artifact_id")
-            }
-        except Exception as exc:
-            diagnostics.append(_diagnostic(
-                "realization.artifact_registry", "schema", "fatal",
-                "artifact registry cannot be read: %s" % exc,
-                "valid current artifact registry", blocks=["submission"], owner="main"))
-
-    def validate_artifacts(ref, manifest):
-        manifest_path = manifest.get("_authoritative_path")
-        artifact = artifacts.get("realization:%s" % ref)
-        if not manifest_path or not artifact:
-            diagnostics.append(_diagnostic(
-                "realization.unregistered", "unsupported", "blocker",
-                "%s realization is not registered" % ref,
-                "authoritative manifest emitted by audit-realization",
-                [ref], ["submission"], "task3",
-                "re-run audit-realization with the current compiled brief"))
-            return
-        if (os.path.abspath(artifact.get("path") or "") != os.path.abspath(manifest_path)
-                or artifact.get("output_hash") != file_hash(manifest_path)
-                or artifact.get("status") != "fresh"):
-            diagnostics.append(_diagnostic(
-                "realization.artifact_drift", "contradictory", "blocker",
-                "%s authoritative manifest differs from its registered audit artifact" % ref,
-                "fresh immutable audit output", [ref], ["submission"], "task3",
-                "re-audit; do not hand-edit the authoritative manifest"))
+    def validate_lineage(ref, manifest):
         brief_path = manifest.get("brief_path")
         brief_root = os.path.abspath(os.path.join(state_dir, "derived", "briefs"))
         if not _nonempty(brief_path) or not os.path.isfile(brief_path):
@@ -2325,17 +2658,17 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
         brief = {}
         try:
             brief = _read_json(brief_path)
-            brief_issues, artifact_id = _brief_integrity_issues(
+            brief_issues, brief_id = _brief_integrity_issues(
                 state_dir, brief_path, brief, ref, documents)
         except Exception as exc:
-            brief_issues, artifact_id = [str(exc)], None
+            brief_issues, brief_id = [str(exc)], None
         if brief_issues or manifest.get("brief_hash") != brief.get("brief_hash") \
-                or manifest.get("brief_artifact_id") != artifact_id:
+                or manifest.get("brief_id") != brief_id:
             diagnostics.append(_diagnostic(
                 "realization.brief_drift", "contradictory", "blocker",
                 "%s brief lineage is invalid: %s" % (
                     ref, "; ".join(brief_issues[:3]) if brief_issues else "hash/id mismatch"),
-                "current registered brief with matching snapshot/hash",
+                "current run-local brief with matching path/snapshot/hash",
                 [ref], ["submission"], "task3",
                 "recompile the brief and re-audit the section"))
 
@@ -2360,7 +2693,7 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
                 "status=valid", [ref], ["submission"], "task3",
                 "repair missing, drifted, or unreviewed realization",
             ))
-        validate_artifacts(ref, manifest)
+        validate_lineage(ref, manifest)
         if manifest.get("snapshot_id") != expected_snapshot_id:
             diagnostics.append(_diagnostic(
                 "realization.stale_snapshot", "contradictory", "blocker",
@@ -2392,6 +2725,33 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
                     and item.get("requirement_ref") and _as_list(item.get("anchors"))
                     and manifest.get("status") == "valid"):
                 addressed_requirements.add(item.get("requirement_ref"))
+
+        visible_by_ref = {
+            item.get("output_ref"): item
+            for item in _as_list(manifest.get("visible_output_realizations"))
+            if isinstance(item, dict) and item.get("output_ref")
+        }
+        for output in _as_list(section.get("visible_outputs")):
+            if (not isinstance(output, dict)
+                    or output.get("requiredness") != "required"
+                    or not output.get("id")):
+                continue
+            output_ref = output["id"]
+            realized = visible_by_ref.get(output_ref)
+            if not realized:
+                diagnostics.append(_diagnostic(
+                    "visible_output.realization_missing", "uncovered", "blocker",
+                    "%s has no independent visible-output evaluation" % output_ref,
+                    "filled output with every required field uniquely anchored",
+                    [ref, output_ref], ["submission"], "task3",
+                    "fill the customer-visible object and re-run semantic audit"))
+            elif realized.get("status") != "filled":
+                diagnostics.append(_diagnostic(
+                    "visible_output.realization_invalid", "uncovered", "blocker",
+                    "%s visible output status=%s" % (
+                        output_ref, realized.get("status")),
+                    "status=filled", [ref, output_ref], ["submission"], "task3",
+                    "repair missing fields or truth-boundary drift and re-audit"))
 
     requirements = documents.get("requirements.json") or {}
     all_requirement_refs = {
@@ -2437,7 +2797,7 @@ def _realization_diagnostics(state_dir, documents, realization_dir,
             "task3.5", "recompile and re-audit the summary",
         ))
     else:
-        validate_artifacts(summary_manifest.get("section_ref") or "CH-00", summary_manifest)
+        validate_lineage(summary_manifest.get("section_ref") or "CH-00", summary_manifest)
     if (summary_manifest and os.path.isfile(summary_path)
             and summary_manifest.get("section_hash") != content_hash(_read_text(summary_path))):
         diagnostics.append(_diagnostic(
@@ -2471,12 +2831,10 @@ def check_canonical(state_dir, stage="draft", realization_dir=None, write_derive
             realization_dir or os.path.join(state_dir, "derived", "realization"),
         ))
 
-    if stage == "draft":
-        failing = [item for item in diagnostics if item["severity"] == "fatal"]
-    elif stage == "generation":
-        failing = [item for item in diagnostics if item["severity"] == "fatal" or "task3" in item.get("blocks", []) or "compile" in item.get("blocks", [])]
-    else:
-        failing = [item for item in diagnostics if item["severity"] in ("fatal", "blocker")]
+    failing = _blocking_diagnostics(diagnostics, stage)
+    generation_failing = _blocking_diagnostics(diagnostics, "generation")
+    safe_draft_ready = (stage in ("generation", "submission")
+                        and not generation_failing)
 
     result = {
         "passed": not failing,
@@ -2490,7 +2848,14 @@ def check_canonical(state_dir, stage="draft", realization_dir=None, write_derive
             "major": sum(1 for item in diagnostics if item["severity"] == "major"),
             "minor": sum(1 for item in diagnostics if item["severity"] == "minor"),
         },
+        "safe_draft_ready": safe_draft_ready,
         "submission_ready": stage == "submission" and not failing,
+        "readiness": (
+            "submission_ready" if stage == "submission" and not failing
+            else "safe_draft_ready" if safe_draft_ready
+            else "not_ready"
+        ),
+        "state_hash": state_hash(state_dir, documents) if not load_issues else None,
         "coverage": coverage,
     }
     if write_derived:
@@ -2501,6 +2866,89 @@ def check_canonical(state_dir, stage="draft", realization_dir=None, write_derive
             "schema_version": "diagnostics/v1", "stage": stage, "diagnostics": diagnostics,
         })
     return result
+
+
+def _effective_decision_paths(customer_value):
+    """Return the v3.1 path model, deriving it for untouched v3.0 archives."""
+    if (customer_value.get("schema_version") == "customer-value/v2"
+            or "decision_paths" in customer_value):
+        return [
+            item for item in _as_list(customer_value.get("decision_paths"))
+            if isinstance(item, dict)
+        ]
+
+    need_criteria = {}
+    for item in _as_list(customer_value.get("need_criterion_links")):
+        if (isinstance(item, dict) and item.get("need_ref")
+                and item.get("criterion_ref")):
+            need_criteria.setdefault(item["need_ref"], []).append(
+                item["criterion_ref"])
+    paths = []
+    for index, relation in enumerate(_as_list(customer_value.get("role_need_links"))):
+        if (not isinstance(relation, dict) or not relation.get("role_ref")
+                or not relation.get("need_ref")):
+            continue
+        criteria = (_ref_list(relation, "criterion_refs")
+                    or need_criteria.get(relation.get("need_ref"), []))
+        requiredness = relation.get("requiredness")
+        if requiredness not in ("required", "expected", "exploratory"):
+            priority = relation.get("priority_band")
+            requiredness = ("required" if priority == "critical" else
+                            "expected" if priority in ("high", "medium") else
+                            "exploratory")
+        for criterion_index, criterion_ref in enumerate(criteria):
+            source_refs = [relation.get("id")]
+            source_refs.extend(
+                item.get("id") for item in _as_list(
+                    customer_value.get("need_criterion_links"))
+                if (isinstance(item, dict)
+                    and item.get("need_ref") == relation.get("need_ref")
+                    and item.get("criterion_ref") == criterion_ref)
+            )
+            paths.append({
+                "id": "PATH-LEGACY-%03d-%02d" % (index + 1, criterion_index + 1),
+                "role_ref": relation.get("role_ref"),
+                "need_ref": relation.get("need_ref"),
+                "criterion_ref": criterion_ref,
+                "requiredness": requiredness,
+                "confidence": relation.get("confidence") or "unknown",
+                "source_refs": [ref for ref in source_refs if ref],
+            })
+    return paths
+
+
+def _embedded_job(section, field, slot):
+    raw = section.get(field)
+    if not isinstance(raw, dict):
+        return None
+    job = copy.deepcopy(raw)
+    section_ref = _entity_id(section) or "section-%s" % section.get("n")
+    job.setdefault("id", "DJ-%s-%s" % (
+        _safe_path_component(section_ref), slot.upper()))
+    job["section_ref"] = section_ref
+    job["_embedded_slot"] = slot
+    return job
+
+
+def _effective_section_jobs(strategy):
+    """Flatten embedded v4 jobs for validators and context compilation."""
+    if (strategy.get("schema_version") == "strategy/v4"
+            or any(isinstance(item, dict) and "decision_job" in item
+                   for item in _as_list(strategy.get("sections")))):
+        jobs = []
+        for section in _as_list(strategy.get("sections")):
+            if not isinstance(section, dict):
+                continue
+            for field, slot in (("decision_job", "primary"),
+                                ("secondary_decision_job", "secondary")):
+                job = _embedded_job(section, field, slot)
+                if job:
+                    jobs.append(job)
+        return jobs
+    return [
+        copy.deepcopy(item) for item in _as_list(strategy.get("decision_jobs"))
+        if isinstance(item, dict)
+    ]
 
 
 def _decode_pointer(pointer):
@@ -2590,7 +3038,7 @@ def _apply_operation(document, operation):
 
 
 def _producer_allowed(producer, filename, operation):
-    if producer in ("main", "gate1", "gate2", "human", "migration"):
+    if producer in ("main", "gate1", "gate2", "human"):
         return True
     if producer == "task2":
         if filename == "intel-pool.json": return True
@@ -2612,6 +3060,43 @@ def _entities_by_id(document, collection):
     }
 
 
+def _gate_transition_issues(before, after, producer):
+    """Keep human Gate resolution authority out of non-Gate producers."""
+    if producer in ("main", "gate1", "human"):
+        return []
+    old_items = {
+        item.get("id") or item.get("ref") or item.get("title"): item
+        for item in _as_list((before.get("strategy.json") or {}).get("open_questions"))
+        if isinstance(item, dict)
+        and (item.get("id") or item.get("ref") or item.get("title"))
+    }
+    new_items = {
+        item.get("id") or item.get("ref") or item.get("title"): item
+        for item in _as_list((after.get("strategy.json") or {}).get("open_questions"))
+        if isinstance(item, dict)
+        and (item.get("id") or item.get("ref") or item.get("title"))
+    }
+    issues = []
+    for key, decision in new_items.items():
+        old = old_items.get(key) or {}
+        if (decision.get("status") in ("resolved", "assumed")
+                and old.get("status") != decision.get("status")):
+            issues.append("producer %s cannot resolve/assume Gate %s" % (
+                producer, key))
+        if (decision.get("resolved") != old.get("resolved")
+                and _nonempty(decision.get("resolved"))):
+            issues.append("producer %s cannot write Gate resolution for %s" % (
+                producer, key))
+        if old.get("status") == "resolved" and decision != old:
+            issues.append("producer %s cannot alter resolved Gate %s" % (
+                producer, key))
+    for key, decision in old_items.items():
+        if decision.get("status") in ("resolved", "assumed") and key not in new_items:
+            issues.append("producer %s cannot remove settled Gate %s" % (
+                producer, key))
+    return sorted(set(issues))
+
+
 def _task25_transition_issues(before, after):
     """Keep selection authority separate from human commitment authority."""
     issues = []
@@ -2624,7 +3109,7 @@ def _task25_transition_issues(before, after):
                 issues.append("task2.5 cannot delete canonical history %s" % ref)
 
     for collection in (
-            "roles", "needs", "criteria", "role_need_links",
+            "roles", "needs", "criteria", "decision_paths", "role_need_links",
             "need_criterion_links", "role_criterion_links", "evidence_links",
             "role_conflicts"):
         if ((before.get("customer-value.json") or {}).get(collection)
@@ -2735,27 +3220,13 @@ def _task25_transition_issues(before, after):
         ("name", "definition", "unit", "window", "baseline", "target", "data_source",
          "frequency", "owner_ref", "approved_baseline", "approved_wording", "authority_ref"))
 
-    old_decisions = {
-        item.get("id") or item.get("ref") or item.get("title"): item
-        for item in _as_list((before.get("strategy.json") or {}).get("open_questions"))
-        if isinstance(item, dict) and (item.get("id") or item.get("ref") or item.get("title"))
-    }
-    for decision in _as_list((after.get("strategy.json") or {}).get("open_questions")):
-        if not isinstance(decision, dict):
-            continue
-        key = decision.get("id") or decision.get("ref") or decision.get("title")
-        old = old_decisions.get(key) or {}
-        if decision.get("status") in ("resolved", "assumed") and old.get("status") != decision.get("status"):
-            issues.append("task2.5 cannot resolve/assume Gate %s" % key)
-        if decision.get("resolved") != old.get("resolved") and _nonempty(decision.get("resolved")):
-            issues.append("task2.5 cannot write Gate resolution for %s" % key)
-        if old.get("status") == "resolved" and decision != old:
-            issues.append("task2.5 cannot alter resolved Gate %s" % key)
     return sorted(set(issues))
 
 
 def apply_changeset(state_dir, changeset_path):
-    changeset = _read_json(changeset_path)
+    changeset, read_issue = _read_json_or_issue(changeset_path, "changeset")
+    if read_issue:
+        return read_issue
     if changeset.get("schema_version") != SCHEMA_VERSIONS["changeset"]:
         return {"passed": False, "issues": ["unsupported changeset schema"]}
     producer = changeset.get("producer")
@@ -2800,6 +3271,10 @@ def apply_changeset(state_dir, changeset_path):
             if filename not in touched: touched.append(filename)
     except Exception as exc:
         return {"passed": False, "issues": [str(exc)]}
+
+    transition_issues = _gate_transition_issues(documents, candidates, producer)
+    if transition_issues:
+        return {"passed": False, "issues": transition_issues, "rolled_back": True}
 
     if producer == "task2.5":
         transition_issues = _task25_transition_issues(documents, candidates)
@@ -2867,15 +3342,22 @@ def apply_changeset(state_dir, changeset_path):
     }
     receipt_dir = os.path.join(state_dir, "proposals", "changes")
     os.makedirs(receipt_dir, exist_ok=True)
-    receipt_name = re.sub(r"[^A-Za-z0-9_.-]", "-", str(changeset.get("changeset_id") or uuid.uuid4().hex)) + ".receipt.json"
+    receipt_name = _safe_path_component(
+        changeset.get("changeset_id") or uuid.uuid4().hex) + ".receipt.json"
     _write_json_atomic(os.path.join(receipt_dir, receipt_name), receipt)
     return {"passed": True, "issues": [], "receipt": receipt, "rolled_back": False}
 
 
 def promote_research(state_dir, intel_proposal_path, links_proposal_path):
     """Validate Task 2 candidates and promote them through the ChangeSet path."""
-    intel_proposal = _read_json(intel_proposal_path)
-    links_proposal = _read_json(links_proposal_path)
+    intel_proposal, read_issue = _read_json_or_issue(
+        intel_proposal_path, "intel proposal")
+    if read_issue:
+        return read_issue
+    links_proposal, read_issue = _read_json_or_issue(
+        links_proposal_path, "links proposal")
+    if read_issue:
+        return read_issue
     if intel_proposal.get("schema_version") != "research-evidence/v1":
         return {"passed": False, "issues": ["intel proposal must be research-evidence/v1"]}
     if links_proposal.get("schema_version") != "research-links/v1":
@@ -2888,8 +3370,11 @@ def promote_research(state_dir, intel_proposal_path, links_proposal_path):
     existing_ids = set(registry)
     evidence_candidates = _as_list(intel_proposal.get("evidence_candidates"))
     link_candidates = _as_list(links_proposal.get("link_candidates"))
+    research_manifest = intel_proposal.get("manifest")
     new_evidence_ids = set()
     proposal_issues = []
+    if research_manifest is not None and not isinstance(research_manifest, dict):
+        proposal_issues.append("research manifest must be an object")
     allowed_visibility = SAFE_PUBLICATION_VISIBILITIES | {"internal", "private", "unknown"}
     for index, evidence in enumerate(evidence_candidates):
         if not isinstance(evidence, dict):
@@ -2910,7 +3395,7 @@ def promote_research(state_dir, intel_proposal_path, links_proposal_path):
         if visibility == "public" and not _nonempty(evidence.get("url")):
             proposal_issues.append("%s public Evidence requires a fetched source URL" % ref)
         if ((evidence.get("third_party") is True
-             or evidence.get("kind") in ("third_party_case", "buyer_case", "industry_case"))
+             or evidence.get("kind") in THIRD_PARTY_EVIDENCE_KINDS)
                 and "bidder_capability" in _as_list(evidence.get("allowed_uses"))):
             proposal_issues.append("%s third-party case cannot prove bidder capability" % ref)
         if evidence.get("visibility") == "approved_anonymized" and (
@@ -2946,6 +3431,11 @@ def promote_research(state_dir, intel_proposal_path, links_proposal_path):
     base_revisions.update(intel_proposal.get("base_revisions") or {})
     base_revisions.update(links_proposal.get("base_revisions") or {})
     operations = []
+    if isinstance(research_manifest, dict):
+        operations.append({
+            "file": "intel-pool.json", "op": "add",
+            "path": "/research_manifest", "value": research_manifest,
+        })
     for evidence in evidence_candidates:
         operations.append({"file": "intel-pool.json", "op": "add", "path": "/evidence/-", "value": evidence})
     promoted_gaps = list(_as_list(intel_proposal.get("gaps")))
@@ -3014,6 +3504,8 @@ def apply_auto_state(state_dir):
         if target_type == "claim" and updated.get("authority_ref") == gate_ref:
             if updated.get("commitment_level") == "committed":
                 updated["commitment_level"] = "intended"; changed = True
+            if updated.get("status") == "publishable":
+                updated["status"] = "draft_ready"; changed = True
             updated["authority_ref"] = None; changed = True
         elif target_type == "delivery_action" and updated.get("authority_ref") == gate_ref:
             if updated.get("commitment_level") == "committed":
@@ -3023,7 +3515,7 @@ def apply_auto_state(state_dir):
             updated["authority_ref"] = None; changed = True
         elif target_type == "resource_envelope" and updated.get("authority_ref") == gate_ref:
             if updated.get("status") == "confirmed":
-                updated["status"] = "provisional"; changed = True
+                updated["status"] = "unknown"; changed = True
             updated["authority_ref"] = None; changed = True
         elif target_type in ("acceptance_contract", "metric") \
                 and updated.get("authority_ref") == gate_ref:
@@ -3098,26 +3590,17 @@ def apply_auto_state(state_dir):
 
 
 def _invalidate_derived(state_dir, affected_refs, touched_files):
-    manifests_dir = os.path.join(state_dir, "derived", "manifests")
-    artifacts_path = os.path.join(manifests_dir, "artifacts.json")
-    if not os.path.exists(artifacts_path):
-        return
-    try:
-        artifacts = _read_json(artifacts_path)
-    except Exception:
-        return
-    changed = False
-    for item in _as_list(artifacts.get("artifacts")):
-        if not isinstance(item, dict): continue
-        refs = set(item.get("dependency_refs") or [])
-        files = set(item.get("dependency_files") or [])
-        if refs.intersection(affected_refs) or files.intersection(touched_files):
-            if item.get("status") == "fresh":
-                item["status"] = "stale"
-                item["stale_reason"] = "canonical dependency changed"
-                changed = True
-    if changed:
-        _write_json_atomic(artifacts_path, artifacts)
+    # Briefs and realization manifests attest their own canonical/snapshot
+    # hashes, so no mutable artifact registry is needed.  Removing only the
+    # reusable receipts makes the next compile/check recompute deterministically.
+    for relative in (
+            "derived/manifests/generation-snapshot.json",
+            "derived/manifests/run-validation.json",
+            "derived/manifests/acceptance-receipt.json"):
+        try:
+            os.unlink(os.path.join(state_dir, relative))
+        except OSError:
+            pass
 
 
 def _state_fingerprint(documents):
@@ -3130,27 +3613,76 @@ def _state_fingerprint(documents):
     return revisions, hashes
 
 
+def _authority_fingerprint(state_dir):
+    hashes = {}
+    for filename in ("source-manifest.json", "run-manifest.json"):
+        path = os.path.join(state_dir, filename)
+        hashes[filename[:-5].replace("-", "_")] = (
+            file_hash(path) if os.path.isfile(path) else None)
+    return hashes
+
+
+def state_hash(state_dir, documents=None):
+    if documents is None:
+        documents, issues = load_state(state_dir)
+        if issues:
+            raise ValueError("; ".join(issues))
+    revisions, hashes = _state_fingerprint(documents)
+    return content_hash({
+        "canonical_revisions": revisions,
+        "canonical_hashes": hashes,
+        "authority_hashes": _authority_fingerprint(state_dir),
+        "policy": POLICY_VERSION,
+    })
+
+
 def freeze_snapshot(state_dir, force=False):
     checked = check_canonical(state_dir, stage="generation", write_derived=True)
     if not checked["passed"]:
         return {"passed": False, "issues": checked["issues"], "diagnostics": checked["diagnostics"]}
     documents, _ = load_state(state_dir)
-    revisions, hashes = _state_fingerprint(documents)
-    seed = content_hash({"revisions": revisions, "hashes": hashes, "policy": POLICY_VERSION})
+    snapshot_id, revisions, hashes = _expected_snapshot_id(documents, state_dir)
+    authority_hashes = _authority_fingerprint(state_dir)
     snapshot = {
         "schema_version": SCHEMA_VERSIONS["snapshot"],
-        "snapshot_id": "GS-" + seed.split(":", 1)[1][:12].upper(),
+        "snapshot_id": snapshot_id,
         "canonical_revisions": revisions, "canonical_hashes": hashes,
-        "gate_state": "generation_ready", "created_for": "task3",
+        "authority_hashes": authority_hashes,
+        "gate_state": "safe_draft_ready", "created_for": "task3",
         "policy_version": POLICY_VERSION,
     }
     path = os.path.join(state_dir, "derived", "manifests", "generation-snapshot.json")
     if os.path.exists(path) and not force:
-        existing = _read_json(path)
-        if existing.get("canonical_hashes") == hashes:
+        existing, read_issue = _read_json_or_issue(path, "generation snapshot")
+        if read_issue:
+            return read_issue
+        if (existing.get("canonical_hashes") == hashes
+                and existing.get("authority_hashes") == authority_hashes
+                and existing.get("gate_state") == "safe_draft_ready"
+                and existing.get("policy_version") == POLICY_VERSION):
             return {"passed": True, "issues": [], "snapshot": existing, "path": path, "reused": True}
     _write_json_atomic(path, snapshot)
     return {"passed": True, "issues": [], "snapshot": snapshot, "path": path, "reused": False}
+
+
+def _reusable_generation_snapshot(state_dir, documents):
+    path = os.path.join(
+        state_dir, "derived", "manifests", "generation-snapshot.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        snapshot = _read_json(path)
+    except (OSError, ValueError):
+        return None
+    revisions, hashes = _state_fingerprint(documents)
+    if (snapshot.get("schema_version") != SCHEMA_VERSIONS["snapshot"]
+            or snapshot.get("canonical_revisions") != revisions
+            or snapshot.get("canonical_hashes") != hashes
+            or snapshot.get("authority_hashes") != _authority_fingerprint(state_dir)
+            or snapshot.get("gate_state") != "safe_draft_ready"
+            or snapshot.get("policy_version") != POLICY_VERSION):
+        return None
+    return snapshot
 
 
 def _public_projection(evidence, use="proposal_narrative"):
@@ -3185,18 +3717,20 @@ def _project(entity, fields):
 def _safe_role(role):
     return _project(role, (
         "id", "name", "customer_label", "approved_projection", "archetypes",
-        "decision_concern", "veto_condition_projection",
+        "veto_condition_projection",
     ))
 
 
 def _safe_need(need):
-    result = _project(need, ("id", "name", "status"))
     publication = need.get("publication_status")
     if publication == "public_explicit":
+        result = _project(need, ("id", "name", "status"))
         wording = need.get("statement")
     elif publication == "publicly_supportable":
+        result = _project(need, ("id", "status"))
         wording = need.get("approved_projection")
     else:
+        result = _project(need, ("id", "status"))
         wording = None
     if _nonempty(wording):
         result["statement"] = wording
@@ -3205,13 +3739,15 @@ def _safe_need(need):
 
 
 def _safe_criterion(criterion):
-    result = _project(criterion, ("id", "name", "status"))
     publication = criterion.get("publication_status")
     if publication == "public_explicit":
+        result = _project(criterion, ("id", "name", "status"))
         wording = criterion.get("statement")
     elif publication == "publicly_supportable":
+        result = _project(criterion, ("id", "status"))
         wording = criterion.get("approved_projection")
     else:
+        result = _project(criterion, ("id", "status"))
         wording = None
     if _nonempty(wording):
         result["statement"] = wording
@@ -3296,6 +3832,13 @@ def _safe_section(section):
     ))
 
 
+def _safe_visible_output(output):
+    return _project(output, (
+        "id", "purpose", "supports_refs", "required_fields",
+        "grounding_refs", "grounding_mode", "truth_boundary", "requiredness",
+    ))
+
+
 def _safe_job(job):
     return _project(job, (
         "id", "job_kind", "entry_judgment", "expected_judgment",
@@ -3309,7 +3852,27 @@ def _collect_by_refs(items, refs):
     return [copy.deepcopy(item) for item in items if isinstance(item, dict) and item.get("id") in refs]
 
 
-def _brief_common(documents):
+def _narrative_guide(strategy):
+    narrative = strategy.get("narrative") or {}
+    mode = narrative.get("mode") or "logic"
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "narratives.json")
+    try:
+        library = _read_json(path)
+    except (OSError, ValueError):
+        library = {}
+    guide = copy.deepcopy(library.get(mode) or {})
+    if not guide and mode == "custom":
+        guide = {
+            "core": narrative.get("rationale") or narrative.get("through_line"),
+            "chapter_moves": [], "tone": "follow the approved custom rationale",
+            "risks": ["do not trade away Requirement coverage or truth boundaries"],
+        }
+    return {"mode": mode, **guide}
+
+
+def _brief_common(documents, include_narrative_guide=False):
     strategy = documents["strategy.json"]
     decisions = []
     for decision in _as_list(strategy.get("open_questions")):
@@ -3346,7 +3909,7 @@ def _brief_common(documents):
                 "forbidden_terms": copy.deepcopy(item.get("forbidden_terms") or []),
             }.items() if value not in (None, "", [])
         })
-    return {
+    common = {
         "destination": (strategy.get("decision_map") or {}).get("destination"),
         "narrative": copy.deepcopy(strategy.get("narrative") or {}),
         "big_idea": strategy.get("big_idea"),
@@ -3358,6 +3921,9 @@ def _brief_common(documents):
             "internal scoring or narrative labels", "sales CTA",
         ],
     }
+    if include_narrative_guide:
+        common["narrative_guide"] = _narrative_guide(strategy)
+    return common
 
 
 def _compile_research(documents):
@@ -3385,8 +3951,10 @@ def _compile_research(documents):
 
 
 def _compile_value_selection(documents):
+    requirements = documents["requirements.json"]
     cv = documents["customer-value.json"]
     delivery = documents["delivery-plan.json"]
+    strategy = documents["strategy.json"]
     intel = documents["intel-pool.json"]
     evidence = []
     for item in _as_list(intel.get("evidence")):
@@ -3397,20 +3965,51 @@ def _compile_value_selection(documents):
             "visibility": item.get("visibility"), "quality": item.get("quality"),
             "status": item.get("status"),
         })
+    assumed_decision_refs = sorted(
+        item.get("id") or item.get("ref")
+        for item in _as_list(strategy.get("open_questions"))
+        if isinstance(item, dict) and item.get("status") == "assumed"
+        and (item.get("id") or item.get("ref"))
+    )
+    draft_policy = {
+        "mode": "assumed_safe_draft" if assumed_decision_refs else "normal",
+        "assumed_decision_refs": assumed_decision_refs,
+        "direct_submission_allowed": False if assumed_decision_refs else None,
+        "safe_draft_rule": (
+            "unknown resources stay unknown; use intended/planned and non-public "
+            "draft_ready semantics instead of invented low/high values"
+        ),
+    }
     return {
         "must_use": {
+            "requirements": {
+                "project_name": requirements.get("project_name"),
+                "buyer": requirements.get("buyer"),
+                "bid_type": requirements.get("bid_type"),
+                "budget_cap": copy.deepcopy(requirements.get("budget_cap") or {}),
+                "mandatory": copy.deepcopy(_as_list(requirements.get("mandatory"))),
+                "scoring": copy.deepcopy(_as_list(requirements.get("scoring"))),
+                "deliverables": copy.deepcopy(_as_list(requirements.get("deliverables"))),
+            },
             "roles": copy.deepcopy(_as_list(cv.get("roles"))),
             "needs": copy.deepcopy(_as_list(cv.get("needs"))),
             "criteria": copy.deepcopy(_as_list(cv.get("criteria"))),
-            "role_need_links": copy.deepcopy(_as_list(cv.get("role_need_links"))),
-            "need_criterion_links": copy.deepcopy(_as_list(cv.get("need_criterion_links"))),
+            "decision_paths": copy.deepcopy(_effective_decision_paths(cv)),
             "value_propositions": [copy.deepcopy(item) for item in _as_list(cv.get("value_propositions")) if isinstance(item, dict) and item.get("status") in ("candidate", "investigating", "qualified", "selected")],
+            "claims": copy.deepcopy(_as_list(cv.get("claims"))),
+            "metrics": copy.deepcopy(_as_list(cv.get("metrics"))),
             "evidence_links": copy.deepcopy(_as_list(cv.get("evidence_links"))),
             "evidence": evidence,
+            "delivery_roles": copy.deepcopy(_as_list(delivery.get("delivery_roles"))),
             "capability_and_resources": copy.deepcopy(_as_list(delivery.get("resource_envelopes"))),
             "candidate_actions": [copy.deepcopy(item) for item in _as_list(delivery.get("actions")) if isinstance(item, dict) and item.get("selection_status") in ("candidate", "selected")],
+            "customer_dependencies": copy.deepcopy(_as_list(delivery.get("customer_dependencies"))),
+            "acceptance_contracts": copy.deepcopy(_as_list(delivery.get("acceptance_contracts"))),
+            "decisions": copy.deepcopy(_as_list(strategy.get("open_questions"))),
+            "sections": copy.deepcopy(_as_list(strategy.get("sections"))),
+            "draft_policy": draft_policy,
         },
-        "may_use": {"role_conflicts": copy.deepcopy(_as_list(cv.get("role_conflicts")))},
+        "may_use": {},
         "forbidden": {"selection_rules": ["do not reward idea count", "do not publish private raw wording", "do not upgrade unknown capability or authority"]},
         "expected_outputs": ["one changeset/v1 produced by task2.5"],
     }
@@ -3427,8 +4026,10 @@ def _compile_section(documents, section_id):
     if not section:
         raise ValueError("section not found: %s" % section_id)
     section_ref = section.get("id")
-    job_refs = _ref_list(section, "primary_decision_job_ref", "secondary_decision_job_ref")
-    jobs = _collect_by_refs(_as_list(strategy.get("decision_jobs")), job_refs)
+    jobs = [
+        copy.deepcopy(item) for item in _effective_section_jobs(strategy)
+        if item.get("section_ref") == section_ref
+    ]
     role_refs, criterion_refs, vp_refs, claim_refs, action_refs = set(), set(), set(), set(), set()
     for job in jobs:
         role_refs.update(_ref_list(job, "role_refs")); criterion_refs.update(_ref_list(job, "criterion_refs"))
@@ -3497,9 +4098,16 @@ def _compile_section(documents, section_id):
             _safe_requirement(item)
             for item in _collect_by_refs(_as_list(req.get(collection)), requirement_refs)
         )
-    publishable_claims = [item for item in claims if item.get("status") == "publishable"]
+    usable_claims = [
+        item for item in claims
+        if item.get("status") in ("draft_ready", "publishable")
+    ]
     selected_vps = [item for item in vps if item.get("status") in ("selected", "publishable")]
-    selected_actions = [item for item in actions if item.get("selection_status") == "selected"]
+    selected_actions = [
+        item for item in actions
+        if item.get("selection_status") == "selected"
+        and item.get("readiness_status") in ("planned", "confirmed")
+    ]
     safe_needs = [_safe_need(item) for item in _collect_by_refs(_as_list(cv.get("needs")), need_refs)]
     safe_criteria = [_safe_criterion(item) for item in _collect_by_refs(_as_list(cv.get("criteria")), criterion_refs)]
     private_refs.extend(
@@ -3514,7 +4122,7 @@ def _compile_section(documents, section_id):
             "customer_needs": safe_needs,
             "decision_criteria": safe_criteria,
             "value_propositions": [_safe_vp(item) for item in selected_vps],
-            "claims": [_safe_claim(item) for item in publishable_claims],
+            "claims": [_safe_claim(item) for item in usable_claims],
             "actions": [_safe_action(item) for item in selected_actions],
             "delivery_roles": [_safe_delivery_role(item) for item in _collect_by_refs(_as_list(delivery.get("delivery_roles")), delivery_role_refs)],
             "resources": [_safe_resource(item) for item in _collect_by_refs(_as_list(delivery.get("resource_envelopes")), resource_refs)],
@@ -3523,12 +4131,22 @@ def _compile_section(documents, section_id):
             "metrics": [_safe_metric(item) for item in _collect_by_refs(_as_list(cv.get("metrics")), metric_refs)],
             "public_evidence": public_evidence,
             "counter_evidence_constraints": counter_evidence,
+            "visible_outputs": [
+                _safe_visible_output(item)
+                for item in _as_list(section.get("visible_outputs"))
+                if isinstance(item, dict)
+            ],
         },
         "may_use": {},
         "forbidden": {"private_evidence_refs": private_refs, "canonical_mutation": True},
-        "expected_outputs": ["sections/section-%s.md" % section.get("n"), "proposed realization hints with canonical_ref/contribution/quote"],
-        "expected_realization_refs": [item.get("id") for item in publishable_claims + selected_actions if item.get("id")],
+        "expected_outputs": ["sections/section-%s.md" % section.get("n"), "independent semantic audit"],
+        "expected_realization_refs": [item.get("id") for item in usable_claims + selected_actions if item.get("id")],
         "expected_requirement_refs": sorted(requirement_refs),
+        "expected_visible_output_refs": [
+            item.get("id") for item in _as_list(section.get("visible_outputs"))
+            if isinstance(item, dict) and item.get("requiredness") == "required"
+            and item.get("id")
+        ],
     }
 
 
@@ -3606,7 +4224,7 @@ def _compile_exec_summary(documents, state_dir):
         },
         "may_use": {},
         "forbidden": {"not_realized_refs": "all canonical refs outside this whitelist", "new_or_stronger_claims": True},
-        "expected_outputs": ["sections/section-0.md", "summary realization hints using whitelist only"],
+        "expected_outputs": ["sections/section-0.md", "independent semantic audit using whitelist only"],
         "allowed_realization_refs": sorted(realized),
     }
 
@@ -3626,34 +4244,28 @@ def _compile_redteam(documents, role, state_dir):
     }
 
 
-def _register_artifact(state_dir, artifact):
-    path = os.path.join(state_dir, "derived", "manifests", "artifacts.json")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    if os.path.exists(path):
-        try: manifest = _read_json(path)
-        except Exception: manifest = {"schema_version": "artifact-manifest/v1", "artifacts": []}
-    else:
-        manifest = {"schema_version": "artifact-manifest/v1", "artifacts": []}
-    items = [item for item in _as_list(manifest.get("artifacts")) if not (isinstance(item, dict) and item.get("artifact_id") == artifact.get("artifact_id"))]
-    items.append(artifact)
-    manifest["artifacts"] = items
-    _write_json_atomic(path, manifest)
-
-
 def compile_context(state_dir, target, target_id=None, role=None, output_path=None,
                     token_budget=24000):
     if target not in ("research", "value-selection", "section", "exec-summary", "redteam"):
         return {"passed": False, "issues": ["unsupported context target"]}
-    required_stage = "generation" if target in ("section", "exec-summary", "redteam") else "draft"
-    checked = check_canonical(state_dir, stage=required_stage, write_derived=True)
-    if not checked["passed"]:
-        return {"passed": False, "issues": checked["issues"], "diagnostics": checked["diagnostics"]}
-    documents, _ = load_state(state_dir)
+    documents, load_issues = load_state(state_dir)
+    if load_issues:
+        return {"passed": False, "issues": load_issues}
     snapshot = None
+    snapshot_reused = False
     if target in ("section", "exec-summary", "redteam"):
-        frozen = freeze_snapshot(state_dir)
-        if not frozen["passed"]: return frozen
-        snapshot = frozen["snapshot"]
+        snapshot = _reusable_generation_snapshot(state_dir, documents)
+        snapshot_reused = snapshot is not None
+        if snapshot is None:
+            frozen = freeze_snapshot(state_dir)
+            if not frozen["passed"]:
+                return frozen
+            snapshot = frozen["snapshot"]
+    else:
+        checked = check_canonical(state_dir, stage="draft", write_derived=True)
+        if not checked["passed"]:
+            return {"passed": False, "issues": checked["issues"],
+                    "diagnostics": checked["diagnostics"]}
     try:
         if target == "research": payload = _compile_research(documents)
         elif target == "value-selection": payload = _compile_value_selection(documents)
@@ -3667,6 +4279,30 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
     except ValueError as exc:
         return {"passed": False, "issues": [str(exc)]}
 
+    if output_path is None:
+        if target == "section":
+            safe_target = _safe_path_component(
+                payload.get("section_ref", target_id))
+            output_path = os.path.join(
+                state_dir, "derived", "briefs", "sections", "%s.json" % safe_target)
+        elif target == "redteam":
+            safe_role = _safe_path_component(role)
+            output_path = os.path.join(
+                state_dir, "derived", "briefs", "redteam", "%s.json" % safe_role)
+        else:
+            output_path = os.path.join(
+                state_dir, "derived", "briefs", "%s.json" % target)
+    output_path = os.path.abspath(output_path)
+    if target in ("section", "exec-summary", "redteam"):
+        brief_root = os.path.abspath(os.path.join(state_dir, "derived", "briefs"))
+        try:
+            inside = os.path.commonpath([brief_root, output_path]) == brief_root
+        except ValueError:
+            inside = False
+        if not inside:
+            return {"passed": False, "issues": [
+                "snapshot-bound brief output must stay under STATE/derived/briefs"]}
+
     revisions, hashes = _state_fingerprint(documents)
     brief = {
         "brief_schema_version": SCHEMA_VERSIONS["brief"],
@@ -3674,51 +4310,40 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
         "generation_snapshot_id": snapshot.get("snapshot_id") if snapshot else None,
         "input_revisions": revisions, "input_hashes": hashes,
         "compiler_version": ENGINE_VERSION, "context_policy_version": CONTEXT_POLICY_VERSION,
-        "common": _brief_common(documents),
+        "common": _brief_common(
+            documents, include_narrative_guide=target in (
+                "section", "exec-summary")),
         "must_use": payload.get("must_use") or {}, "may_use": payload.get("may_use") or {},
         "forbidden": payload.get("forbidden") or {},
         "expected_outputs": payload.get("expected_outputs") or [],
         "expected_realization_refs": payload.get("expected_realization_refs") or [],
         "expected_requirement_refs": payload.get("expected_requirement_refs") or [],
+        "expected_visible_output_refs": payload.get(
+            "expected_visible_output_refs") or [],
         "allowed_realization_refs": payload.get("allowed_realization_refs") or [],
+        "compiled_path": output_path,
         "token_budget": token_budget, "pruning_log": [], "status": "fresh",
     }
-    estimated = max(1, len(_canonical_json(brief)) // 4)
+    estimated = _estimate_tokens(_canonical_json(brief))
     brief["estimated_tokens"] = estimated
     if estimated > token_budget:
         # Required context is never silently removed. Only may_use can be pruned.
         if brief["may_use"]:
             brief["pruning_log"].append({"removed": "may_use", "reason": "token_budget"})
             brief["may_use"] = {}
-            estimated = max(1, len(_canonical_json(brief)) // 4)
+            estimated = _estimate_tokens(_canonical_json(brief))
             brief["estimated_tokens"] = estimated
         if estimated > token_budget:
             brief["status"] = "blocked"
             brief["overflow"] = {"estimated_tokens": estimated, "token_budget": token_budget, "action": "split the task or raise an explicit budget"}
     brief["brief_hash"] = content_hash({key: value for key, value in brief.items() if key != "brief_hash"})
 
-    if output_path is None:
-        if target == "section":
-            safe_target = re.sub(r"[^A-Za-z0-9_.-]", "-", str(payload.get("section_ref", target_id)))
-            output_path = os.path.join(state_dir, "derived", "briefs", "sections", "%s.json" % safe_target)
-        elif target == "redteam":
-            safe_role = re.sub(r"[^A-Za-z0-9_.-]", "-", str(role))
-            output_path = os.path.join(state_dir, "derived", "briefs", "redteam", "%s.json" % safe_role)
-        else: output_path = os.path.join(state_dir, "derived", "briefs", "%s.json" % target)
     _write_json_atomic(output_path, brief)
-    dependency_refs = []
-    for ref in re.findall(r'"(?:[A-Z][A-Z0-9_]*-[A-Z0-9_.-]+)"', _canonical_json(brief.get("must_use"))):
-        dependency_refs.append(ref.strip('"'))
-    _register_artifact(state_dir, {
-        "artifact_id": "brief:%s:%s" % (target, target_id or role or "default"),
-        "kind": "context_brief", "path": os.path.abspath(output_path),
-        "output_hash": file_hash(output_path), "status": brief["status"],
-        "dependency_refs": sorted(set(dependency_refs)),
-        "dependency_files": list(CANONICAL_FILES),
-        "input_hashes": hashes, "snapshot_id": brief.get("generation_snapshot_id"),
-        "policy_version": CONTEXT_POLICY_VERSION,
-    })
-    return {"passed": brief["status"] == "fresh", "issues": [] if brief["status"] == "fresh" else ["required context exceeds token budget"], "brief": brief, "output_path": os.path.abspath(output_path)}
+    return {"passed": brief["status"] == "fresh",
+            "issues": [] if brief["status"] == "fresh" else
+            ["required context exceeds token budget"],
+            "brief": brief, "output_path": output_path,
+            "snapshot_reused": snapshot_reused}
 
 
 def _paragraphs(markdown):
@@ -3752,9 +4377,13 @@ def _paragraphs(markdown):
     return paragraphs
 
 
-def _expected_snapshot_id(documents):
+def _expected_snapshot_id(documents, state_dir):
     revisions, hashes = _state_fingerprint(documents)
-    seed = content_hash({"revisions": revisions, "hashes": hashes, "policy": POLICY_VERSION})
+    seed = content_hash({
+        "revisions": revisions, "hashes": hashes,
+        "authority_hashes": _authority_fingerprint(state_dir),
+        "policy": POLICY_VERSION,
+    })
     return "GS-" + seed.split(":", 1)[1][:12].upper(), revisions, hashes
 
 
@@ -3773,61 +4402,66 @@ def _brief_integrity_issues(state_dir, brief_path, brief, section_ref, documents
     expected_hash = content_hash({key: value for key, value in brief.items() if key != "brief_hash"})
     if brief.get("brief_hash") != expected_hash:
         issues.append("brief_hash does not match brief content")
-    expected_snapshot, revisions, hashes = _expected_snapshot_id(documents)
+    expected_snapshot, revisions, hashes = _expected_snapshot_id(documents, state_dir)
     if brief.get("generation_snapshot_id") != expected_snapshot:
         issues.append("brief snapshot does not match current canonical state")
     if brief.get("input_revisions") != revisions or brief.get("input_hashes") != hashes:
         issues.append("brief input fingerprint does not match current canonical state")
 
-    artifacts_path = os.path.join(state_dir, "derived", "manifests", "artifacts.json")
-    artifact_id = "brief:%s:%s" % (
-        expected_target, "default" if is_summary else section_ref)
-    artifact = None
-    if os.path.isfile(artifacts_path):
-        try:
-            artifacts = _read_json(artifacts_path)
-            artifact = next((
-                item for item in _as_list(artifacts.get("artifacts"))
-                if isinstance(item, dict) and item.get("artifact_id") == artifact_id
-            ), None)
-        except Exception as exc:
-            issues.append("artifact registry cannot be read: %s" % exc)
-    if not artifact:
-        issues.append("compiled brief is not registered as %s" % artifact_id)
-    else:
-        if os.path.abspath(artifact.get("path") or "") != os.path.abspath(brief_path):
-            issues.append("registered brief path does not match supplied brief")
-        if artifact.get("status") != "fresh":
-            issues.append("registered brief artifact is stale/blocked")
-        if artifact.get("output_hash") != file_hash(brief_path):
-            issues.append("registered brief hash does not match supplied brief")
-        if artifact.get("snapshot_id") != expected_snapshot:
-            issues.append("registered brief snapshot is stale")
-    return issues, artifact_id
+    compiled_path = os.path.abspath(brief.get("compiled_path") or "")
+    supplied_path = os.path.abspath(brief_path)
+    brief_root = os.path.abspath(os.path.join(state_dir, "derived", "briefs"))
+    try:
+        inside = os.path.commonpath([brief_root, supplied_path]) == brief_root
+    except ValueError:
+        inside = False
+    if not inside:
+        issues.append("brief path is outside this run's derived/briefs directory")
+    if compiled_path != supplied_path:
+        issues.append("compiled_path does not match supplied brief path")
+    brief_id = ("BRIEF-" + str(brief.get("brief_hash") or "missing")
+                .split(":", 1)[-1][:16].upper())
+    return issues, brief_id
 
 
-def audit_realization(state_dir, section_ref, section_path, hints_path,
+def audit_realization(state_dir, section_ref, section_path, hints_path=None,
                       brief_path=None, semantic_path=None, output_path=None):
     documents, issues = load_state(state_dir)
     if issues:
         return {"passed": False, "issues": issues}
     if not brief_path or not os.path.isfile(brief_path):
         return {"passed": False, "issues": ["a current compiled --brief is required"]}
-    if not os.path.isfile(section_path) or not os.path.isfile(hints_path):
-        return {"passed": False, "issues": ["section and realization hints must exist"]}
+    if not os.path.isfile(section_path):
+        return {"passed": False, "issues": ["section must exist"]}
     markdown = _read_text(section_path)
-    hints_doc = _read_json(hints_path)
-    if not isinstance(hints_doc, dict):
-        return {"passed": False, "issues": ["realization hints must be realization-hints/v1 object"]}
-    hints = hints_doc.get("realizations")
-    if not isinstance(hints, list):
-        return {"passed": False, "issues": ["realization hints must contain realizations array"]}
-    brief = _read_json(brief_path)
-    semantic = _read_json(semantic_path) if semantic_path else {}
+    hints_doc = {}
+    hints = []
+    if hints_path:
+        if not os.path.isfile(hints_path):
+            return {"passed": False, "issues": ["optional hints path does not exist"]}
+        hints_doc, read_issue = _read_json_or_issue(
+            hints_path, "deprecated realization hints")
+        if read_issue:
+            return read_issue
+        if not isinstance(hints_doc, dict) or not isinstance(
+                hints_doc.get("realizations"), list):
+            return {"passed": False, "issues": [
+                "deprecated hints must be a realization-hints/v1 object"]}
+        hints = hints_doc.get("realizations")
+    brief, read_issue = _read_json_or_issue(brief_path, "compiled brief")
+    if read_issue:
+        return read_issue
+    if semantic_path:
+        semantic, read_issue = _read_json_or_issue(semantic_path, "semantic audit")
+        if read_issue:
+            return read_issue
+    else:
+        semantic = {}
     semantic_items = semantic.get("evaluations") if isinstance(semantic, dict) else []
-    semantic_by_ref = {}
     expected = set(brief.get("expected_realization_refs") or [])
     expected_requirements = set(brief.get("expected_requirement_refs") or [])
+    expected_visible_outputs = set(
+        brief.get("expected_visible_output_refs") or [])
     allowed = set(brief.get("allowed_realization_refs") or expected)
     public_evidence_by_target = {}
     for item in _as_list((brief.get("must_use") or {}).get("public_evidence")):
@@ -3842,24 +4476,25 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
     unexpected_refs = []
     seen = set()
     issues = [item["observed"] for item in registry_diagnostics if item["severity"] == "fatal"]
-    brief_issues, brief_artifact_id = _brief_integrity_issues(
+    brief_issues, brief_id = _brief_integrity_issues(
         state_dir, brief_path, brief, section_ref, documents)
     issues.extend(brief_issues)
 
-    if hints_doc.get("schema_version") != "realization-hints/v1":
-        issues.append("writer hints schema_version is not realization-hints/v1")
-    if hints_doc.get("section_ref") != section_ref:
-        issues.append("writer hints section_ref does not match")
-    if hints_doc.get("snapshot_id") != brief.get("generation_snapshot_id"):
-        issues.append("writer hints snapshot does not match brief")
-    if hints_doc.get("brief_hash") != brief.get("brief_hash"):
-        issues.append("writer hints brief_hash does not match brief")
-    for observation in _as_list(hints_doc.get("observations")):
-        if isinstance(observation, dict) and observation.get("kind") in (
-                "missing_context", "claim_change_proposal", "evidence_gap",
-                "resource_gap", "acceptance_gap", "placeholder"):
-            issues.append("writer reported unresolved %s: %s" % (
-                observation.get("kind"), observation.get("observed") or "no detail"))
+    if hints_path:
+        if hints_doc.get("schema_version") != "realization-hints/v1":
+            issues.append("deprecated hints schema_version is not realization-hints/v1")
+        if hints_doc.get("section_ref") != section_ref:
+            issues.append("deprecated hints section_ref does not match")
+        if hints_doc.get("snapshot_id") != brief.get("generation_snapshot_id"):
+            issues.append("deprecated hints snapshot does not match brief")
+        if hints_doc.get("brief_hash") != brief.get("brief_hash"):
+            issues.append("deprecated hints brief_hash does not match brief")
+        for observation in _as_list(hints_doc.get("observations")):
+            if isinstance(observation, dict) and observation.get("kind") in (
+                    "missing_context", "claim_change_proposal", "evidence_gap",
+                    "resource_gap", "acceptance_gap", "placeholder"):
+                issues.append("writer reported unresolved %s: %s" % (
+                    observation.get("kind"), observation.get("observed") or "no detail"))
     if semantic_path:
         if semantic.get("schema_version") != "semantic-realization/v1":
             issues.append("semantic audit schema_version is not semantic-realization/v1")
@@ -3878,14 +4513,6 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
         if not isinstance(semantic_items, list):
             issues.append("semantic audit evaluations must be an array")
             semantic_items = []
-        for evaluation in semantic_items:
-            if not isinstance(evaluation, dict) or not evaluation.get("canonical_ref"):
-                issues.append("semantic evaluation requires canonical_ref")
-                continue
-            ref = evaluation.get("canonical_ref")
-            if ref in semantic_by_ref:
-                issues.append("duplicate semantic evaluation for %s" % ref)
-            semantic_by_ref[ref] = evaluation
 
     def locate_quote(ref, quote, label):
         normalized_quote = re.sub(r"\s+", " ", quote or "").strip()
@@ -3907,33 +4534,51 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
             "quote": quote, "fingerprint": item["fingerprint"],
         }]
 
-    hinted_refs = set()
+    hint_by_ref = {}
     for hint in hints:
-        if not isinstance(hint, dict):
-            issues.append("realization hint is not object")
+        if not isinstance(hint, dict) or not hint.get("canonical_ref"):
+            issues.append("deprecated realization hint requires canonical_ref")
             continue
-        ref = hint.get("canonical_ref")
-        contribution = hint.get("contribution")
+        if hint.get("canonical_ref") in hint_by_ref:
+            issues.append("duplicate deprecated hint for %s" % hint.get(
+                "canonical_ref"))
+            continue
+        hint_by_ref[hint.get("canonical_ref")] = hint
+
+    audit_items = semantic_items if semantic_path else hints
+    audited_refs = set()
+    for item in audit_items:
+        if not isinstance(item, dict):
+            issues.append("semantic evaluation is not object")
+            continue
+        ref = item.get("canonical_ref")
+        evaluation = item if semantic_path else {}
+        hint = hint_by_ref.get(ref) or {}
+        contribution = evaluation.get("contribution") or hint.get("contribution")
         if not ref or ref not in registry:
             issues.append("unknown canonical_ref: %s" % ref)
             continue
         if contribution not in CONTRIBUTIONS:
             issues.append("invalid contribution for %s" % ref)
             continue
-        if ref in hinted_refs:
-            issues.append("duplicate realization hint for %s" % ref)
+        if ref in audited_refs:
+            issues.append("duplicate realization evaluation for %s" % ref)
             continue
-        hinted_refs.add(ref)
+        audited_refs.add(ref)
         if ref not in allowed:
             unexpected_refs.append(ref)
-        anchors = locate_quote(ref, hint.get("quote"), "canonical")
-        evaluation = semantic_by_ref.get(ref) or {}
+        anchors = locate_quote(
+            ref, evaluation.get("quote") or hint.get("quote"), "canonical")
         semantic_status = evaluation.get("semantic_status") or "pending_semantic_review"
         if semantic_status not in (
                 "entailed", "partial", "contradicted", "overstated", "not_found",
                 "needs_review", "pending_semantic_review"):
             issues.append("invalid semantic_status for %s" % ref)
         confidence = evaluation.get("confidence") or "unknown"
+        if semantic_path and confidence not in ("high", "medium", "low"):
+            issues.append("semantic evaluation %s has invalid confidence" % ref)
+        if semantic_path and not _nonempty(evaluation.get("reason")):
+            issues.append("semantic evaluation %s has no reason" % ref)
         observed_commitment = evaluation.get("observed_commitment_level")
         canonical = registry[ref]["entity"]
         canonical_commitment = canonical.get("commitment_level")
@@ -3961,11 +4606,6 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
             "evaluator": semantic.get("evaluator") if isinstance(semantic, dict) else None,
         })
         if anchors and semantic_status == "entailed": seen.add(ref)
-
-    if semantic_path:
-        for ref in semantic_by_ref:
-            if ref not in hinted_refs:
-                issues.append("semantic evaluation %s has no writer hint" % ref)
 
     requirement_by_ref = {}
     requirement_items = semantic.get("requirement_evaluations") if semantic_path else []
@@ -3999,8 +4639,105 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
             "confidence": evaluation.get("confidence"),
         })
 
+    visible_contracts = {
+        item.get("id"): item
+        for item in _as_list((brief.get("must_use") or {}).get("visible_outputs"))
+        if isinstance(item, dict) and item.get("id")
+    }
+    visible_realizations = []
+    visible_by_ref = {}
+    visible_items = ((semantic.get("visible_output_evaluations") or [])
+                     if semantic_path else [])
+    if semantic_path and not isinstance(visible_items, list):
+        issues.append("semantic visible_output_evaluations must be an array")
+        visible_items = []
+    for evaluation in _as_list(visible_items):
+        if not isinstance(evaluation, dict) or not evaluation.get("output_ref"):
+            issues.append("visible output evaluation requires output_ref")
+            continue
+        output_ref = evaluation.get("output_ref")
+        if output_ref in visible_by_ref:
+            issues.append("duplicate visible output evaluation for %s" % output_ref)
+            continue
+        visible_by_ref[output_ref] = evaluation
+        contract = visible_contracts.get(output_ref)
+        if not contract:
+            issues.append("unknown visible output evaluation for %s" % output_ref)
+            continue
+        status_value = evaluation.get("status")
+        if status_value not in (
+                "filled", "partial", "missing", "contradicted", "needs_review"):
+            issues.append("invalid visible output status for %s" % output_ref)
+        if not _nonempty(evaluation.get("reason")):
+            issues.append("visible output evaluation %s has no reason" % output_ref)
+        if evaluation.get("confidence") not in ("high", "medium", "low"):
+            issues.append("visible output evaluation %s has invalid confidence" % output_ref)
+        required_fields = set(contract.get("required_fields") or [])
+        field_items = evaluation.get("field_evidence")
+        if not isinstance(field_items, list):
+            issues.append("visible output %s field_evidence must be an array" % output_ref)
+            field_items = []
+        field_by_name = {}
+        field_quotes = set()
+        field_realizations = []
+        for field_item in field_items:
+            if not isinstance(field_item, dict) or not field_item.get("field"):
+                issues.append("visible output %s has malformed field evidence" % output_ref)
+                continue
+            field = field_item.get("field")
+            if field in field_by_name:
+                issues.append("visible output %s duplicates field %s" % (
+                    output_ref, field))
+                continue
+            field_by_name[field] = field_item
+            if field not in required_fields:
+                issues.append("visible output %s has unexpected field %s" % (
+                    output_ref, field))
+            normalized_field_quote = re.sub(
+                r"\s+", " ", field_item.get("quote") or "").strip()
+            if normalized_field_quote in field_quotes and normalized_field_quote:
+                issues.append("visible output %s reuses one quote for multiple fields" % output_ref)
+            field_quotes.add(normalized_field_quote)
+            if not _nonempty(field_item.get("reason")):
+                issues.append("visible output %s field %s has no reason" % (
+                    output_ref, field))
+            anchors = locate_quote(
+                "%s.%s" % (output_ref, field), field_item.get("quote"),
+                "visible-output field")
+            field_realizations.append({
+                "field": field, "anchors": anchors,
+                "reason": field_item.get("reason"),
+            })
+        missing_fields = sorted(required_fields - set(field_by_name))
+        if status_value == "filled" and missing_fields:
+            issues.append("visible output %s missing fields: %s" % (
+                output_ref, ", ".join(missing_fields)))
+        if status_value == "filled" and any(
+                not item.get("anchors") for item in field_realizations
+                if item.get("field") in required_fields):
+            issues.append("visible output %s has unanchored required fields" % output_ref)
+        grounding_presented = set(_ref_list(
+            evaluation, "grounding_refs_presented"))
+        unknown_grounding = grounding_presented - set(
+            contract.get("grounding_refs") or [])
+        if unknown_grounding:
+            issues.append("visible output %s uses unapproved grounding: %s" % (
+                output_ref, ", ".join(sorted(unknown_grounding))))
+        if status_value == "filled" and not grounding_presented:
+            issues.append("visible output %s filled without observed grounding" % output_ref)
+        visible_realizations.append({
+            "output_ref": output_ref, "status": status_value,
+            "field_realizations": field_realizations,
+            "missing_fields": missing_fields,
+            "grounding_refs_presented": sorted(grounding_presented),
+            "reason": evaluation.get("reason"),
+            "confidence": evaluation.get("confidence"),
+        })
+
     missing = sorted(expected - seen)
     missing_requirement_evaluations = sorted(expected_requirements - set(requirement_by_ref))
+    missing_visible_evaluations = sorted(
+        expected_visible_outputs - set(visible_by_ref))
     semantic_invalid = [item["canonical_ref"] for item in realizations if item["semantic_status"] != "entailed"]
     unexpected_claims = semantic.get("unexpected_claims") if isinstance(semantic, dict) else []
     unexpected_claims = _as_list(unexpected_claims)
@@ -4012,46 +4749,49 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
         item["requirement_ref"] for item in requirement_realizations
         if item.get("status") != "addressed" or not item.get("anchors")
     ]
+    visible_invalid = [
+        item["output_ref"] for item in visible_realizations
+        if item.get("output_ref") in expected_visible_outputs
+        and (item.get("status") != "filled" or item.get("missing_fields")
+             or any(not field.get("anchors")
+                    for field in item.get("field_realizations") or []))
+    ]
     snapshot_id = brief.get("generation_snapshot_id")
     brief_stale = bool(brief_issues)
     if (is_summary and markdown.strip() and not realizations):
-        issues.append("non-empty summary has no realized whitelist hints")
+        issues.append("non-empty summary has no realized whitelist evaluations")
     if not semantic_path:
         status = "needs_semantic_review"
     elif (issues or missing or semantic_invalid or unexpected_refs
           or blocking_unexpected or brief_stale or missing_requirement_evaluations
-          or requirement_invalid):
+          or requirement_invalid or missing_visible_evaluations
+          or visible_invalid):
         status = "invalid"
     else:
         status = "valid"
     manifest = {
         "schema_version": SCHEMA_VERSIONS["realization"], "section_ref": section_ref,
         "section_hash": content_hash(markdown),
-        "brief_hash": brief.get("brief_hash"), "brief_artifact_id": brief_artifact_id,
+        "brief_hash": brief.get("brief_hash"), "brief_id": brief_id,
         "brief_path": os.path.abspath(brief_path),
         "snapshot_id": snapshot_id, "status": status,
         "realizations": realizations, "missing_expected_refs": missing,
         "requirement_realizations": requirement_realizations,
         "missing_requirement_evaluations": missing_requirement_evaluations,
+        "visible_output_realizations": visible_realizations,
+        "missing_visible_output_evaluations": missing_visible_evaluations,
+        "invalid_visible_outputs": sorted(set(visible_invalid)),
         "unexpected_refs": sorted(set(unexpected_refs)),
         "unexpected_claims": unexpected_claims,
         "blocking_unexpected_claims": blocking_unexpected,
         "brief_stale": brief_stale, "issues": issues,
         "diagnostic_refs": [], "policy_version": REALIZATION_POLICY_VERSION,
     }
+    manifest["attestation_hash"] = content_hash(manifest)
     if output_path is None:
-        safe = re.sub(r"[^A-Za-z0-9_.-]", "-", str(section_ref))
+        safe = _safe_path_component(section_ref)
         output_path = os.path.join(state_dir, "derived", "realization", "%s.json" % safe)
     _write_json_atomic(output_path, manifest)
-    _register_artifact(state_dir, {
-        "artifact_id": "realization:%s" % section_ref, "kind": "realization",
-        "path": os.path.abspath(output_path), "output_hash": file_hash(output_path),
-        "status": "fresh" if status == "valid" else "blocked",
-        "dependency_refs": [item.get("canonical_ref") for item in realizations],
-        "dependency_files": list(CANONICAL_FILES), "snapshot_id": snapshot_id,
-        "brief_hash": brief.get("brief_hash"),
-        "policy_version": REALIZATION_POLICY_VERSION,
-    })
     result_issues = list(issues)
     if missing:
         result_issues.append("missing expected refs: " + ", ".join(missing))
@@ -4061,6 +4801,12 @@ def audit_realization(state_dir, section_ref, section_path, hints_path,
         result_issues.append("missing requirement evaluations: " + ", ".join(missing_requirement_evaluations))
     if requirement_invalid:
         result_issues.append("requirement response missing/contradicted: " + ", ".join(requirement_invalid))
+    if missing_visible_evaluations:
+        result_issues.append("missing visible output evaluations: " + ", ".join(
+            missing_visible_evaluations))
+    if visible_invalid:
+        result_issues.append("visible outputs incomplete: " + ", ".join(
+            sorted(set(visible_invalid))))
     return {"passed": status == "valid", "issues": result_issues,
             "manifest": manifest, "output_path": os.path.abspath(output_path)}
 
@@ -4070,9 +4816,9 @@ FIT_DIMENSIONS = (
     "value_strength", "differentiation", "evidence_quality",
     "delivery_readiness", "commitment_safety", "reading_efficiency", "consistency",
 )
-LEVEL_RANGES = {
-    "deficient": (10, 35), "fragile": (35, 55), "adequate": (55, 75),
-    "strong": (75, 90), "distinctive": (90, 100), "not_evaluated": (20, 90),
+FIT_LEVELS = {
+    "deficient", "fragile", "adequate", "strong", "distinctive",
+    "not_evaluated",
 }
 
 
@@ -4086,62 +4832,39 @@ def _ratio_level(numerator, denominator, distinctive=False):
     return "distinctive"
 
 
-def _fit_weights(requirements):
-    weights = {dimension: [2.0, 4.0] for dimension in FIT_DIMENSIONS}
-    provenance = {dimension: ["systemic floor"] for dimension in FIT_DIMENSIONS}
-    keyword_map = {
-        "need_alignment": ("理解", "需求", "洞察", "目标", "现状"),
-        "role_decision_coverage": ("团队", "服务", "协同", "管理"),
-        "insight_credibility": ("分析", "策略", "依据"),
-        "value_strength": ("方案", "效果", "创意", "策划"),
-        "differentiation": ("创新", "亮点", "特色", "创意"),
-        "evidence_quality": ("案例", "业绩", "资质", "数据"),
-        "delivery_readiness": ("执行", "进度", "资源", "人员", "保障"),
-        "commitment_safety": ("承诺", "应急", "风险", "质量", "售后"),
-        "reading_efficiency": ("呈现", "完整", "清晰"),
-        "consistency": ("整体", "一致", "响应"),
-    }
-    for item in _as_list(requirements.get("scoring")):
-        if not isinstance(item, dict): continue
-        weight = item.get("weight")
-        if not isinstance(weight, (int, float)): continue
-        mapping = item.get("fit_dimension_map") or {}
-        primary = mapping.get("primary")
-        secondary = mapping.get("secondary")
-        if primary not in FIT_DIMENSIONS:
-            text = "%s %s %s" % (item.get("item", ""), item.get("dimension", ""), item.get("basis", ""))
-            scores = [(sum(1 for word in words if word in text), dimension) for dimension, words in keyword_map.items()]
-            primary = max(scores)[1] if max(scores)[0] else "value_strength"
-        if secondary in FIT_DIMENSIONS and secondary != primary:
-            primary_share = weight * 0.80
-            secondary_share = weight * 0.20
-            weights[primary][0] += primary_share
-            weights[primary][1] += primary_share
-            weights[secondary][0] += secondary_share
-            weights[secondary][1] += secondary_share
-            provenance[primary].append("%s primary 80%%" % item.get("id"))
-            provenance[secondary].append("%s secondary 20%%" % item.get("id"))
-        else:
-            weights[primary][0] += weight
-            weights[primary][1] += weight
-            provenance[primary].append("%s primary 100%%" % item.get("id"))
-    return weights, provenance
-
-
 def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
-                 realization_dir=None, output_path=None):
+                 realization_dir=None, output_path=None, checked_result=None,
+                 documents=None, coverage_result=None):
     if checkpoint not in ("strategy", "submission"):
         return {"passed": False, "issues": ["checkpoint must be strategy or submission"]}
     if realization_dir is None:
         realization_dir = os.path.join(state_dir, "derived", "realization")
     stage = "generation" if checkpoint == "strategy" else "submission"
-    checked = check_canonical(state_dir, stage=stage, realization_dir=realization_dir if checkpoint == "submission" else None, write_derived=True)
-    documents, load_issues = load_state(state_dir)
-    if load_issues: return {"passed": False, "issues": load_issues}
-    coverage = coverage_diagnostics(documents, realization_dir if checkpoint == "submission" else None)
+    if documents is None:
+        documents, load_issues = load_state(state_dir)
+        if load_issues:
+            return {"passed": False, "issues": load_issues}
+    current_state_hash = state_hash(state_dir, documents)
+    if (not isinstance(checked_result, dict)
+            or checked_result.get("stage") != stage
+            or checked_result.get("state_hash") != current_state_hash):
+        checked_result = check_canonical(
+            state_dir, stage=stage,
+            realization_dir=(realization_dir
+                             if checkpoint == "submission" else None),
+            write_derived=True)
+    checked = checked_result
+    coverage = coverage_result or checked.get("coverage") or coverage_diagnostics(
+        documents, realization_dir if checkpoint == "submission" else None)
     cv = documents["customer-value.json"]
     delivery = documents["delivery-plan.json"]
-    judgments = _read_json(judgments_path) if judgments_path else {}
+    if judgments_path:
+        judgments, read_issue = _read_json_or_issue(
+            judgments_path, "customer-fit judgments")
+        if read_issue:
+            return read_issue
+    else:
+        judgments = {}
     judgment_by_dimension = {item.get("dimension"): item for item in _as_list(judgments.get("dimensions")) if isinstance(item, dict) and item.get("dimension") in FIT_DIMENSIONS}
 
     paths = coverage["customer_value_track"]["paths"]
@@ -4175,6 +4898,33 @@ def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
     active_needs = [item for item in _as_list(cv.get("needs")) if isinstance(item, dict) and item.get("status") == "active"]
     credible_needs = [item for item in active_needs if item.get("evidence_quality") in ("medium", "high") and item.get("inference_confidence") in ("medium", "high")]
     selected_vps = [item for item in _as_list(cv.get("value_propositions")) if isinstance(item, dict) and item.get("status") in ("selected", "publishable")]
+    visible_required = {
+        output.get("id")
+        for section in _as_list(documents["strategy.json"].get("sections"))
+        if isinstance(section, dict)
+        for output in _as_list(section.get("visible_outputs"))
+        if isinstance(output, dict) and output.get("requiredness") == "required"
+        and output.get("id")
+    }
+    visible_filled = set()
+    if checkpoint == "submission":
+        manifests, _ = _authoritative_realization_manifests(realization_dir)
+        for manifest in manifests.values():
+            if manifest.get("status") != "valid":
+                continue
+            visible_filled.update(
+                item.get("output_ref")
+                for item in _as_list(manifest.get("visible_output_realizations"))
+                if isinstance(item, dict) and item.get("status") == "filled"
+                and item.get("output_ref"))
+    if checkpoint != "submission" or not visible_required:
+        reading_level = "not_evaluated"
+    elif visible_required.issubset(visible_filled):
+        reading_level = "adequate"
+    elif visible_filled:
+        reading_level = "fragile"
+    else:
+        reading_level = "deficient"
 
     inferred = {
         "need_alignment": _ratio_level(len(connected_required), len(required)),
@@ -4185,28 +4935,23 @@ def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
         "evidence_quality": _ratio_level(len(supported_claims), len(publishable_claims)),
         "delivery_readiness": _ratio_level(len(ready_actions), len(selected_actions)),
         "commitment_safety": _ratio_level(len(safe_committed), len(committed)) if committed else "adequate",
-        "reading_efficiency": "not_evaluated",
+        "reading_efficiency": reading_level,
         "consistency": "strong" if checkpoint == "submission" and checked["passed"] else ("not_evaluated" if checkpoint == "strategy" else "fragile"),
     }
-    weights, provenance = _fit_weights(documents["requirements.json"])
-    if required:
-        for dimension in ("need_alignment", "role_decision_coverage"):
-            weights[dimension][0] += min(6.0, len(required) * 0.5)
-            weights[dimension][1] += min(8.0, len(required) * 0.75)
-            provenance[dimension].append("required Role×Need×Criterion obligations")
     high_risk_claims = [
         item for item in publishable_claims
         if item.get("risk_level") in ("high", "critical")
     ]
+    critical_dimensions = {
+        "need_alignment", "role_decision_coverage", "delivery_readiness",
+        "commitment_safety", "consistency",
+    }
     if high_risk_claims:
-        for dimension in ("evidence_quality", "delivery_readiness", "commitment_safety", "consistency"):
-            weights[dimension][0] = max(weights[dimension][0], 6.0)
-            weights[dimension][1] = max(weights[dimension][1], 10.0)
-            provenance[dimension].append("high-risk publishable Claim floor")
+        critical_dimensions.update({"evidence_quality"})
     dimensions = []
     for dimension in FIT_DIMENSIONS:
         judgment = judgment_by_dimension.get(dimension)
-        if judgment and judgment.get("level") in LEVEL_RANGES and judgment.get("reason") and judgment.get("source_refs"):
+        if judgment and judgment.get("level") in FIT_LEVELS and judgment.get("reason") and judgment.get("source_refs"):
             level = judgment["level"]
             reason = judgment["reason"]
             confidence = judgment.get("confidence") or "medium"
@@ -4220,43 +4965,50 @@ def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
             authority = "deterministic"
         dimensions.append({
             "dimension": dimension, "level": level,
-            "weight_range": [round(weights[dimension][0], 2), round(weights[dimension][1], 2)],
-            "weight_provenance": provenance[dimension], "confidence": confidence,
+            "importance": "critical" if dimension in critical_dimensions else "normal",
+            "confidence": confidence,
             "reason": reason, "source_refs": source_refs, "authority": authority,
         })
 
-    if checkpoint == "strategy":
-        gate_failures = [
-            item for item in checked.get("diagnostics", [])
-            if item.get("severity") == "fatal"
-            or "compile" in item.get("blocks", [])
-            or "task3" in item.get("blocks", [])
-        ]
-    else:
-        gate_failures = [
-            item for item in checked.get("diagnostics", [])
-            if item.get("severity") in ("fatal", "blocker")
-        ]
-    overall = {"status": "withheld", "fit_range": None, "band": None}
+    gate_failures = _blocking_diagnostics(
+        checked.get("diagnostics", []),
+        "generation" if checkpoint == "strategy" else "submission",
+    )
+    overall = {"status": "withheld", "rating": "withheld"}
     if not gate_failures:
-        total_low = sum(item["weight_range"][0] for item in dimensions)
-        total_high = sum(item["weight_range"][1] for item in dimensions)
-        low_score = sum(LEVEL_RANGES[item["level"]][0] * item["weight_range"][0] for item in dimensions) / max(total_low, 1)
-        high_score = sum(LEVEL_RANGES[item["level"]][1] * item["weight_range"][1] for item in dimensions) / max(total_high, 1)
-        low_score = int(low_score // 5 * 5)
-        high_score = int((high_score + 4.999) // 5 * 5)
         levels = {item["dimension"]: item["level"] for item in dimensions}
-        if any(levels[name] in ("deficient", "fragile") for name in ("need_alignment", "role_decision_coverage", "delivery_readiness", "commitment_safety", "consistency")):
-            high_score = min(high_score, 70)
-        applicable_levels = [value for value in levels.values() if value != "not_evaluated"]
-        all_adequate = all(value in ("adequate", "strong", "distinctive") for value in applicable_levels)
-        has_distinctive_value = levels["value_strength"] == "distinctive" or levels["differentiation"] == "distinctive"
-        if not (all_adequate and has_distinctive_value and len(applicable_levels) == len(FIT_DIMENSIONS)):
-            high_score = min(high_score, 85)
-        bands = []
-        for name, lower, upper in (("fragile", 0, 55), ("credible", 55, 75), ("competitive", 75, 90), ("strong", 90, 101)):
-            if low_score < upper and high_score >= lower: bands.append(name)
-        overall = {"status": "partial" if any(item["level"] == "not_evaluated" for item in dimensions) else "evaluated", "fit_range": [low_score, high_score], "band": "/".join(bands)}
+        unevaluated = [name for name, value in levels.items()
+                       if value == "not_evaluated"]
+        ordinal = {
+            "deficient": 0, "fragile": 1, "adequate": 2,
+            "strong": 3, "distinctive": 4,
+        }
+        applicable = [ordinal[value] for value in levels.values()
+                      if value in ordinal]
+        critical_values = [levels[name] for name in critical_dimensions]
+        if any(value == "deficient" for value in critical_values):
+            rating = "fragile"
+        elif unevaluated:
+            # An unreviewed differentiation/reading dimension is uncertainty,
+            # never hidden pseudo-precision or a competitive claim.
+            rating = ("fragile" if any(value == "fragile"
+                                        for value in critical_values)
+                      else "credible")
+        elif any(value == "fragile" for value in critical_values):
+            rating = "fragile"
+        elif (applicable and sum(applicable) / len(applicable) >= 3.4
+              and levels.get("differentiation") == "distinctive"):
+            rating = "strong"
+        elif applicable and sum(applicable) / len(applicable) >= 2.6:
+            rating = "competitive"
+        elif applicable and sum(applicable) / len(applicable) >= 1.6:
+            rating = "credible"
+        else:
+            rating = "fragile"
+        overall = {
+            "status": "partial" if unevaluated else "evaluated",
+            "rating": rating,
+        }
 
     shortboard = []
     for diagnostic in sorted(checked.get("diagnostics", []), key=lambda item: {"fatal": 0, "blocker": 1, "major": 2, "minor": 3, "info": 4}.get(item.get("severity"), 5)):
@@ -4273,8 +5025,12 @@ def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
         "policy_version": FIT_POLICY_VERSION,
         "gates": {"passed": not gate_failures, "failures": [item.get("root_cause_key") for item in gate_failures]},
         "dimensions": dimensions, "overall": overall, "shortboard": shortboard,
+        "top_gaps": [
+            item["dimension"] for item in dimensions
+            if item["level"] in ("deficient", "fragile", "not_evaluated")
+        ][:5],
         "uncertainty_drivers": [item["dimension"] for item in dimensions if item["level"] == "not_evaluated" or item["confidence"] == "low"],
-        "disclaimer": "This is an internal customer-fit sensitivity range, not an evaluator score or win probability.",
+        "disclaimer": "Internal ordinal judgment only; not an evaluator score or win probability.",
     }
     if output_path is None:
         output_path = os.path.join(state_dir, "derived", "customer-fit.%s.json" % checkpoint)
@@ -4282,17 +5038,48 @@ def customer_fit(state_dir, checkpoint="strategy", judgments_path=None,
     return {"passed": not gate_failures, "issues": checked.get("issues", []), "scorecard": result, "output_path": os.path.abspath(output_path)}
 
 
-def archive_state(state_dir, bundle_dir, require_submission_ready=True):
+def archive_state(state_dir, bundle_dir, require_submission_ready=True,
+                  checked_result=None, draft_checked_result=None):
     """Archive safe per-bid state and preserve the previous archive as last-good."""
     realization_dir = os.path.join(state_dir, "derived", "realization")
-    draft_checked = check_canonical(state_dir, stage="draft")
+    documents, load_issues = load_state(state_dir)
+    if load_issues:
+        return {"passed": False, "issues": load_issues}
+    current_state_hash = state_hash(state_dir, documents)
+    if (not isinstance(checked_result, dict)
+            or checked_result.get("stage") != "submission"
+            or checked_result.get("state_hash") != current_state_hash):
+        checked_result = check_canonical(
+            state_dir, stage="submission", realization_dir=realization_dir)
+    checked = checked_result
+    if (not isinstance(draft_checked_result, dict)
+            or draft_checked_result.get("stage") != "draft"
+            or draft_checked_result.get("state_hash") != current_state_hash):
+        if not any(item.get("severity") == "fatal"
+                   for item in checked.get("diagnostics", [])):
+            draft_checked_result = {
+                "passed": True, "issues": [], "diagnostics": [],
+                "stage": "draft", "state_hash": current_state_hash,
+            }
+        else:
+            draft_checked_result = check_canonical(state_dir, stage="draft")
+    draft_checked = draft_checked_result
     if not draft_checked["passed"]:
         return {
             "passed": False,
             "issues": ["archive refused because canonical state is corrupt"] + draft_checked["issues"],
             "diagnostics": draft_checked["diagnostics"],
         }
-    checked = check_canonical(state_dir, stage="submission", realization_dir=realization_dir)
+    fatal_submission = [
+        item for item in checked.get("diagnostics", [])
+        if item.get("severity") == "fatal"
+    ]
+    if fatal_submission:
+        return {
+            "passed": False,
+            "issues": ["archive refused because submission artifacts/state contain fatal corruption"],
+            "diagnostics": fatal_submission,
+        }
     if require_submission_ready and not checked["passed"]:
         return {"passed": False, "issues": checked["issues"], "diagnostics": checked["diagnostics"]}
     bundle_dir = os.path.abspath(bundle_dir)
@@ -4300,6 +5087,21 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True):
     staging = tempfile.mkdtemp(prefix="._state-staging-", dir=bundle_dir)
     target = os.path.join(bundle_dir, "_state")
     last_good = os.path.join(bundle_dir, "_state.last-good")
+    retiring = last_good + ".retiring"
+    moved_target = False
+    retired_last_good = False
+
+    def recovery_nonempty(path):
+        return os.path.isdir(path) and bool(os.listdir(path))
+
+    def restore_retiring():
+        if not os.path.exists(retiring) or recovery_nonempty(last_good):
+            return
+        if os.path.exists(last_good):
+            shutil.rmtree(last_good, ignore_errors=True)
+        if not os.path.exists(last_good):
+            os.replace(retiring, last_good)
+
     try:
         for filename in CANONICAL_FILES + ("source-manifest.json", "run-manifest.json", "legacy-to-v3-map.json"):
             source = os.path.join(state_dir, filename)
@@ -4326,10 +5128,24 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True):
             "engine": ENGINE, "engine_version": ENGINE_VERSION,
             "warning": "INTERNAL STATE — NEVER SUBMIT TO THE CUSTOMER",
         })
-        if os.path.exists(last_good): shutil.rmtree(last_good, ignore_errors=True)
-        if os.path.exists(target): os.replace(target, last_good)
+        # Reconcile a prior interrupted rotation before starting a new one.
+        if os.path.exists(retiring):
+            if recovery_nonempty(last_good):
+                shutil.rmtree(retiring, ignore_errors=True)
+                if os.path.exists(retiring):
+                    raise OSError("cannot clear stale recovery point: %s" % retiring)
+            else:
+                restore_retiring()
+        if os.path.exists(last_good):
+            os.replace(last_good, retiring)
+            retired_last_good = True
+        if os.path.exists(target):
+            os.replace(target, last_good)
+            moved_target = True
         os.replace(staging, target)
         staging = None
+        if os.path.exists(retiring):
+            shutil.rmtree(retiring, ignore_errors=True)
         return {
             "passed": True, "issues": [], "state_archive": target,
             "last_good": last_good if os.path.exists(last_good) else None,
@@ -4337,10 +5153,24 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True):
             "submission_ready": None if checked["passed"] else False,
         }
     except Exception as exc:
-        if not os.path.exists(target) and os.path.exists(last_good):
-            try: os.replace(last_good, target)
-            except Exception: pass
-        return {"passed": False, "issues": ["archive failed; last-good preserved: %s" % exc]}
+        if moved_target and not os.path.exists(target) and os.path.exists(last_good):
+            try:
+                os.replace(last_good, target)
+            except Exception:
+                pass
+        if retired_last_good:
+            try:
+                restore_retiring()
+            except Exception:
+                pass
+        if recovery_nonempty(last_good):
+            recovery_status = "last-good preserved"
+        else:
+            recovery_status = "last-good may be lost; inspect %s" % last_good
+        return {
+            "passed": False,
+            "issues": ["archive failed; %s: %s" % (recovery_status, exc)],
+        }
     finally:
         if staging and os.path.exists(staging): shutil.rmtree(staging, ignore_errors=True)
 
@@ -4355,7 +5185,7 @@ def add_cli_parsers(sub):
     p = sub.add_parser("apply-auto-state"); p.add_argument("--state-dir", required=True)
     p = sub.add_parser("freeze-snapshot"); p.add_argument("--state-dir", required=True); p.add_argument("--force", action="store_true")
     p = sub.add_parser("compile-context"); p.add_argument("--state-dir", required=True); p.add_argument("--target", required=True, choices=["research", "value-selection", "section", "exec-summary", "redteam"]); p.add_argument("--id", default=None); p.add_argument("--role", default=None); p.add_argument("--output", default=None); p.add_argument("--token-budget", default=24000, type=int)
-    p = sub.add_parser("audit-realization"); p.add_argument("--state-dir", required=True); p.add_argument("--section-ref", required=True); p.add_argument("--section", required=True); p.add_argument("--hints", required=True); p.add_argument("--brief", required=True); p.add_argument("--semantic", default=None); p.add_argument("--output", default=None)
+    p = sub.add_parser("audit-realization"); p.add_argument("--state-dir", required=True); p.add_argument("--section-ref", required=True); p.add_argument("--section", required=True); p.add_argument("--hints", default=None, help="deprecated v3.0 compatibility input"); p.add_argument("--brief", required=True); p.add_argument("--semantic", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("customer-fit"); p.add_argument("--state-dir", required=True); p.add_argument("--checkpoint", default="strategy", choices=["strategy", "submission"]); p.add_argument("--judgments", default=None); p.add_argument("--realization-dir", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("archive-state"); p.add_argument("--state-dir", required=True); p.add_argument("--bundle-dir", required=True); p.add_argument("--allow-draft", action="store_true")
 

@@ -22,7 +22,7 @@ python3 -m py_compile tools/prop_tools.py tools/prop_v3.py
 | v3 调度顺序或 Task 输入输出 | `SKILL.md`、`prompts/` |
 | 硬门、写权限、客户稿边界 | `RULES.md` |
 | Gate 单题交互和决策状态 | `DECISIONS.md` |
-| 标型、叙事、评委与章节先验 | `TYPES.md`、`profiles.json` |
+| 标型/评委/章节先验与调度 | `TYPES.md`、`profiles.json`；叙事写作 guide 只在 `narratives.json` |
 | canonical、事务、brief、realization、fit、归档 | `tools/prop_v3.py` |
 | 装配、合规、QA 和兼容 CLI | `tools/prop_tools.py` |
 | 2.x 紧急回退 | `LEGACY.md`、`prompts/legacy/` |
@@ -55,7 +55,8 @@ python3 -m py_compile tools/prop_tools.py tools/prop_v3.py
 
 - 不新增 legacy 功能；只维护紧急回退和旧项目可读性。
 - schema 变化必须显式升级 `schema_version` 或提供安全迁移，不能把 unknown / inferred 自动升为 verified / committed / publishable。
-- 当前 generation snapshot 绑定全部五份 canonical。除非同时完成依赖级失效设计和测试，否则 canonical 任一变化后都应让 snapshot-bound brief、章节、摘要和 realization 失效。
+- 当前 generation snapshot 绑定五份 canonical 与 source/run fingerprint。除非同时完成依赖级失效设计和测试，否则任一 authority 输入变化后都应让 snapshot-bound brief、章节、摘要和 realization 失效。
+- v3.1 新状态使用 `customer-value/v2` 与 `strategy/v4`；旧 v1/v3 archive 必须保持只读兼容，不能静默重写。
 - `archive-state --allow-draft` 只能放宽 submission blocker，不能接收 schema、source 或 fatal 损坏。
 - 客户稿继续禁止 URL、内部 ID、private 原句、策略/模式/工具痕迹和适配度。
 
@@ -75,5 +76,6 @@ git diff --check
 - 新诊断包含稳定的 `rule_id`、根因、严重度、owner 和可执行修复；
 - 失败路径不会覆盖当前 canonical、当前卷册或 last-good；
 - 测试和示例不包含真实客户信息。
+- `git status` 不出现新增或修改的 `reports/` 运行产物；清理历史误提交只允许删除，后续输出一律不入库。
 
 提交说明应概括行为变化及其安全影响。若改动影响 schema、默认流程、递交就绪或兼容链，请在说明中单独指出。

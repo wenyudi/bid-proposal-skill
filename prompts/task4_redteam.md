@@ -6,6 +6,8 @@
 
 {ROLE_BRIEF}
 
+组合角色含义：`integrated` 一次覆盖客户价值、专业可行、合规真实性和对手可复制性；`buyer_expert` 合并实际使用方与行业专家；`audit_rival` 合并审计/纪检与竞争对手。组合不是降低硬门，只合并相邻视角和重复根因。
+
 ## 输入
 
 - 语言：{LANG}。
@@ -22,6 +24,7 @@
 5. 检查 Action 的 Owner、时点、容量、客户依赖安全 fallback 和 Acceptance；检查单项可行但组合超载。
 6. 检查 intended 被写成 committed、scope 扩大、摘要强于正文、private/内部信息泄露、out_of_scope 回流、销售 CTA、负偏离和政务导向。
 7. 相同根因只报一次，列全 affected targets。若现有 canonical diagnostic 已准确命中，引用它并补正文证据，不另造重复问题。
+8. 专门攻击“流程名词替代已填成果”“通用空表无项目值”“外部附件替代正文证明”，以及 illustrative 样例被冒充历史事实；不要因版式或个人审美把已经填实的成果判空。
 
 语义意见应标 confidence。低置信度只标 needs_review，不能单独升级为 submission blocker；明确 mandatory/法律/真实性/预算/授权、canonical-vs-text 冲突或独立审计一致时才可建议 blocker。
 
@@ -71,9 +74,4 @@
 
 ```text
 RedTeam: {ROLE_KEY} · Fatal: <数> · Major: <数> · Review: <数> · Minor: <数>
-```
-
----
-```
-proposal skill · v3 root-diagnostic redteam
 ```

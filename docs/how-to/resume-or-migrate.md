@@ -24,14 +24,14 @@ python3 tools/prop_tools.py check-canonical --state-dir "$NEW_STATE" --stage dra
 
 如果 source manifest 指向的原始标书或素材已移动、内容已改变，检查会失败。恢复原文件或以新输入启动新 run；不要手改 hash 来掩盖变化。
 
-复制的 canonical 和 `sections/` 可以作为恢复材料，但旧 brief、artifact registry 和 realization 中的绝对路径不构成新目录的有效证明。继续写作前必须：
+复制的 canonical 和 `sections/` 可以作为恢复材料，但旧 brief/realization 的 compiled path 不构成新目录的有效证明。v3.1 不使用 artifact registry。继续写作前必须：
 
 1. 重新通过 generation gate；
 2. 在新目录冻结当前快照；
 3. 为每个正式章节重新运行 `compile-context`；
 4. 用当前 brief 重新进行独立 realization audit；
 5. 重新生成并审计方案综述；
-6. 重新装配并运行 compliance、QA、submission canonical 和 customer-fit。
+6. 重新装配并运行 `validate-run`；归档时运行 `finalize-run` 生成新 receipt。
 
 不要把旧 manifest 的路径改成新路径后直接标记 current。当前 v3 snapshot 绑定全部五份 canonical，任一 canonical 变化都会使旧章节与摘要失效。
 

@@ -68,10 +68,13 @@
 | `claim.*`、`metric.*` | Claim 三轴、scope、测量、authority、Action 强度 | `task2.5` / `gate1` |
 | `action.*`、`acceptance.*`、`dependency.*` | 责任、ready、资源 treatment、验收和客户依赖 | `task2.5` / `gate1` |
 | `resource.*`、`budget.*`、`delivery.*` | 单位、窗口、容量、组合负载、预算上限、先后关系 | `gate1` / `task1` |
-| `job.*`、`section.*`、`coverage.*` | DecisionJob、章节映射、Role×Need×Criterion 路径 | `task1` / `task2.5` |
+| `job.*`、`section.*`、`coverage.*`、`decision_path.*` | 内嵌 DecisionJob、章节映射、Role×Need×Criterion 路径 | `task1` / `task2.5` |
+| `visible_output.*` | lead 成果契约缺失、字段未填或 truth boundary 冲突 | `task2.5` / `task3` |
 | `realization.*` | brief lineage、snapshot、正文 hash、语义状态、摘要 | `task3` / `task3.5` |
 
 具体修复以诊断对象的 `owner`、`observed`、`expected` 和 `repair_options` 为准；同一前缀的不同规则可能回到不同 owner。
+
+`acceptance.authority_scope` 是 bootstrap/draft 的前置完整性门：AcceptanceContract 一旦填写 `authority_ref`，该 authority 必须已经对 AC 的精确对象与 `commitment_authority` 用途具备 scope。若标书 Requirement 确实规定了该交付/验收，由 Task 1 在 Requirement 上补齐 `authority_uses` 与 `authorizes_refs`；若没有，就清空伪 authority 并将新增边界交给 Gate，不能等 Task 2.5 通过舍弃交付路径来绕过。
 
 ## QA checks
 
@@ -83,7 +86,7 @@
 | `structure` | 硬项 | 标题、项目信息、目录和对照表 |
 | `no_internal_leak` | 硬项 | 叙事、模式、版本、时间、URL、内部模型词 |
 | `no_private_raw_leak` | 硬项 | private/internal/匿名前 canonical 原句 |
-| `chapter_count` | 硬项 | 当前 depth profile 的最低章节数 |
+| `chapter_count` | 硬项 | v3 必须精确等于 `strategy.sections`；profile 最低章数仅 legacy |
 | `subsection_numbering` | 硬项 | 子节编号不使用汉字章编号 |
 | `no_id_leak` | 硬项 | legacy 与 v3 内部实体 ID |
 | `word_count` | 信息 | 当前字数和 profile limit；超限记录在 `exceeded` |
@@ -100,7 +103,9 @@
 
 customer-fit 固定十维：need alignment、role decision coverage、insight credibility、value strength、differentiation、evidence quality、delivery readiness、commitment safety、reading efficiency、consistency。
 
-只要 checkpoint 对应的 hard gate 有失败，overall 就是 `withheld`、没有 fit range。fit range 是规则敏感性区间，不是统计置信区间、评委分或中标概率，也不能抵消任何 diagnostic hard gate。
+overall 只用 withheld / fragile / credible / competitive / strong；不输出数字权重或区间，任一 `not_evaluated` 都不能进入 competitive/strong。
+
+只要 checkpoint 对应的 hard gate 有失败，overall 就是 `withheld`。ordinal rating 不是评委分或中标概率，也不能抵消任何 diagnostic hard gate。
 
 ## 查看与处理
 

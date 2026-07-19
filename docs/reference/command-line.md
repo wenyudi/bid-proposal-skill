@@ -49,7 +49,7 @@ check-canonical --state-dir DIR
 - 默认 `--stage draft`。
 - submission 未指定 `--realization-dir` 时，默认使用 `STATE/derived/realization`。
 - `--write-derived` 写入 `derived/coverage.json` 和 `derived/diagnostics.json`。
-- JSON 结果包含 `passed`、`issues`、`diagnostics`、`counts`、`coverage` 和 `submission_ready`。
+- JSON 结果包含 `passed`、`issues`、`diagnostics`、`counts`、`coverage`、`safe_draft_ready`、`submission_ready`、`readiness` 和 `state_hash`。
 
 ### `apply-changeset`
 
@@ -57,7 +57,7 @@ check-canonical --state-dir DIR
 apply-changeset --state-dir DIR --changeset FILE
 ```
 
-应用 `changeset/v1`。工具先检查 producer 权限和 touched files 的 base revision，在临时目录验证完整候选状态，再原子替换 canonical。stale 或任何校验失败都会拒绝整组操作；成功时写 change receipt 并使受影响 derived artifact stale。
+应用 `changeset/v1`。工具先检查 producer 权限和 touched files 的 base revision，在临时目录验证完整候选状态，再原子替换 canonical。stale 或任何校验失败都会拒绝整组操作；成功时写 change receipt，并删除可复用 snapshot/final receipt。旧 brief/realization 由自身 hash 自动判 stale。
 
 支持的 operation 是 JSON Pointer `add`、`replace`、`remove`、`test`，以及实体级 `transition`、`upsert`。
 
@@ -84,7 +84,7 @@ apply-auto-state --state-dir DIR
 freeze-snapshot --state-dir DIR [--force]
 ```
 
-在 generation gate 通过后冻结五份 canonical 的 revision 和 hash，写入 `derived/manifests/generation-snapshot.json`。相同状态默认复用已有快照；`--force` 重新写入。
+在 generation gate 通过后冻结五份 canonical 及 source/run 的 revision/hash，写入 `derived/manifests/generation-snapshot.json`。相同 authority fingerprint 默认复用已有快照；`--force` 重新写入。
 
 ### `compile-context`
 
@@ -103,19 +103,24 @@ compile-context --state-dir DIR
 | `value-selection` | 无 | `derived/briefs/value-selection.json` |
 | `section` | 必须 `--id CH-*` | `derived/briefs/sections/<section-ref>.json` |
 | `exec-summary` | 无 | `derived/briefs/exec-summary.json` |
-| `redteam` | 必须 `--role buyer|expert|audit|rival` | `derived/briefs/redteam/<role>.json` |
+| `redteam` | 必须 `--role`；profile 可取 integrated / buyer_expert / audit_rival / 四独立角色 | `derived/briefs/redteam/<role>.json` |
+
+`--token-budget` 的 CLI 默认值为 24000。proposal 主流程对 `value-selection` 显式使用当前模式 `v3_context_token_budget` 的 1.5 倍（quick / standard / deep 为 24000 / 36000 / 54000），因为 Task 2.5 必须接收可完整 upsert 和交叉校验的 canonical 对象；超限时仍 fail-closed，不会静默删 must_use。
 
 默认 token budget 是 `24000`。超限时只允许裁掉 `may_use`；`must_use` 仍超限则 brief 状态为 `blocked`，需要拆任务或显式提高预算。
+
+section / exec-summary / redteam 属于 snapshot-bound brief；即使指定 `--output`，路径也必须位于本 run 的 `STATE/derived/briefs/` 下，避免跨 run lineage 混用。
 
 ### `audit-realization`
 
 ```text
 audit-realization --state-dir DIR --section-ref ID
-                  --section FILE --hints FILE --brief FILE
+                  --section FILE --brief FILE
+                  [--hints FILE]
                   [--semantic FILE] [--output FILE]
 ```
 
-核验当前章节、writer hints、compiled brief 和独立 semantic audit 的 lineage 与语义结果。未提供 `--semantic` 时会产出 `needs_semantic_review`，不会通过。默认 authoritative manifest 写入 `derived/realization/<section-ref>.json`。
+核验当前章节、compiled brief 和独立 semantic audit 的 path/hash/snapshot lineage、唯一正文 quote、Evidence scope、承诺强度、Requirement 与 visible output 字段。新流程不需要 writer hints；`--hints` 只兼容 v3.0。未提供 `--semantic` 时会产出 `needs_semantic_review`，不会通过。默认 authoritative manifest 写入 `derived/realization/<section-ref>.json`。
 
 ### `customer-fit`
 
@@ -126,7 +131,7 @@ customer-fit --state-dir DIR
              [--output FILE]
 ```
 
-生成十维客户适配度内部诊断。默认 checkpoint 是 `strategy`；submission 会检查 realization。可选 judgments 必须为各维度提供有效 level、reason 和 source refs，否则使用确定性锚点或标为 `not_evaluated`。
+生成十维客户适配度内部诊断。默认 checkpoint 是 `strategy`；submission 会检查 realization。可选 judgments 必须为各维度提供有效 level、reason 和 source refs，否则使用确定性锚点或标为 `not_evaluated`。overall 只输出 withheld / fragile / credible / competitive / strong；不输出数字分、权重或区间。
 
 ### `archive-state`
 
@@ -135,6 +140,29 @@ archive-state --state-dir DIR --bundle-dir DIR [--allow-draft]
 ```
 
 把 canonical、manifests、realization、sections 和关键 derived 结果原子归档到 bundle 的 `_state/`。默认要求 canonical submission gate 通过。`--allow-draft` 可归档结构完好的草案，但不能绕过 schema、source 或 fatal 损坏。
+
+### `validate-run`
+
+```text
+validate-run --state-dir DIR --report FILE
+             [--mode quick|standard|deep] [--lang LANG]
+             [--judgments FILE] [--gate2 FILE]
+             [--todo-output FILE] [--validation-output FILE]
+```
+
+报告级只读终验。一次聚合 compliance、QA、canonical submission、customer-fit、human todo 和 Gate 2，并把结果写为 `run-validation/v1`。没有 resolved Gate 2 attestation 时 `submission_ready=false`；canonical 结果会被 fit/todo 复用，不重复校验。
+
+### `finalize-run`
+
+```text
+finalize-run --state-dir DIR --report FILE --bundle-dir DIR
+             [--mode quick|standard|deep] [--lang LANG]
+             [--judgments FILE] [--gate2 FILE]
+             [--todo-output FILE] [--validation-output FILE]
+             [--receipt-output FILE] [--allow-draft]
+```
+
+运行 `validate-run`、复用同一 checked result 原子归档，并签发 `acceptance-receipt/v1`。receipt 绑定 `state_hash`、`report_hash` 与 validation hash；只有 `delivery_status=submission_ready` 才是报告级可递交结论。`--allow-draft` 可签发 `draft_only` receipt，但不豁免 canonical 损坏。
 
 ## 装配、合规与 QA
 
@@ -205,12 +233,12 @@ self-score --requirements FILE --strategy FILE --report FILE
 | `check-requirements` | `check-requirements FILE` | legacy 兼容的 requirements 结构检查 |
 | `check-strategy` | `check-strategy FILE [--mode ...] [--require-settled] [--auto]` | 校验 strategy 和决策前沿；`--auto` 允许 assumed |
 | `apply-auto-decisions` | `apply-auto-decisions FILE` | legacy 原地转换 open 决策；v3 使用 `apply-auto-state` |
-| `detect-engine` | `detect-engine` | 探测可选搜索引擎，可用性仅作信息 |
+| `detect-engine` | `detect-engine` | 默认不外呼；设置 `PROPOSAL_SEARCH_PROBE_URL` 后向该用户自选地址发起探测请求，可用性仅作信息 |
 
 ## 退出码与输出
 
 - v3 状态命令输出 JSON；`passed=true` 返回 `0`，否则返回 `1`。
-- `check-encoding`、`json-validate`、`check-requirements`、`check-strategy`、`apply-auto-decisions`、`assemble-proposal`、`check-compliance` 和 `qa-proposal` 失败返回 `1`。
+- `check-encoding`、`json-validate`、`check-requirements`、`check-strategy`、`apply-auto-decisions`、`assemble-proposal`、`check-compliance`、`qa-proposal`、`validate-run` 和 `finalize-run` 失败返回 `1`。
 - `word-count`、`json-get`、`detect-engine`、`escape-currency`、`self-score` 和 `human-todo` 在命令成功执行时返回 `0`；其中 `human-todo` 非空、`self-score` 偏低都只是结果，不改变退出码。
 - 未捕获异常返回 `1`；键盘中断返回 `130`。
 

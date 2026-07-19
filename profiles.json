@@ -2,37 +2,43 @@
   "quick": {
     "label": "快速应标",
     "scene": "小额/时间紧/竞争弱的标，或初稿快评",
-    "min_chapters": 6,
+    "legacy_min_chapters": 6,
     "min_paragraphs": 4,
     "min_differentiators": 2,
     "min_differentiators_legacy_only": true,
     "max_chars": 15000,
     "v3_candidate_breadth": {"low": 5, "high": 8},
     "v3_evidence_depth": "focused",
-    "v3_context_token_budget": 16000
+    "v3_context_token_budget": 16000,
+    "redteam_roles": ["integrated"],
+    "audit_batch_size": 3
   },
   "standard": {
     "label": "标准投标",
     "scene": "常规政企传媒标，评分项 8-12 项",
-    "min_chapters": 8,
+    "legacy_min_chapters": 8,
     "min_paragraphs": 5,
     "min_differentiators": 3,
     "min_differentiators_legacy_only": true,
     "max_chars": 28000,
     "v3_candidate_breadth": {"low": 8, "high": 14},
     "v3_evidence_depth": "balanced",
-    "v3_context_token_budget": 24000
+    "v3_context_token_budget": 24000,
+    "redteam_roles": ["buyer_expert", "audit_rival"],
+    "audit_batch_size": 3
   },
   "deep": {
     "label": "大标/重点项目",
     "scene": "预算大/多轮答辩/强竞争的核心标",
-    "min_chapters": 11,
+    "legacy_min_chapters": 11,
     "min_paragraphs": 6,
     "min_differentiators": 5,
     "min_differentiators_legacy_only": true,
     "max_chars": 50000,
     "v3_candidate_breadth": {"low": 12, "high": 20},
     "v3_evidence_depth": "deep",
-    "v3_context_token_budget": 36000
+    "v3_context_token_budget": 36000,
+    "redteam_roles": ["buyer", "expert", "audit", "rival"],
+    "audit_batch_size": 2
   }
 }

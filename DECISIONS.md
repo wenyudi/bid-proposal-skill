@@ -112,7 +112,7 @@ legacy 回退可直接运行：
 $PY {TOOLSDIR}/prop_tools.py check-strategy {TMPDIR}/strategy.json --mode {depth_mode}
 ```
 
-v3 同样可用它显示前沿；canonical 提交就绪的权威门是 `check-canonical --stage generation`。交互式 Gate 1 结束前，legacy 运行：
+v3 同样可用它显示前沿；`check-canonical --stage generation` 只证明 `safe_draft_ready`，canonical 递交门是 `--stage submission`，报告级结论由 `finalize-run` receipt 给出。交互式 Gate 1 结束前，legacy 运行：
 
 ```bash
 $PY {TOOLSDIR}/prop_tools.py check-strategy {TMPDIR}/strategy.json --mode {depth_mode} --require-settled
@@ -150,16 +150,18 @@ $PY {TOOLSDIR}/prop_tools.py check-strategy {TMPDIR}/strategy.json --mode {depth
 1. 将迷雾逐项归位：可保守假设的升格为 open 决策；可研究的移入 `intel_needs`；范围外的移入 `out_of_scope`。
 2. v3 运行 `$PY {TOOLSDIR}/prop_tools.py apply-auto-state --state-dir {TMPDIR}`；legacy 才运行 `apply-auto-decisions strategy.json`。不要手改三个状态字段。
 3. v3 在 Task 2.5 后运行 generation gate；legacy 运行 `check-strategy ... --auto --require-settled`。
-4. 所有 assumed 决策必须随卷册进入内部研判和人工待办，递交前由投标人复核。
-5. v3 assumed 决策是 submission blocker。它可以解锁安全草案，但不能用 soft score、auto 标志或 accepted risk 豁免成可直接递交。
+4. Task 2.5 不得仅因同一边界仍未人工确认而把 assumed 重开为 open；它应按 safe_constraint 形成收窄的 draft_ready/intended/planned 草案。unknown resource/budget 继续保持 unknown，禁止为通过 generation 编造 provisional low/high。
+5. 新 Evidence 确实改变边界而需要重开时，完整 Gate 对象必须同步设为 `status=open`、`resolved=null`、`assumption_risk=false`；不得留下 assumed/resolved 残值。auto 再由 `apply-auto-state` 原子转换，不能手改回 assumed。
+6. 所有 assumed 决策必须随卷册进入内部研判和人工待办，递交前由投标人复核。
+7. v3 assumed 决策是 submission blocker。它可以解锁安全草案，但不能用 soft score、auto 标志或 accepted risk 豁免成可直接递交。
 
 ## Gate 2：红队定稿循环
 
 Gate 2 沿用相同的单题原则，不再建立第二套地图。v3 每轮处理的是聚合后的 root diagnostic，而不是逐条关键词警告：
 
-1. 先展示一次四视角总览、机械信号、最强点和对手打法。
+1. 先展示一次当前 profile 的红队总览、机械信号、最强点和对手打法；quick/standard 可合并相邻视角，但硬门不降级。
 2. 致命项仍按主流程先自动修复；其余质疑按“预计丢分/对手可利用程度/修改成本”排序。
 3. 每轮只处理一条质疑，给出主 agent 的推荐处置：`采纳修改`、`保留并补证据` 或 `不采纳`，说明得失。
 4. 等用户回答后，在对应 challenge 写入 `decision` 与 `decision_reason`。若只改表达且 canonical snapshot 未变，可改对应稿并复审；若涉及 Need/VP/Claim/Action/资源/授权，先由真正 owner 提交 ChangeSet，再按当前全局 snapshot 重编译全部 snapshot-bound 章节与摘要、装配并**重新绑定最新 `$REPORT/$BUNDLE/$BRIEF`**，重跑合规、QA、canonical submission 和 customer-fit，再问下一条。
 5. 用户可明确授权“其余按推荐处理”。全部处理完后只问一次定稿确认。
-6. Gate 2 完成后才生成最终卷册派生物：最后装配一次，重跑合规/转义/QA/canonical submission/customer-fit，生成 `_人工待办.md`，把 fit、红队与最终取舍追加进最新 `_内部研判.md`，原子归档 `_state` 后再清理 TMPDIR。
+6. Gate 2 完成后写 `gate2-decision/v1` attestation（`status=resolved` 且 `open_root_causes=[]`）。最后装配一次，用 `validate-run`/`finalize-run` 聚合合规、QA、canonical submission、ordinal fit、待办与归档，并签发 state/report hash receipt；成功后才清理 TMPDIR。

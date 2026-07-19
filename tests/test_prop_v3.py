@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 
 from tools import prop_tools, prop_v3
@@ -213,7 +214,270 @@ def _make_state(directory, documents=None):
     return documents
 
 
+def _lean_documents():
+    documents = prop_v3._upgrade_to_lean_documents(_valid_documents())
+    documents["strategy.json"]["sections"][0]["visible_outputs"] = [{
+        "id": "OUT-RESPONSIBILITY-CARD",
+        "purpose": "让评委直接看到责任与检查节点",
+        "supports_refs": ["VP-CLOSED-LOOP", "M-01"],
+        "required_fields": ["责任人", "检查节点"],
+        "grounding_refs": ["M-01", "EV-TENDER"],
+        "grounding_mode": "tender",
+        "truth_boundary": "只呈现标书要求和已确认项目经理职责，不扩大 SLA",
+        "requiredness": "required",
+    }]
+    return documents
+
+
+def _make_submission_ready_lean_state(directory):
+    documents = _lean_documents()
+    _make_state(directory, documents)
+    section_path = os.path.join(directory, "sections", "section-1.md")
+    section_text = (
+        "### 1.1 一条责任链闭环交付\n\n"
+        "项目经理对阶段检查与验收闭环承担单一责任。\n\n"
+        "责任人：项目经理；检查节点：每个阶段交付前。\n"
+    )
+    with open(section_path, "w", encoding="utf-8") as handle:
+        handle.write(section_text)
+    compiled = prop_v3.compile_context(
+        directory, "section", target_id="CH-01")
+    semantic_path = os.path.join(directory, "semantic.json")
+    _write_json(semantic_path, {
+        "schema_version": "semantic-realization/v1",
+        "section_ref": "CH-01",
+        "snapshot_id": compiled["brief"]["generation_snapshot_id"],
+        "brief_hash": compiled["brief"]["brief_hash"],
+        "evaluator": "independent-test/v1",
+        "evaluations": [
+            {
+                "canonical_ref": "CL-CLOSED-LOOP", "contribution": "prove",
+                "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+                "semantic_status": "entailed",
+                "observed_commitment_level": "committed",
+                "reason": "命题、范围和责任一致", "confidence": "high",
+                "evidence_refs_presented": [],
+            },
+            {
+                "canonical_ref": "DA-CLOSED-LOOP",
+                "contribution": "operationalize",
+                "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+                "semantic_status": "entailed",
+                "observed_commitment_level": "committed",
+                "reason": "动作和责任已落地", "confidence": "high",
+                "evidence_refs_presented": [],
+            },
+        ],
+        "requirement_evaluations": [
+            {"requirement_ref": "M-01", "status": "addressed",
+             "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+             "reason": "提供责任与验收机制", "confidence": "high"},
+            {"requirement_ref": "S-01", "status": "addressed",
+             "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+             "reason": "回应人员和验收闭环", "confidence": "high"},
+        ],
+        "visible_output_evaluations": [{
+            "output_ref": "OUT-RESPONSIBILITY-CARD", "status": "filled",
+            "field_evidence": [
+                {"field": "责任人", "quote": "责任人：项目经理",
+                 "reason": "责任主体为实值"},
+                {"field": "检查节点", "quote": "检查节点：每个阶段交付前",
+                 "reason": "节点为项目内可执行时点"},
+            ],
+            "grounding_refs_presented": ["M-01"],
+            "reason": "两个必填字段均可直接检查", "confidence": "high",
+        }],
+        "unexpected_claims": [], "overall": "valid",
+    })
+    audited = prop_v3.audit_realization(
+        directory, "CH-01", section_path, None,
+        compiled["output_path"], semantic_path)
+    if not audited["passed"]:
+        raise AssertionError(audited["issues"])
+
+    summary_compiled = prop_v3.compile_context(directory, "exec-summary")
+    summary_path = os.path.join(directory, "sections", "section-0.md")
+    with open(summary_path, "w", encoding="utf-8") as handle:
+        handle.write("项目经理对阶段检查与验收闭环承担单一责任。\n")
+    summary_semantic_path = os.path.join(directory, "summary-semantic.json")
+    _write_json(summary_semantic_path, {
+        "schema_version": "semantic-realization/v1", "section_ref": "CH-00",
+        "snapshot_id": summary_compiled["brief"]["generation_snapshot_id"],
+        "brief_hash": summary_compiled["brief"]["brief_hash"],
+        "evaluator": "independent-test/v1",
+        "evaluations": [
+            {"canonical_ref": "CL-CLOSED-LOOP", "contribution": "summarize",
+             "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+             "semantic_status": "entailed",
+             "observed_commitment_level": "committed", "reason": "等义摘要",
+             "confidence": "high", "evidence_refs_presented": []},
+            {"canonical_ref": "DA-CLOSED-LOOP", "contribution": "summarize",
+             "quote": "项目经理对阶段检查与验收闭环承担单一责任。",
+             "semantic_status": "entailed",
+             "observed_commitment_level": "committed", "reason": "等义摘要",
+             "confidence": "high", "evidence_refs_presented": []},
+        ],
+        "requirement_evaluations": [],
+        "visible_output_evaluations": [],
+        "unexpected_claims": [], "overall": "valid",
+    })
+    summary_audited = prop_v3.audit_realization(
+        directory, "CH-00", summary_path, None,
+        summary_compiled["output_path"], summary_semantic_path)
+    if not summary_audited["passed"]:
+        raise AssertionError(summary_audited["issues"])
+    return documents, compiled, audited
+
+
 class ProposalV3Tests(unittest.TestCase):
+    def test_malformed_changeset_returns_repairable_issue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            changeset_path = os.path.join(directory, "broken-changeset.json")
+            with open(changeset_path, "w", encoding="utf-8") as handle:
+                handle.write("{invalid")
+
+            result = prop_v3.apply_changeset(directory, changeset_path)
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(any(
+            "changeset unreadable" in issue for issue in result["issues"]
+        ), result["issues"])
+
+    def test_malformed_realization_hints_return_repairable_issue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory)
+            compiled = prop_v3.compile_context(
+                directory, "section", target_id="CH-01"
+            )
+            self.assertTrue(compiled["passed"], compiled.get("issues"))
+            section_path = os.path.join(directory, "sections", "section-1.md")
+            hints_path = os.path.join(directory, "broken-hints.json")
+            with open(section_path, "w", encoding="utf-8") as handle:
+                handle.write("项目经理承担阶段检查与验收责任。\n")
+            with open(hints_path, "w", encoding="utf-8") as handle:
+                handle.write("{invalid")
+
+            result = prop_v3.audit_realization(
+                directory,
+                "CH-01",
+                section_path,
+                hints_path,
+                compiled["output_path"],
+            )
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(any(
+            "realization hints unreadable" in issue for issue in result["issues"]
+        ), result["issues"])
+
+    def test_invalid_evidence_month_is_not_current(self):
+        evidence = {"status": "active", "valid_until": "2026-13"}
+
+        self.assertFalse(prop_v3._evidence_is_current(evidence))
+
+    def test_token_estimate_weights_cjk_and_ascii(self):
+        self.assertGreaterEqual(prop_v3._estimate_tokens("中文" * 100), 200)
+        self.assertEqual(prop_v3._estimate_tokens("a" * 400), 100)
+
+    def test_value_selection_context_contains_complete_task25_objects(self):
+        documents = _valid_documents()
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            compiled = prop_v3.compile_context(
+                directory, "value-selection", token_budget=36000
+            )
+
+        self.assertTrue(compiled["passed"], compiled.get("issues"))
+        must_use = compiled["brief"]["must_use"]
+        self.assertEqual(must_use["claims"], documents["customer-value.json"]["claims"])
+        self.assertEqual(must_use["metrics"], documents["customer-value.json"]["metrics"])
+        self.assertEqual(
+            must_use["delivery_roles"],
+            documents["delivery-plan.json"]["delivery_roles"],
+        )
+        self.assertEqual(
+            must_use["customer_dependencies"],
+            documents["delivery-plan.json"]["customer_dependencies"],
+        )
+        self.assertEqual(
+            must_use["acceptance_contracts"],
+            documents["delivery-plan.json"]["acceptance_contracts"],
+        )
+        self.assertEqual(
+            must_use["decisions"], documents["strategy.json"]["open_questions"]
+        )
+        self.assertNotIn("decision_jobs", must_use)
+        self.assertIn("decision_paths", must_use)
+        self.assertEqual(must_use["sections"], documents["strategy.json"]["sections"])
+        self.assertEqual(
+            must_use["requirements"]["budget_cap"],
+            documents["requirements.json"]["budget_cap"],
+        )
+
+    def test_value_selection_context_marks_assumed_gate_as_safe_draft(self):
+        documents = _valid_documents()
+        decision = documents["strategy.json"]["open_questions"][1]
+        decision.update(
+            status="assumed",
+            resolved=decision["ai_assumption"],
+            assumption_risk=True,
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            compiled = prop_v3.compile_context(
+                directory, "value-selection", token_budget=36000
+            )
+
+        self.assertTrue(compiled["passed"], compiled.get("issues"))
+        policy = compiled["brief"]["must_use"]["draft_policy"]
+        self.assertEqual(policy["mode"], "assumed_safe_draft")
+        self.assertEqual(
+            policy["assumed_decision_refs"], ["GATE-BUDGET-RESOLVED"]
+        )
+        self.assertFalse(policy["direct_submission_allowed"])
+        self.assertNotIn("internal_provisional_planning", policy)
+        self.assertIn("unknown resources stay unknown", policy["safe_draft_rule"])
+
+    def test_changeset_rejects_reopened_gate_with_assumed_residue(self):
+        documents = _valid_documents()
+        decision = documents["strategy.json"]["open_questions"][1]
+        decision.update(
+            status="assumed",
+            resolved=decision["ai_assumption"],
+            assumption_risk=True,
+        )
+        invalid_reopen = copy.deepcopy(decision)
+        invalid_reopen["status"] = "open"
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            changeset_path = os.path.join(directory, "invalid-reopen.json")
+            _write_json(changeset_path, {
+                "schema_version": "changeset/v1",
+                "changeset_id": "CS-T25-INVALID-REOPEN",
+                "producer": "task2.5",
+                "base_revisions": {"strategy.json": 1},
+                "rationale": "复现 assumed Gate 重开时遗留状态",
+                "validate_stage": "draft",
+                "operations": [{
+                    "file": "strategy.json",
+                    "op": "replace",
+                    "path": "/open_questions/1",
+                    "value": invalid_reopen,
+                }],
+                "affected_refs": [decision["id"]],
+            })
+            result = prop_v3.apply_changeset(directory, changeset_path)
+            strategy = prop_v3._read_json(os.path.join(directory, "strategy.json"))
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(result["rolled_back"])
+        self.assertEqual(strategy["revision"], 1)
+        self.assertEqual(strategy["open_questions"][1]["status"], "assumed")
+        self.assertTrue(any(
+            "open decision retains resolved value" in issue
+            for issue in result["issues"]
+        ), result["issues"])
+
     def test_bootstrap_preserves_preexisting_tender_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             tender_path = os.path.join(directory, "tender.txt")
@@ -285,6 +549,75 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertNotIn("formal_power", rendered)
         self.assertNotIn('"capacity"', rendered)
 
+    def test_compiled_writer_and_redteam_contexts_redact_private_customer_semantics(self):
+        documents = _valid_documents()
+        documents["customer-value.json"]["roles"][0]["decision_concern"] = (
+            "私密角色判断原句")
+        documents["customer-value.json"]["needs"][0].update(
+            name="私密需求名称", statement="私密需求原句",
+            publication_status="publicly_supportable", source_visibility="private",
+            approved_projection="公开需求投影",
+        )
+        documents["customer-value.json"]["criteria"][0].update(
+            name="私密标准名称", statement="私密标准原句",
+            publication_status="publicly_supportable",
+            approved_projection="公开标准投影",
+        )
+        documents["strategy.json"]["open_questions"].append({
+            "id": "GATE-PRIVATE-PREFERENCE", "title": "私密决策标题",
+            "q": "内部偏好是什么？", "why_matters": "只影响内部判断",
+            "ai_assumption": "不进入正文", "depends_on": [],
+            "status": "assumed", "resolved": "不进入正文",
+            "assumption_risk": True, "visibility": "private",
+            "safe_constraint": "不得披露未经确认的内部偏好。",
+            "affected_refs": [],
+        })
+        documents["intel-pool.json"]["evidence"].append({
+            "id": "EV-PRIVATE-NOTE", "kind": "private_note",
+            "title": "私密证据标题", "content": "私密证据原句",
+            "source": "沟通纪要", "visibility": "private",
+            "quality": "asserted_from_text", "status": "active",
+            "allowed_uses": ["matching"],
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            research = prop_v3.compile_context(directory, "research")
+            section = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+            redteam = prop_v3.compile_context(
+                directory, "redteam", role="audit")
+
+        self.assertTrue(research["passed"], research.get("issues"))
+        self.assertTrue(section["passed"], section.get("issues"))
+        self.assertTrue(redteam["passed"], redteam.get("issues"))
+        rendered = json.dumps({
+            "research": research["brief"],
+            "section": section["brief"],
+            "redteam": redteam["brief"],
+        }, ensure_ascii=False)
+        for secret in (
+                "私密角色判断原句", "私密需求名称", "私密需求原句",
+                "私密标准名称", "私密标准原句", "私密决策标题",
+                "私密证据标题", "私密证据原句"):
+            self.assertNotIn(secret, rendered)
+        self.assertIn("GATE-PRIVATE-PREFERENCE", rendered)
+        self.assertIn("不得披露未经确认的内部偏好。", rendered)
+        self.assertIn("公开需求投影", rendered)
+        self.assertIn("公开标准投影", rendered)
+        self.assertNotIn("name", prop_v3._safe_need({
+            "id": "NEED-PRIVATE", "name": "内部名称",
+            "publication_status": "internal_only",
+        }))
+
+    def test_path_components_distinguish_unicode_ids(self):
+        first = prop_v3._safe_path_component("章节甲")
+        second = prop_v3._safe_path_component("章节乙")
+
+        self.assertNotEqual(first, second)
+        self.assertRegex(first, r"^[A-Za-z0-9_.-]+$")
+        self.assertEqual(prop_v3._safe_path_component("CH-01"), "CH-01")
+        self.assertNotIn(prop_v3._safe_path_component(".."), ("", ".", ".."))
+
     def test_report_qa_blocks_private_raw_wording_but_allows_approved_projection(self):
         with tempfile.TemporaryDirectory() as directory:
             _make_state(directory)
@@ -343,6 +676,52 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertFalse(stale["passed"])
         self.assertTrue(stale["stale"])
         self.assertFalse(forbidden["passed"])
+
+    def test_gate2_cannot_resolve_gate_and_migration_is_not_a_changeset_producer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            gate2_dir = os.path.join(directory, "gate2")
+            migration_dir = os.path.join(directory, "migration")
+            os.makedirs(gate2_dir)
+            os.makedirs(migration_dir)
+            _make_state(gate2_dir)
+            _make_state(migration_dir)
+
+            changed = copy.deepcopy(_valid_documents()["strategy.json"]["open_questions"][0])
+            changed["resolved"] = "由红队越权改写"
+            gate2_path = os.path.join(gate2_dir, "gate2.json")
+            _write_json(gate2_path, {
+                "schema_version": "changeset/v1", "changeset_id": "CS-G2-BAD",
+                "producer": "gate2", "base_revisions": {"strategy.json": 1},
+                "operations": [{
+                    "file": "strategy.json", "op": "replace",
+                    "path": "/open_questions/0", "value": changed,
+                }],
+            })
+            gate2_result = prop_v3.apply_changeset(gate2_dir, gate2_path)
+
+            migration_path = os.path.join(migration_dir, "migration.json")
+            _write_json(migration_path, {
+                "schema_version": "changeset/v1", "changeset_id": "CS-MIG-BAD",
+                "producer": "migration",
+                "base_revisions": {"customer-value.json": 1},
+                "operations": [{
+                    "file": "customer-value.json", "op": "replace",
+                    "path": "/value_propositions/0/name", "value": "越权改写",
+                }],
+            })
+            migration_result = prop_v3.apply_changeset(
+                migration_dir, migration_path)
+
+        self.assertFalse(gate2_result["passed"])
+        self.assertTrue(any(
+            "cannot alter resolved Gate" in issue
+            for issue in gate2_result["issues"]
+        ), gate2_result["issues"])
+        self.assertFalse(migration_result["passed"])
+        self.assertTrue(any(
+            "producer migration cannot mutate" in issue
+            for issue in migration_result["issues"]
+        ), migration_result["issues"])
 
     def test_changeset_requires_each_touched_base_and_task25_cannot_reauthorize(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -419,6 +798,38 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertIn("claim.authority", rules)
         self.assertIn("action.authority", rules)
 
+    def test_invalid_acceptance_authority_is_rejected_at_draft_boundary(self):
+        documents = _valid_documents()
+        requirements = documents["requirements.json"]
+        requirements["deliverables"].append({
+            "id": "D-01",
+            "item": "提交阶段交付物",
+            "acceptance_text": "文件可打开并可追溯",
+        })
+        action = documents["delivery-plan.json"]["actions"][0]
+        action["requirement_refs"].append("D-01")
+        acceptance = documents["delivery-plan.json"]["acceptance_contracts"][0]
+        acceptance["authority_ref"] = "D-01"
+
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            invalid = prop_v3.check_canonical(directory, stage="draft")
+
+            requirements["deliverables"][0].update(
+                authority_uses=["commitment_authority"],
+                authorizes_refs=["AC-CLOSED-LOOP"],
+            )
+            _make_state(directory, documents)
+            repaired = prop_v3.check_canonical(directory, stage="draft")
+
+        self.assertFalse(invalid["passed"])
+        invalid_rules = {
+            item["rule_id"] for item in invalid["diagnostics"]
+            if item["severity"] == "fatal"
+        }
+        self.assertIn("acceptance.authority_scope", invalid_rules)
+        self.assertTrue(repaired["passed"], repaired["issues"])
+
     def test_anonymized_and_allowed_use_evidence_are_hard_gated(self):
         missing_projection = _valid_documents()
         evidence = missing_projection["intel-pool.json"]["evidence"][1]
@@ -488,8 +899,13 @@ class ProposalV3Tests(unittest.TestCase):
             _make_state(directory, documents)
             checked = prop_v3.check_canonical(directory, stage="generation")
 
-        self.assertFalse(checked["passed"])
+        self.assertTrue(checked["passed"], checked["issues"])
         self.assertTrue(any(item["rule_id"] == "budget.action_unmapped" for item in checked["diagnostics"]))
+        budget_issue = next(
+            item for item in checked["diagnostics"]
+            if item["rule_id"] == "budget.action_unmapped"
+        )
+        self.assertEqual(budget_issue["blocks"], ["submission"])
 
     def test_delivery_cycle_and_requirement_transfer_are_blocked(self):
         documents = _valid_documents()
@@ -643,7 +1059,8 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(summary_audited["passed"], summary_audited["issues"])
         self.assertTrue(submission["passed"], submission["issues"])
         self.assertTrue(fit["passed"], fit["issues"])
-        self.assertIsNotNone(fit["scorecard"]["overall"]["fit_range"])
+        self.assertEqual(fit["scorecard"]["overall"]["rating"], "credible")
+        self.assertNotIn("fit_range", fit["scorecard"]["overall"])
         self.assertIn("differentiation", fit["scorecard"]["uncertainty_drivers"])
 
     def test_realization_requires_registered_brief_metadata_and_addressed_requirements(self):
@@ -695,7 +1112,7 @@ class ProposalV3Tests(unittest.TestCase):
 
         self.assertFalse(no_brief["passed"])
         self.assertFalse(missing_meta["passed"])
-        self.assertIn("writer hints snapshot does not match brief", missing_meta["issues"])
+        self.assertIn("deprecated hints snapshot does not match brief", missing_meta["issues"])
         self.assertFalse(partial["passed"])
         self.assertIn("M-01", partial["manifest"]["missing_requirement_evaluations"] + [item["requirement_ref"] for item in partial["manifest"]["requirement_realizations"] if item["status"] != "addressed"])
 
@@ -747,6 +1164,11 @@ class ProposalV3Tests(unittest.TestCase):
                     "allowed_uses": ["proposal_narrative"],
                 }],
                 "gaps": [],
+                "manifest": {
+                    "source_count": 1, "unique_domains": 1,
+                    "fetch_method": "direct_fetch",
+                    "counter_evidence_queries": 1, "intel_limited": False,
+                },
             })
             _write_json(links_path, {
                 "schema_version": "research-links/v1",
@@ -771,6 +1193,8 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(customer["revision"], 2)
         self.assertIn("EV-NEW-PUBLIC", [item["id"] for item in intel["evidence"]])
         self.assertIn("EL-NEW-PUBLIC", [item["id"] for item in customer["evidence_links"]])
+        self.assertEqual(intel["research_manifest"]["source_count"], 1)
+        self.assertEqual(intel["research_manifest"]["fetch_method"], "direct_fetch")
         self.assertFalse(stale["passed"])
 
     def test_auto_state_unlocks_generation_but_blocks_submission(self):
@@ -807,13 +1231,16 @@ class ProposalV3Tests(unittest.TestCase):
             customer = prop_v3._read_json(os.path.join(directory, "customer-value.json"))
             delivery = prop_v3._read_json(os.path.join(directory, "delivery-plan.json"))
             intel = prop_v3._read_json(os.path.join(directory, "intel-pool.json"))
+            generation = prop_v3.check_canonical(directory, stage="generation")
 
         self.assertTrue(result["passed"], result.get("issues"))
         self.assertEqual(customer["claims"][0]["commitment_level"], "intended")
+        self.assertEqual(customer["claims"][0]["status"], "draft_ready")
         self.assertIsNone(customer["claims"][0]["authority_ref"])
         self.assertEqual(delivery["actions"][0]["readiness_status"], "planned")
-        self.assertEqual(delivery["resource_envelopes"][0]["status"], "provisional")
+        self.assertEqual(delivery["resource_envelopes"][0]["status"], "unknown")
         self.assertEqual(intel["evidence"][1]["visibility"], "internal")
+        self.assertTrue(generation["passed"], generation["issues"])
 
     def test_archive_preserves_previous_state_as_last_good(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -840,6 +1267,82 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(previous["revision"], 1)
         self.assertEqual(archived_section, "可恢复的章节正文\n")
 
+    def test_archive_promotion_failure_preserves_target_and_last_good(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = os.path.join(directory, "run")
+            bundle = os.path.join(directory, "bundle")
+            os.makedirs(state)
+            _make_state(state)
+            first = prop_v3.archive_state(
+                state, bundle, require_submission_ready=False
+            )
+            self.assertTrue(first["passed"], first.get("issues"))
+
+            strategy_path = os.path.join(state, "strategy.json")
+            strategy = prop_v3._read_json(strategy_path)
+            strategy["revision"] = 2
+            _write_json(strategy_path, strategy)
+            second = prop_v3.archive_state(
+                state, bundle, require_submission_ready=False
+            )
+            self.assertTrue(second["passed"], second.get("issues"))
+
+            target = os.path.join(bundle, "_state")
+            last_good = os.path.join(bundle, "_state.last-good")
+            target_before = prop_v3._read_json(os.path.join(target, "strategy.json"))
+            last_good_before = prop_v3._read_json(
+                os.path.join(last_good, "strategy.json")
+            )
+            strategy["revision"] = 3
+            _write_json(strategy_path, strategy)
+
+            real_replace = os.replace
+            promotion_calls = []
+
+            def fail_staging_promotion(source, destination):
+                if (os.path.basename(os.fspath(source)).startswith(
+                        "._state-staging-")
+                        and os.fspath(destination) == target):
+                    promotion_calls.append(
+                        (os.fspath(source), os.fspath(destination))
+                    )
+                    raise OSError("injected state promotion failure")
+                return real_replace(source, destination)
+
+            with mock.patch.object(
+                    prop_v3.os, "replace", side_effect=fail_staging_promotion):
+                failed = prop_v3.archive_state(
+                    state, bundle, require_submission_ready=False
+                )
+
+            target_preserved = os.path.isdir(target) and bool(os.listdir(target))
+            last_good_preserved = (
+                os.path.isdir(last_good) and bool(os.listdir(last_good))
+            )
+            claimed_preserved = any(
+                "last-good preserved" in issue for issue in failed["issues"]
+            )
+            self.assertFalse(failed["passed"])
+            self.assertEqual(promotion_calls[0][1], target)
+            self.assertTrue(target_preserved)
+            self.assertTrue(last_good_preserved)
+            self.assertEqual(claimed_preserved, last_good_preserved)
+            if target_preserved:
+                target_after = prop_v3._read_json(
+                    os.path.join(target, "strategy.json")
+                )
+                self.assertEqual(target_after["revision"], target_before["revision"])
+            if last_good_preserved:
+                last_good_after = prop_v3._read_json(
+                    os.path.join(last_good, "strategy.json")
+                )
+                self.assertEqual(
+                    last_good_after["revision"], last_good_before["revision"]
+                )
+            self.assertFalse(any(
+                name.startswith("._state-staging-") for name in os.listdir(bundle)
+            ))
+
     def test_allow_draft_archive_refuses_corrupt_canonical(self):
         with tempfile.TemporaryDirectory() as directory:
             state = os.path.join(directory, "run")
@@ -855,6 +1358,167 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(first["passed"])
         self.assertFalse(corrupt["passed"])
         self.assertEqual(archived["schema_version"], "requirements/v3")
+
+    def test_lean_schema_embeds_paths_jobs_outputs_and_reuses_snapshot(self):
+        documents = _lean_documents()
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+            first = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+            second = prop_v3.compile_context(
+                directory, "section", target_id="CH-01")
+            artifact_registry_exists = os.path.exists(os.path.join(
+                directory, "derived", "manifests", "artifacts.json"))
+
+        self.assertTrue(checked["passed"], checked["issues"])
+        self.assertEqual(
+            documents["customer-value.json"]["schema_version"],
+            "customer-value/v2")
+        self.assertIn("decision_paths", documents["customer-value.json"])
+        self.assertNotIn("role_need_links", documents["customer-value.json"])
+        self.assertEqual(
+            documents["strategy.json"]["schema_version"], "strategy/v4")
+        self.assertNotIn("decision_jobs", documents["strategy.json"])
+        self.assertIn("decision_job", documents["strategy.json"]["sections"][0])
+        self.assertEqual(
+            first["brief"]["expected_visible_output_refs"],
+            ["OUT-RESPONSIBILITY-CARD"])
+        self.assertIn("narrative_guide", first["brief"]["common"])
+        self.assertFalse(first["snapshot_reused"])
+        self.assertTrue(second["snapshot_reused"])
+        self.assertFalse(artifact_registry_exists)
+
+    def test_lean_lead_requires_small_visible_output_contract(self):
+        documents = _lean_documents()
+        documents["strategy.json"]["sections"][0]["visible_outputs"] = []
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "visible_output.lead_missing"
+            for item in checked["diagnostics"]
+        ))
+
+    def test_safe_draft_allows_unknown_budget_without_invented_range(self):
+        documents = _lean_documents()
+        claim = documents["customer-value.json"]["claims"][0]
+        claim.update(status="draft_ready", commitment_level="intended")
+        claim["authority_ref"] = None
+        action = documents["delivery-plan.json"]["actions"][0]
+        action.update(
+            readiness_status="planned", commitment_level="intended",
+            required=False, resource_refs=["RES-PM"],
+            resource_demands=[{
+                "resource_ref": "RES-PM", "time_window": "contract",
+                "low": 1, "high": 1,
+            }], authority_ref=None,
+        )
+        budget = documents["delivery-plan.json"]["resource_envelopes"][1]
+        budget.update(status="unknown", capacity={"low": None, "high": None})
+        budget.pop("approved_allocation", None)
+        decision = documents["strategy.json"]["open_questions"][1]
+        decision.update(status="open", resolved=None, assumption_risk=False)
+
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            generation = prop_v3.check_canonical(
+                directory, stage="generation")
+            submission = prop_v3.check_canonical(
+                directory, stage="submission")
+
+        self.assertTrue(generation["passed"], generation["issues"])
+        self.assertTrue(generation["safe_draft_ready"])
+        self.assertEqual(generation["readiness"], "safe_draft_ready")
+        self.assertFalse(submission["passed"])
+        self.assertTrue(any(
+            item["rule_id"] in ("decision.open", "budget.action_unmapped")
+            for item in submission["diagnostics"]
+        ))
+
+    def test_direct_semantic_audit_fills_visible_output_and_ordinal_fit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_submission_ready_lean_state(directory)
+            submission = prop_v3.check_canonical(
+                directory, stage="submission",
+                realization_dir=os.path.join(directory, "derived", "realization"))
+            fit = prop_v3.customer_fit(directory, checkpoint="submission")
+
+        self.assertTrue(submission["passed"], submission["issues"])
+        self.assertTrue(fit["passed"], fit["issues"])
+        self.assertEqual(fit["scorecard"]["overall"]["rating"], "credible")
+        self.assertNotIn("fit_range", fit["scorecard"]["overall"])
+        self.assertFalse(any(
+            "weight_range" in item for item in fit["scorecard"]["dimensions"]
+        ))
+
+    def test_manifest_self_attestation_rejects_hand_edit_even_for_draft_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = os.path.join(directory, "run")
+            bundle = os.path.join(directory, "bundle")
+            os.makedirs(state)
+            _make_submission_ready_lean_state(state)
+            manifest_path = os.path.join(
+                state, "derived", "realization", "CH-01.json")
+            manifest = prop_v3._read_json(manifest_path)
+            manifest["status"] = "valid" if manifest["status"] != "valid" else "invalid"
+            _write_json(manifest_path, manifest)
+            checked = prop_v3.check_canonical(
+                state, stage="submission",
+                realization_dir=os.path.join(state, "derived", "realization"))
+            archived = prop_v3.archive_state(
+                state, bundle, require_submission_ready=False,
+                checked_result=checked)
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "realization.attestation"
+            for item in checked["diagnostics"]
+        ))
+        self.assertFalse(archived["passed"])
+        self.assertIn("fatal corruption", archived["issues"][0])
+
+    def test_finalize_run_reuses_one_canonical_check_and_binds_receipt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = os.path.join(directory, "run")
+            bundle = os.path.join(directory, "bundle")
+            os.makedirs(state)
+            _make_submission_ready_lean_state(state)
+            report_path = os.path.join(directory, "report.md")
+            with open(report_path, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "# 客户价值测试方案\n\n"
+                    "项目名称：客户价值测试项目\n\n"
+                    "## 目录\n\n一、以单一责任链保障稳定交付\n\n"
+                    "## 应标响应与评分对照表\n\n"
+                    "| 要求 | 响应 |\n|:---|:---|\n| 完整执行方案 | 第一章 |\n\n"
+                    "## 方案综述\n\n项目经理承担阶段检查与验收责任。\n\n"
+                    "## 一、以单一责任链保障稳定交付\n\n"
+                    "### 1.1 责任与检查节点\n\n"
+                    "项目经理对阶段检查与验收闭环承担单一责任。\n\n"
+                    "责任人：项目经理；检查节点：每个阶段交付前。\n"
+                )
+            gate2_path = os.path.join(directory, "gate2.json")
+            _write_json(gate2_path, {
+                "schema_version": "gate2-decision/v1",
+                "status": "resolved", "open_root_causes": [],
+            })
+            with mock.patch.object(
+                    prop_v3, "check_canonical",
+                    wraps=prop_v3.check_canonical) as checked:
+                result = prop_tools.finalize_run(
+                    state, report_path, bundle, gate2_path=gate2_path)
+            receipt = prop_v3._read_json(result["receipt_output"])
+
+        self.assertTrue(result["passed"], result["issues"])
+        self.assertTrue(result["submission_ready"])
+        self.assertEqual(checked.call_count, 1)
+        self.assertEqual(receipt["state_hash"], result["validation"]["state_hash"])
+        self.assertEqual(
+            receipt["report_hash"], result["validation"]["report_hash"])
+        self.assertRegex(receipt["receipt_hash"], r"^sha256:[0-9a-f]{64}$")
 
     def test_legacy_migration_is_non_destructive_and_conservative(self):
         with tempfile.TemporaryDirectory() as directory:

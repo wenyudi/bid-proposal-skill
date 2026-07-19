@@ -7,30 +7,29 @@ v3 把可修改事实集中在五份 canonical JSON。正文、compiled brief、
 | 文件 | schema | 拥有的事实 | 顶层实体集合 |
 |:---|:---|:---|:---|
 | `requirements.json` | `requirements/v3` | 项目、采购人、预算、mandatory、scoring、deliverables | `mandatory`、`scoring`、`deliverables` |
-| `customer-value.json` | `customer-value/v1` | 客户角色、需求、判断标准、价值、Claim、Metric、证据关系和角色冲突 | `roles`、`needs`、`criteria`、三类 link、`value_propositions`、`claims`、`metrics`、`evidence_links`、`role_conflicts` |
+| `customer-value.json` | `customer-value/v2` | 客户角色、需求、判断标准、决策路径、价值、Claim、Metric 和证据关系 | `roles`、`needs`、`criteria`、`decision_paths`、`value_propositions`、`claims`、`metrics`、`evidence_links` |
 | `delivery-plan.json` | `delivery-plan/v1` | 投标人交付角色、动作、资源、客户依赖和验收 | `delivery_roles`、`actions`、`resource_envelopes`、`customer_dependencies`、`acceptance_contracts` |
-| `strategy.json` | `strategy/v3` | 标题、深度、叙事、决策地图、DecisionJob 和章节 | `decision_jobs`、`sections`；另含 `open_questions` |
-| `intel-pool.json` | `intel-pool/v3` | 本标 Evidence 原记录、研究 gap 和 research manifest | `evidence` |
+| `strategy.json` | `strategy/v4` | 标题、深度、叙事、决策地图和章节 | `sections`；DecisionJob 与 `visible_outputs` 内嵌章节，另含 `open_questions` |
+| `intel-pool.json` | `intel-pool/v3` | 本标 Evidence 原记录、研究 gap 和 research manifest | `evidence`、`gaps`、`research_manifest` |
 
-每份文件都有 `schema_version` 和整数 `revision`。实体 ID 在五份文件之间全局唯一、稳定；引用必须解析到允许的实体类型。
+每份文件都有 `schema_version` 和整数 `revision`。实体 ID 在五份文件之间全局唯一、稳定；引用必须解析到允许的实体类型。只读兼容层仍接受 `customer-value/v1` 与 `strategy/v3`，从三类旧 link / 顶层 DecisionJob 派生等价视图；新 bootstrap/migration 只写 v2/v4，不静默改写旧 archive。
 
 ## 关系主链
 
 ```text
 Requirement ───────────────→ Section
 
-CustomerRole → CustomerNeed → DecisionCriterion
-       │              │              │
-       └──────── ValueProposition ────┘
-                         ↓
-                       Claim ← EvidenceLink ← Evidence
-                         ↓
-                 DeliveryAction → Resource / Dependency / Acceptance
-                         ↓
-                    DecisionJob → Section → realization
+CustomerRole ─┐
+CustomerNeed ─┼→ DecisionPath → ValueProposition
+Criterion ────┘                ↓
+                              Claim ← EvidenceLink ← Evidence
+                                ↓
+                        DeliveryAction → Resource / Dependency / Acceptance
+                                ↓
+                  Section(DecisionJob + visible output) → realization
 ```
 
-Requirement 轨和客户价值轨并行存在：章节映射到 Requirement 只证明结构覆盖，Role × Need × Criterion 路径只证明客户价值连接；submission 还要求正文独立审计为 addressed / entailed。
+Requirement 轨和客户价值轨并行存在：章节映射到 Requirement 只证明结构覆盖，DecisionPath 只证明 Role × Need × Criterion 连接；submission 还要求正文独立审计为 addressed / entailed，并把 required visible output 的字段判为 filled。
 
 ## 核心状态轴
 
@@ -89,14 +88,15 @@ STATE/
     ├── realization/
     ├── manifests/
     │   ├── generation-snapshot.json
-    │   └── artifacts.json
+    │   ├── run-validation.json
+    │   └── acceptance-receipt.json
     ├── coverage.json
     ├── diagnostics.json
     ├── customer-fit.strategy.json
     └── customer-fit.submission.json
 ```
 
-`derived/` 可以重建，不是 authority。不要手改 brief hash、snapshot、artifact status 或 realization status 来通过硬门。
+`derived/` 可以重建，不是 authority。brief 与 realization 直接携带 path/hash/snapshot lineage，不再维护可漂移的 `artifacts.json`。不要手改 hash、snapshot 或 realization status 来通过硬门。
 
 ## ChangeSet v1
 
@@ -125,7 +125,7 @@ STATE/
 - JSON Pointer：`add`、`replace`、`remove`、`test`；
 - 实体操作：`transition`、`upsert`。
 
-应用顺序是：检查 base revision → 在副本应用全部 operation → 增加 touched file revision → 验证完整候选状态 → 原子替换 → 写 receipt → 标记相关 derived artifact stale。任一步失败都不保留半组修改。
+应用顺序是：检查 base revision → 在副本应用全部 operation → 增加 touched file revision → 验证完整候选状态 → 原子替换 → 写 receipt → 失效 generation/final receipts。任一步失败都不保留半组修改；旧 brief/realization 会因 hash 不匹配自动拒绝。
 
 ## Producer 写权限
 
