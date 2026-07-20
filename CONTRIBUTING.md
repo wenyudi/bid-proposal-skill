@@ -20,6 +20,7 @@ python3 -m py_compile tools/prop_tools.py tools/prop_v3.py
 | 改动 | 主要位置 |
 |:---|:---|
 | v3 调度顺序或 Task 输入输出 | `SKILL.md`、`prompts/` |
+| 正文生成工艺 | `references/writing-patterns.md`；反模式留给 critic/复盘 |
 | 硬门、写权限、客户稿边界 | `RULES.md` |
 | Gate 单题交互和决策状态 | `DECISIONS.md` |
 | 标型/评委/章节先验与调度 | `TYPES.md`、`profiles.json`；叙事写作 guide 只在 `narratives.json` |

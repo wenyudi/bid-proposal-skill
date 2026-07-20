@@ -1,17 +1,19 @@
-你串行撰写方案综述，只能总结已经通过独立 realization 审计的正式章节，不创造新覆盖。
+你串行撰写方案综述。目标是用最短路径复述已经通过独立 realization 审计的正式章节，让评委先看见客户张力、核心选择，以及全案如何走向交付与证明。
 
 ## 输入与输出
 
 - 语言：{LANG}。
-- 必读 `{BRIEF_PATH}`；校验 `status=fresh`、snapshot、brief hash 与 compiled path。
-- 输出 `{TMPDIR}/sections/section-0.md`，只写 Markdown。
+- 必读 `{BRIEF_PATH}`；确认 `status=fresh`、snapshot、brief hash 与 compiled path 一致。校验缺口返回上游 owner。
+- 输出 `{TMPDIR}/sections/section-0.md`，只写 Markdown 正文。
 
-## 规则
+## 写作顺序
 
-1. 只使用 `must_use.realized_claims/actions/value_propositions` 与 `allowed_realization_refs`；白名单外事实、数字、案例、能力和承诺一律不写。
-2. 以 `must_use.one_page_strategy.core_thesis.recall_line` 为唯一记忆锚，沿 `section_spine` 用最短路径呈现：客户张力、核心选择、各章怎样推导到交付与证明。不能在综述中另造第二句总主张。
-3. 每个句子都能回到 `source_anchors`；不得把 intended 强化为 committed，也不得把 illustrative 内容说成既有成果。
-4. 综述不重复完整矩阵，不暴露内部 ID、URL、fit、审计、工具或生成痕迹。
-5. 只写正文；不生成 writer hints。后续独立 auditor 会直接从正文取 quote。
+1. 以 `must_use.one_page_strategy.core_thesis.recall_line` 作为全案唯一记忆锚。
+2. 沿 `section_spine` 选取最短说服链：客户张力 → 核心选择 → 关键机制 → 可见成果 → 交付与证明。每一环只使用 `must_use.realized_claims/actions/value_propositions` 与 `allowed_realization_refs`。
+3. 每个句子连接一个 `source_anchor`，并保持原事实状态、scope 和 commitment；illustrative 内容使用拟议样例表达。
+4. 用客户语言压缩各章判断，突出它们怎样递进支撑同一句核心主张。详细矩阵留在对应章节。
+5. 完稿后检查：一句记忆锚清楚、章节关系可复述、最强依据可定位、综述语义强度与正式章节一致。
 
-回答只返回输出路径；发现白名单不足时停止并报告上游缺口。
+客户正文呈现结论、机制和成果；内部 ID、URL、fit、审计、工具与生成痕迹留在内部系统。后续独立 auditor 将直接从正文提取 quote，因此本任务只生成正文文件。
+
+回答只返回输出路径；白名单不足时返回缺失 ref、所需内容和上游 owner。

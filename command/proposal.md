@@ -27,7 +27,7 @@ Parse `$ARGUMENTS`:
   - 无标志  → 默认停 ⛳ Gate 1、一次一页纸策略确认与 ⛳ Gate 2；每轮只问一个决策并给推荐。quick 合并红队调用，但要 submission-ready 仍需 Gate 2 attestation
 - 引擎标志：
   - 无标志 / `-v3` → v3（默认；`-v3` 仅作兼容 no-op）
-  - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`；不得与 v3 状态或章节混用
+  - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`，并使用独立的 legacy 状态与章节
 </command-instruction>
 
 <user-request>
@@ -36,5 +36,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.2.0 · strategy-led lean default
+proposal skill · 3.2.1 · positive-generation default
 ```

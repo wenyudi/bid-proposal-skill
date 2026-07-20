@@ -49,18 +49,18 @@ mkdir -p ~/.agents/skills/proposal
 ````markdown
 ---
 name: proposal
-description: 政企传媒技术标 v3 生成：拆标书硬要求，建立多角色客户价值与交付 canonical，研究后选亮点，并行分章与独立兑现审计，红队和硬门定稿。Use when 用户要写投标方案/应标文件/政企客户提案，提供标书要求出方案，或输入 /proposal。
+description: 政企传媒技术标 v3.2 生成：拆标书硬要求，建立客户价值与真实交付边界，研究后收敛一页纸策略，以同一主线正向写作、独立兑现审计和硬门定稿。Use when 用户要写投标方案/应标文件/政企客户提案，提供标书要求出方案，或输入 /proposal。
 ---
 
 # proposal — 宿主入口
 
 完整定义位于 `{REPO}`，它是唯一事实来源。
 
-1. Read `{REPO}/SKILL.md`、`{REPO}/RULES.md`、`{REPO}/TYPES.md`、`{REPO}/profiles.json`；Task 1 前 Read `{REPO}/DECISIONS.md`。用户显式 `-legacy` 时改读 `{REPO}/LEGACY.md`，两套引擎不得混线。
-2. 严格执行 SKILL.md：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择/成果契约 → safe-draft snapshot → 并行 Task 3 → 批量独立 realization audit → realized-only 综述 → 装配 → 自适应红队/Gate 2 → `validate-run` / `finalize-run`。
+1. Read `{REPO}/SKILL.md`、`{REPO}/RULES.md`、`{REPO}/TYPES.md`、`{REPO}/profiles.json`；Task 1 前 Read `{REPO}/DECISIONS.md`。用户显式 `-legacy` 时改读 `{REPO}/LEGACY.md`，并使用独立的 legacy 引擎与状态。
+2. 严格执行 v3.2.1：Task 1 bootstrap → Gate 1 → Task 2 Evidence → Task 2.5 选择/成果契约 → safe-draft snapshot → 并行 Task 3 正向写作 → 批量独立 realization audit → realized-only 综述 → 装配 → 自适应红队/Gate 2 → `validate-run` / `finalize-run`。生成任务采用“目标—依据—工作顺序—安全替代—输出契约”，反模式只进入 critic 与复盘。
 3. 所有仓库相对路径从 `{REPO}` 解析；Python 优先 `python3`，若不可用再选择当前平台的 Python 3。
 4. canonical 只由主 agent 通过 ChangeSet 写。Task 2 必须抓取原文；Task 3 只读 compiled brief；realization auditor 必须与 writer 分离；红队只提交 root diagnostic。
-5. `-auto` 的 assumed 决策阻断直接递交。private notes、URL、canonical ID、策略/模式/工具痕迹不得进入递交稿；下划线内部内容不得递交。
+5. `-auto` 的 assumed 决策对应 draft-only。private notes、URL、canonical ID、策略/模式/工具痕迹与下划线内容保持在内部卷册；客户递交稿只使用获授权投影。
 
 ## Claude Code 工具映射
 

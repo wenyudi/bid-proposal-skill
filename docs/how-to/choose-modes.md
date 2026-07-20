@@ -8,7 +8,7 @@
 |:---|:---|:---|
 | 小额、时间紧、竞争较弱，或先做初稿快评 | `-quick` | 聚焦研究；每批审 3 章；1 个 integrated 红队 |
 | 常规政企传媒标 | 不写参数 | standard；每批审 3 章；strategy_critic + audit_rival 两组红队 |
-| 预算大、多轮答辩、竞争强或风险高 | `-deep` | 更宽候选池和 Evidence；每批审 2 章；buyer + strategy_critic + audit + rival |
+| 预算大、多轮答辩、竞争强或风险高 | `-deep` | 更完整的机会扫描和 Evidence；每批审 2 章；buyer + strategy_critic + audit + rival |
 
 深度影响工作量，不改变硬门。`-quick` 也不能跳过 mandatory、真实性、预算、授权和兑现检查。
 

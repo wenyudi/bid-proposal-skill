@@ -12,12 +12,13 @@
 - 从实际判断、使用、监督和担责角色出发，连接客户需求、决策标准与价值主张。
 - 候选阶段保持发散，公开研究后才选择 lead / supporting 亮点；不按亮点数量或篇幅凑竞争力。
 - 把“想”和“写”分开：研究后先确认客户张力、尖锐洞察、记忆句、推导链、互换测试和逐章贡献，再启动分章写作。
+- 把“生成”和“挑错”分开：策略与正文使用正向模式和明确输出契约，反模式只进入独立 critic 与失败复盘。
 - 把承诺连接到动作、责任、资源、时点和验收，避免“创意很好，但无法落地”。
 - 让每个 lead 亮点在正文交出一个小而具体的客户可见成果，不用流程名词或外部附件冒充证明。
 - writer 只写 Markdown；独立审计直接检查要求、Claim/Action 和成果字段是否兑现、是否夸大。
 - 把 private 纪要、内部模型、URL、诊断和适配度留在内部，不破坏客户阅读体验。
 
-复杂任务找路和压力追问的思路参考了 [mattpocock/skills](https://github.com/mattpocock/skills) 中的 wayfinder 与 grill-me，并已内生为 canonical、ChangeSet、单题 Gate 和根因诊断；运行时不需要 skill 之间互相调用。
+复杂任务找路和压力追问的思路参考了 [mattpocock/skills](https://github.com/mattpocock/skills) 中的 wayfinder 与 grill-me，并已内生为 canonical、ChangeSet、单题 Gate 和根因诊断；运行时不需要 skill 之间互相调用。生成阶段统一采用“目标—依据—工作顺序—安全替代—输出契约”，缺失事实会落为 `unknown/gap + owner`。
 
 ## 快速开始
 

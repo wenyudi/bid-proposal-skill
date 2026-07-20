@@ -38,8 +38,9 @@
 - 策略判断差异放入 [`contrast-examples.md`](../../references/contrast-examples.md)；
 - 反复出现的具体坏句和诊断放入 [`anti-patterns.md`](../../references/anti-patterns.md)；
 - 跨 3–5 份赢标案稳定出现的骨架才更新 [`strategy-patterns.md`](../../references/strategy-patterns.md)。
+- 经多次验证、能直接指导正文构造的正向动作更新 [`writing-patterns.md`](../../references/writing-patterns.md)。
 
-提升时保留“合成/脱敏”标记和适用边界。术语不做机械禁词；真正要沉淀的是为什么失效、什么机制使改稿更好。
+提升时保留“合成/脱敏”标记和适用边界。术语不做机械禁词；真正要沉淀的是为什么失效、什么机制使改稿更好。`anti-patterns.md` 服务独立批评与复盘，writer 的生成上下文只接收已经验证的正向动作。
 
 ## 5. 验证没有过拟合
 
