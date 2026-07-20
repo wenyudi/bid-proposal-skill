@@ -24,6 +24,7 @@
 | compliance | mandatory、评分项和交付物覆盖；无 contradicted 或 missing 硬要求 |  |  |
 | QA | 客户稿结构、编号、占位符、语言和禁项通过；warning 已人工判断 |  |  |
 | canonical submission | 五份 canonical、snapshot、brief lineage 和 authoritative realization 有效 |  |  |
+| 策略关卡 | 一页纸为 human approved；张力、洞察、记忆句、推导、互换测试和 section spine 完整 |  |  |
 | 客户可见成果 | 每个 lead 的 required visible output 与全部 required fields 均为 filled；外部附件未替代正文 |  |  |
 | 真实性与 Evidence | 事实、案例、数字和能力均有允许用途与范围；无虚构效果或扩大证明 |  |  |
 | private、URL 与内部信息 | 无 private 原句、内部 ID、customer-fit、策略/工具痕迹、URL 或本机路径泄漏 |  |  |
@@ -58,7 +59,7 @@
 | project_specificity | 每个成果对象标 specific、mixed 或 generic：是否填入当前 fixture 的场景、受众、内容和输出，而非只贴字段名 | 对象状态、至少一条支持 quote |
 | unexpected_claims | 具体化过程中新增且无法由 tender/materials/授权 Evidence 支持的事实、数字、能力或效果数量 | claim、位置、查过的来源、风险级别 |
 
-pre-change 没有结构化成果 manifest 时，按本节人工判断。v3.1 post-change 优先读取 authoritative `visible_output_realizations`，但仍由人工复核正文；为保持基线可比，历史稳定键名称不改。
+pre-change 没有结构化成果 manifest 时，按本节人工判断。v3.2 post-change 优先读取 authoritative `visible_output_realizations`，但仍由人工复核正文；为保持基线可比，历史稳定键名称不改。
 
 ### Proof 字段记录表
 
@@ -98,6 +99,20 @@ pre-change 没有结构化成果 manifest 时，按本节人工判断。v3.1 pos
 | unexpected_claims |  |  |  |  |
 
 ## C. Customer-fit 与人工质量判断
+
+### 一页纸策略五维
+
+先由 Task 2.5 自评，再由未参与写作的 strategy critic 独立复评。只记录 deficient / fragile / adequate / strong / distinctive、具体 finding 与 exact quote，不计算总分。
+
+| 维度 | Task 2.5 自评 | 独立复评 / quote | 人工判断 |
+|:---|:---|:---|:---|
+| insight_sharpness |  |  |  |
+| recallability |  |  |  |
+| deductive_coherence |  |  |  |
+| differentiation / name swap |  |  |  |
+| delivery_credibility |  |  |  |
+
+另写一句 `actual_recall_line`：评审合上全文后实际记住什么。若它与批准记忆句明显不同，必须定位是策略空洞、主线断裂还是文风套话，而不是补一个平均分。
 
 ### 十维 customer-fit
 

@@ -217,6 +217,16 @@ def _make_state(directory, documents=None):
 
 def _lean_documents():
     documents = prop_v3._upgrade_to_lean_documents(_valid_documents())
+    page = documents["strategy.json"]["one_page_strategy"]
+    page["differentiation"].update(
+        name_swap_test="fails",
+        why="责任链依赖已核验的单一项目经理与本项目验收机制。",
+    )
+    page["approval"] = {
+        "status": "approved", "reviewed_by": "test-human",
+        "reviewed_at": "2026-07-19T00:00:00Z",
+        "note": "test fixture strategy approval",
+    }
     documents["strategy.json"]["sections"][0]["visible_outputs"] = [{
         "id": "OUT-RESPONSIBILITY-CARD",
         "purpose": "让评委直接看到责任与检查节点",
@@ -549,7 +559,7 @@ class ProposalV3Tests(unittest.TestCase):
             "customer-value/v2",
         )
         self.assertEqual(
-            installed["strategy.json"]["schema_version"], "strategy/v4"
+            installed["strategy.json"]["schema_version"], "strategy/v5"
         )
 
     def test_componentized_bootstrap_rejects_escape_without_partial_install(self):
@@ -1535,7 +1545,7 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertIn("decision_paths", documents["customer-value.json"])
         self.assertNotIn("role_need_links", documents["customer-value.json"])
         self.assertEqual(
-            documents["strategy.json"]["schema_version"], "strategy/v4")
+            documents["strategy.json"]["schema_version"], "strategy/v5")
         self.assertNotIn("decision_jobs", documents["strategy.json"])
         self.assertIn("decision_job", documents["strategy.json"]["sections"][0])
         self.assertEqual(
@@ -1767,6 +1777,209 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(
             receipt["report_hash"], result["validation"]["report_hash"])
         self.assertRegex(receipt["receipt_hash"], r"^sha256:[0-9a-f]{64}$")
+
+    def test_strategy_v5_pending_review_blocks_writing(self):
+        documents = _lean_documents()
+        documents["strategy.json"]["one_page_strategy"]["approval"] = {
+            "status": "pending", "reviewed_by": None,
+            "reviewed_at": None, "note": "awaiting review",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "strategy.approval.pending"
+            and "task3" in item["blocks"]
+            for item in checked["diagnostics"]
+        ))
+
+    def test_auto_assumes_ready_strategy_for_draft_but_not_submission(self):
+        documents = _lean_documents()
+        page = documents["strategy.json"]["one_page_strategy"]
+        page["approval"] = {
+            "status": "pending", "reviewed_by": None,
+            "reviewed_at": None, "note": "awaiting review",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            applied = prop_v3.apply_auto_state(directory)
+            generation = prop_v3.check_canonical(
+                directory, stage="generation")
+            submission = prop_v3.check_canonical(
+                directory, stage="submission")
+            persisted = prop_v3._read_json(os.path.join(
+                directory, "strategy.json"))
+
+        self.assertTrue(applied["passed"], applied.get("issues"))
+        self.assertTrue(applied["strategy_review_assumed"])
+        self.assertTrue(generation["passed"], generation["issues"])
+        self.assertFalse(submission["passed"])
+        self.assertEqual(
+            persisted["one_page_strategy"]["approval"]["status"],
+            "assumed",
+        )
+        self.assertTrue(any(
+            item["rule_id"] == "strategy.approval.assumed"
+            for item in submission["diagnostics"]
+        ))
+
+    def test_auto_does_not_override_human_strategy_change_request(self):
+        documents = _lean_documents()
+        documents["strategy.json"]["one_page_strategy"]["approval"] = {
+            "status": "changes_requested", "reviewed_by": "test-human",
+            "reviewed_at": "2026-07-19T00:00:00Z",
+            "note": "洞察仍是行业常识",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            applied = prop_v3.apply_auto_state(directory)
+            persisted = prop_v3._read_json(os.path.join(
+                directory, "strategy.json"))
+
+        self.assertTrue(applied["passed"], applied.get("issues"))
+        self.assertFalse(applied["strategy_review_assumed"])
+        self.assertEqual(
+            persisted["one_page_strategy"]["approval"]["status"],
+            "changes_requested",
+        )
+
+    def test_section_context_carries_strategy_spine_and_prior_outline(self):
+        documents = _lean_documents()
+        first = documents["strategy.json"]["sections"][0]
+        second = copy.deepcopy(first)
+        second.update(
+            id="CH-02", n=2, title="以验收证据完成选择确认",
+            strategy_role={
+                "contribution": "把责任机制转化为可检查的选择理由",
+                "inherits": "责任链已经可信",
+                "hands_off": "形成最终选择判断",
+            },
+            visible_outputs=[],
+        )
+        second["decision_job"].update(
+            id="DJ-CHOOSE-02", job_kind="choose",
+            entry_judgment="责任机制可信但尚未完成比较",
+            expected_judgment="本方案的验收证据足以支持选择",
+            transition={
+                "inherits": "责任机制可信", "must_advance": "选择理由",
+                "hands_off": "形成最终选择判断",
+            },
+        )
+        documents["strategy.json"]["sections"].append(second)
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            review = prop_v3.compile_context(directory, "strategy-review")
+            section = prop_v3.compile_context(
+                directory, "section", target_id="CH-02")
+            redteam = prop_v3.compile_context(
+                directory, "redteam", role="strategy_critic")
+
+        self.assertTrue(review["passed"], review.get("issues"))
+        self.assertTrue(section["passed"], section.get("issues"))
+        self.assertTrue(redteam["passed"], redteam.get("issues"))
+        must_use = section["brief"]["must_use"]
+        self.assertEqual(
+            must_use["one_page_strategy"]["core_thesis"]["recall_line"],
+            "一条责任链，贯穿每次交付",
+        )
+        self.assertNotIn("rubric_review", must_use["one_page_strategy"])
+        self.assertNotIn("approval", must_use["one_page_strategy"])
+        self.assertEqual(len(must_use["section_spine"]), 2)
+        self.assertEqual(
+            [item["section_ref"] for item in must_use["prior_outline_summary"]],
+            ["CH-01"],
+        )
+        self.assertIn(
+            "one_page_strategy", redteam["brief"]["must_use"])
+
+    def test_task25_may_converge_strategy_but_cannot_self_approve(self):
+        documents = _lean_documents()
+        original_page = documents["strategy.json"]["one_page_strategy"]
+        original_page["approval"] = {
+            "status": "pending", "reviewed_by": None,
+            "reviewed_at": None, "note": "candidate",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            approved_page = copy.deepcopy(original_page)
+            approved_page["approval"] = {
+                "status": "approved", "reviewed_by": "task2.5",
+                "reviewed_at": None, "note": "self approval",
+            }
+            invalid_path = os.path.join(directory, "invalid-approval.json")
+            _write_json(invalid_path, {
+                "schema_version": "changeset/v1",
+                "changeset_id": "CS-T25-SELF-APPROVE",
+                "producer": "task2.5",
+                "base_revisions": {"strategy.json": 1},
+                "rationale": "must be rejected",
+                "validate_stage": "draft",
+                "operations": [{
+                    "file": "strategy.json", "op": "replace",
+                    "path": "/one_page_strategy", "value": approved_page,
+                }],
+            })
+            invalid = prop_v3.apply_changeset(directory, invalid_path)
+
+            converged_page = copy.deepcopy(original_page)
+            converged_page["core_thesis"]["recall_line"] = (
+                "让每次交付沿一条责任链抵达验收")
+            converged_page["approval"] = {
+                "status": "pending", "reviewed_by": None,
+                "reviewed_at": None, "note": "research-informed revision",
+            }
+            valid_path = os.path.join(directory, "valid-convergence.json")
+            _write_json(valid_path, {
+                "schema_version": "changeset/v1",
+                "changeset_id": "CS-T25-CONVERGE",
+                "producer": "task2.5",
+                "base_revisions": {"strategy.json": 1},
+                "rationale": "research-informed strategy convergence",
+                "validate_stage": "draft",
+                "operations": [
+                    {"file": "strategy.json", "op": "replace",
+                     "path": "/big_idea",
+                     "value": "让每次交付沿一条责任链抵达验收"},
+                    {"file": "strategy.json", "op": "replace",
+                     "path": "/one_page_strategy", "value": converged_page},
+                ],
+            })
+            valid = prop_v3.apply_changeset(directory, valid_path)
+
+        self.assertFalse(invalid["passed"])
+        self.assertTrue(any(
+            "cannot self-approve" in issue for issue in invalid["issues"]
+        ))
+        self.assertTrue(valid["passed"], valid.get("issues"))
+
+    def test_name_swap_that_passes_blocks_section_generation(self):
+        documents = _lean_documents()
+        documents["strategy.json"]["one_page_strategy"][
+            "differentiation"]["name_swap_test"] = "passes"
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "strategy.name_swap.generic"
+            for item in checked["diagnostics"]
+        ))
+
+    def test_big_idea_cannot_drift_from_single_recall_line(self):
+        documents = _lean_documents()
+        documents["strategy.json"]["big_idea"] = "另一条并行主张"
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertFalse(checked["passed"])
+        self.assertTrue(any(
+            item["rule_id"] == "strategy.recall_line.drift"
+            for item in checked["diagnostics"]
+        ))
 
     def test_legacy_migration_is_non_destructive_and_conservative(self):
         with tempfile.TemporaryDirectory() as directory:

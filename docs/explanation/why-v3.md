@@ -70,7 +70,7 @@ v3 更适合重点政企标，但代价真实存在：
 
 - 写作前需要更完整的状态建模和 Evidence；
 - canonical 一旦改变，当前实现会使全部 snapshot-bound 章节和摘要失效；
-- 独立审计增加 agent 调用和时间；v3.1 用 writer-only Markdown、2–3 章批量 audit 和 1/2/4 自适应红队控制增量；
+- 独立审计增加 agent 调用和时间；v3.2 用 writer-only Markdown、2–3 章批量 audit 和不增加 profile 调用数的 strategy critic 控制增量；
 - 资料不足时，系统更可能给出不可递交草案，而不是“看起来完整”的成稿。
 
 这些代价换来的是可追溯、可恢复、可解释的承诺边界。两级 readiness 允许 unknown 资源先形成安全草案，而不靠造数解锁；`quick` 可以降低 agent 深度，不能降低硬门。

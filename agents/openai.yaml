@@ -1,4 +1,4 @@
 interface:
   display_name: "Proposal 技术标"
-  short_description: "生成客户适配、亮点清晰、证据可信且可兑现的政企传媒技术标"
-  default_prompt: "使用 $proposal 根据这份标书和投标素材，生成一份可审计、可兑现的政企传媒技术标。"
+  short_description: "用一页纸策略贯穿客户亮点、证据与可兑现交付的政企传媒技术标"
+  default_prompt: "使用 $proposal 根据这份标书和投标素材，先收敛一页纸策略，再生成可审计、可兑现的政企传媒技术标。"

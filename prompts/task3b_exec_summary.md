@@ -9,7 +9,7 @@
 ## 规则
 
 1. 只使用 `must_use.realized_claims/actions/value_propositions` 与 `allowed_realization_refs`；白名单外事实、数字、案例、能力和承诺一律不写。
-2. 按 `common.narrative_guide` 用最短路径呈现：客户面对什么、核心选择是什么、方案如何交付、客户最终能检查什么。
+2. 以 `must_use.one_page_strategy.core_thesis.recall_line` 为唯一记忆锚，沿 `section_spine` 用最短路径呈现：客户张力、核心选择、各章怎样推导到交付与证明。不能在综述中另造第二句总主张。
 3. 每个句子都能回到 `source_anchors`；不得把 intended 强化为 committed，也不得把 illustrative 内容说成既有成果。
 4. 综述不重复完整矩阵，不暴露内部 ID、URL、fit、审计、工具或生成痕迹。
 5. 只写正文；不生成 writer hints。后续独立 auditor 会直接从正文取 quote。

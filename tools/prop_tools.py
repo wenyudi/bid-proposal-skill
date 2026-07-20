@@ -573,6 +573,43 @@ def assemble_proposal(strategy_path, requirements_path, intel_path,
             f"- {L['version']}：v{read_version()}",
         ]
 
+        page = strategy.get('one_page_strategy') or {}
+        if isinstance(page, dict) and page:
+            tension = page.get('customer_tension') or {}
+            insight = page.get('sharp_insight') or {}
+            thesis = page.get('core_thesis') or {}
+            differentiation = page.get('differentiation') or {}
+            approval = page.get('approval') or {}
+            strategy_title = '一页纸策略' if lang == 'zh' else 'One-page strategy'
+            brief.extend(['', f"## {strategy_title}", ''])
+            fields = [
+                ('客户张力' if lang == 'zh' else 'Customer tension',
+                 tension.get('underlying_tension')),
+                ('尖锐洞察' if lang == 'zh' else 'Sharp insight',
+                 insight.get('statement')),
+                ('核心命题' if lang == 'zh' else 'Core thesis',
+                 thesis.get('statement')),
+                ('记忆句' if lang == 'zh' else 'Recall line',
+                 thesis.get('recall_line')),
+                ('互换测试' if lang == 'zh' else 'Name-swap test',
+                 differentiation.get('name_swap_test')),
+                ('批准状态' if lang == 'zh' else 'Approval',
+                 approval.get('status')),
+            ]
+            for label, value in fields:
+                if value not in (None, ''):
+                    brief.append(f"- **{label}**：{value}")
+            rubric = page.get('rubric_review') or {}
+            if rubric:
+                rendered = '；'.join(
+                    f"{key}={value.get('level', '-')}"
+                    for key, value in rubric.items()
+                    if isinstance(value, dict)
+                )
+                if rendered:
+                    brief.append(
+                        f"- **{'五维自评' if lang == 'zh' else 'Rubric'}**：{rendered}")
+
         # 决策地图只进内部研判：保留用户确认与 -auto 假设，TMPDIR 清理后仍可追溯。
         decision_map = strategy.get('decision_map') or {}
         decisions = strategy.get('open_questions') or []
@@ -780,7 +817,7 @@ def self_score(requirements_path, strategy_path, report_path, mode):
     prof = _load_profile(mode)
     target_per = prof.get('max_chars', 20000) / total_secs
 
-    is_v3 = strategy.get('schema_version') in ('strategy/v3', 'strategy/v4')
+    is_v3 = strategy.get('schema_version') in ('strategy/v3', 'strategy/v4', 'strategy/v5')
 
     # 差异化点 → 覆盖的评分 id（仅 legacy；v3 由 customer-fit 评价组合充分性）
     diff_ids = set()
@@ -910,6 +947,20 @@ def human_todo(requirements_path, strategy_path, report_path, mode, output_path,
         current = decision.get('resolved') or decision.get('ai_assumption') or '-'
         impact = decision.get('why_matters') or '-'
         assumptions.append((title, current, impact))
+    strategy_page = strategy.get('one_page_strategy') or {}
+    strategy_approval = ((strategy_page.get('approval') or {})
+                         if isinstance(strategy_page, dict) else {})
+    if strategy_approval.get('status') in (
+            'pending', 'changes_requested', 'assumed'):
+        thesis = (strategy_page.get('core_thesis') or {}) if isinstance(
+            strategy_page, dict) else {}
+        assumptions.append((
+            '一页纸策略批准' if lang == 'zh' else 'One-page strategy approval',
+            strategy_approval.get('status'),
+            thesis.get('recall_line') or (
+                '写作前需人工确认策略方向' if lang == 'zh'
+                else 'Human strategy review required before submission'),
+        ))
 
     intel_gaps = []
     if intel_path and os.path.exists(intel_path):
@@ -1212,7 +1263,7 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
     strategy_for_count = (read_json(strategy_path)
                           if strategy_path and os.path.exists(strategy_path)
                           else {})
-    if strategy_for_count.get('schema_version') in ('strategy/v3', 'strategy/v4'):
+    if strategy_for_count.get('schema_version') in ('strategy/v3', 'strategy/v4', 'strategy/v5'):
         expected_chapters = len(strategy_for_count.get('sections') or [])
         checks['chapter_count'] = {
             "passed": len(chapter_headings) == expected_chapters,
@@ -1345,7 +1396,7 @@ def qa_proposal(report_path, mode, strategy_path, lang, requirements_path=None,
         strat = read_json(strategy_path)
         dc = len(strat.get('differentiators') or [])
         min_diff = prof.get('min_differentiators', 3)
-        if strat.get('schema_version') in ('strategy/v3', 'strategy/v4'):
+        if strat.get('schema_version') in ('strategy/v3', 'strategy/v4', 'strategy/v5'):
             checks['differentiators'] = {
                 "passed": True, "warning": True, "deprecated": True,
                 "count": dc, "min": None,
@@ -1979,7 +2030,7 @@ def _print_result(result):
 
 def main():
     _init_stdout()
-    parser = argparse.ArgumentParser(description='proposal tools 3.1 — lean canonical/context/acceptance pipeline')
+    parser = argparse.ArgumentParser(description='proposal tools 3.2 — strategy-led canonical/context/acceptance pipeline')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p = sub.add_parser('check-encoding'); p.add_argument('file')

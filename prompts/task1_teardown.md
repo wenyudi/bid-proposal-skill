@@ -6,7 +6,7 @@
 - 模式：{MODE}；叙事偏好：{NARRATIVE}；年份：{CURRENT_YEAR}。
 - 标书：读 `{TMPDIR}/tender.txt`，或读 `{TMPDIR}/tender_paths.txt` 中的路径。
 - 素材：读 `{TMPDIR}/materials.txt`。`[notes]` 是 private 输入，只能校准内部判断，不得变成公开事实或正文引语；`[casebase]` 仍需核验权限与我方角色。
-- 参考：TYPES.md、RULES.md、DECISIONS.md。
+- 参考：TYPES.md、RULES.md、DECISIONS.md；本阶段只额外读取 `references/strategy-patterns.md`，不要提前加载 rubric 或反模式压缩发散。
 - 本阶段不联网；公开 Evidence 缺口交给 Task 2。
 
 事实查文件，只有投标人本人能决定的能力、报价、授权、未公开关系和硬承诺才进 `open_questions`。不知道就写 unknown/candidate，不编造。
@@ -18,8 +18,9 @@
 3. 分离 CustomerNeed 与 DecisionCriterion。Need 是客户想获得的结果/避免的风险；Criterion 是评委判断可信、优选或不可接受的标准；Requirement 不等于二者。
 4. 用 outcome / efficiency / risk / visibility / experience / asset / contrarian 多镜头生成开放候选 ValueProposition。此时允许无 Evidence；只标 candidate/investigating，不提前收窄，不按数量凑“亮点”。
 5. 为候选建立原子 Claim 和必要的 DeliveryAction/Role/Resource/Acceptance 草案。未经确认的新能力、KPI、免费资源、排他能力和高风险承诺一律 intended/candidate，不得 committed。
-6. 评分项决定章节骨架；每章内嵌一个 candidate primary DecisionJob、最多一个 secondary，说明目标角色从什么判断推进到什么判断。叙事只控制表达，不改变评分覆盖、Claim 强度和交付边界。
-7. 先写 `decision_map.destination`，再把只有人能决定的边界写成单题决策。可查事实进入 research gap，不问用户。
+6. 形成一页纸“候选策略假设”：客户张力、非共识洞察、核心主张/记忆句、洞察→策略→表达→执行→证明的推导。保留 2–4 个 `alternative_theses` 和各自启用条件，不在研究前伪装成定案。
+7. 评分项决定章节骨架；每章内嵌一个 candidate primary DecisionJob、最多一个 secondary，并写 `strategy_role` 说明本章如何承接、推进和交出核心主张。叙事只控制表达，不改变评分覆盖、Claim 强度和交付边界。
+8. 先写 `decision_map.destination`，再把只有人能决定的边界写成单题决策。可查事实进入 research gap，不问用户。
 
 ## 输出与落盘顺序
 
@@ -151,7 +152,7 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
 
 ```json
 {
-  "schema_version": "strategy/v4",
+  "schema_version": "strategy/v5",
   "revision": 1,
   "title": "含客户结果主张的标题",
   "bid_type": "同 requirements",
@@ -159,8 +160,22 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
   "language": "{LANG}",
   "buyer_insight": "由高优先级 Role/Need/Criterion 编译的兼容摘要",
   "win_themes": [],
-  "big_idea": "唯一记忆与叙事伞，不替代原子 VP",
+  "big_idea": "与 one_page_strategy.core_thesis.recall_line 完全相同的唯一记忆句",
   "narrative": {"mode": "logic|story|vision|evidence|custom", "secondary": null, "rationale": "", "through_line": ""},
+  "one_page_strategy": {
+    "development_status": "candidate",
+    "client_context": "government_public|commercial|hybrid",
+    "customer_tension": {"surface_need": "", "underlying_tension": "", "why_now": "", "grounding_refs": ["REQ/NEED/CRIT/EV-*"]},
+    "sharp_insight": {"statement": "", "why_non_obvious": "为何不是行业常识", "grounding_refs": ["REQ/NEED/CRIT/EV-*"]},
+    "core_thesis": {"statement": "战略命题", "recall_line": "评委十秒可复述的一句话；须与顶层 big_idea 完全相同", "strategic_choice": "全案只做的选择", "refuses": ["明确不做什么"]},
+    "logic_chain": {"from_insight": "", "to_strategy": "", "to_expression": "", "to_execution": "", "to_proof": ""},
+    "differentiation": {"specificity": "项目特异性假设", "name_swap_test": "unreviewed", "why": "研究后复核"},
+    "proof_plan": [],
+    "delivery_credibility": {"mechanism": "", "owner_logic": "", "checkpoints": [], "acceptance_logic": "", "boundaries": []},
+    "alternative_theses": [{"thesis": "", "insight_hypothesis": "", "vp_refs": ["VP-*"], "choose_if": "研究出现什么信号时采用"}],
+    "rubric_review": {},
+    "approval": {"status": "pending", "reviewed_by": null, "reviewed_at": null, "note": "Task 1 candidate; research before review"}
+  },
   "budget_strategy": "单一最优解和已知边界",
   "decision_map": {
     "destination": "同时体现合规、评分覆盖和真实能力边界的可验证终点",
@@ -169,13 +184,13 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
   },
   "open_questions": [],
   "sections": [
-    {"id": "CH-01", "n": 1, "title": "含主张的章标题", "addresses": ["REQ-S-PLAN"], "sub": ["不含编号的主张式子节"], "decision_job": {"id": "DJ-UNDERSTAND-01", "job_kind": "understand|believe|value|deliver|safe|choose", "role_refs": ["ROLE-BUSINESS"], "criterion_refs": ["CRIT-DELIVERY"], "value_proposition_refs": ["VP-CLOSED-LOOP"], "claim_refs": ["CL-CLOSED-LOOP"], "action_refs": ["DA-CLOSED-LOOP"], "entry_judgment": "本章开始前的判断", "expected_judgment": "本章结束后的新判断", "evidence_burden": "", "transition": {"inherits": "", "must_advance": "", "hands_off": ""}}, "secondary_decision_job": null, "visible_outputs": [], "narrative_role": "primary|secondary:evidence|fixed:logic|fixed:evidence", "intel_needs": []}
+    {"id": "CH-01", "n": 1, "title": "含主张的章标题", "addresses": ["REQ-S-PLAN"], "sub": ["不含编号的主张式子节"], "strategy_role": {"contribution": "本章对核心命题的独有贡献", "inherits": "承接什么已形成判断", "hands_off": "向下一章交出什么判断"}, "decision_job": {"id": "DJ-UNDERSTAND-01", "job_kind": "understand|believe|value|deliver|safe|choose", "role_refs": ["ROLE-BUSINESS"], "criterion_refs": ["CRIT-DELIVERY"], "value_proposition_refs": ["VP-CLOSED-LOOP"], "claim_refs": ["CL-CLOSED-LOOP"], "action_refs": ["DA-CLOSED-LOOP"], "entry_judgment": "本章开始前的判断", "expected_judgment": "本章结束后的新判断", "evidence_burden": "", "transition": {"inherits": "", "must_advance": "", "hands_off": ""}}, "secondary_decision_job": null, "visible_outputs": [], "narrative_role": "primary|secondary:evidence|fixed:logic|fixed:evidence", "intel_needs": []}
   ],
   "change_log": []
 }
 ```
 
-章节数完全由标书实际结构和 `sections` 决定，不设 v3 固定下限、不为凑数新增孤儿章。每章必须映射 Requirement；内嵌一个 `decision_job`，最多一个 `secondary_decision_job`。`narrative_role` 用 `primary`、`secondary:<strategy.secondary>` 或 `fixed:logic|fixed:evidence`，报价、合规、资质章必须 fixed。Task 1 的 `visible_outputs` 可为空或只记 candidate burden；Task 2.5 为每个 lead VP 在所属章收敛至少一个 required 契约：`id/purpose/supports_refs/required_fields/grounding_refs/grounding_mode(tender|evidence|illustrative)/truth_boundary/requiredness`。外部附件不放进该契约，进入人工待办。全案旅程可回访 understand → believe → value → deliver → safe → choose，不要求六阶段一一对应。
+章节数完全由标书实际结构和 `sections` 决定，不设 v3 固定下限、不为凑数新增孤儿章。每章必须映射 Requirement；内嵌一个 `decision_job`，最多一个 `secondary_decision_job`。`strategy_role` 是全案主线的单一来源；不能只重复记忆句，必须说明独有推进和交接。`narrative_role` 用 `primary`、`secondary:<strategy.secondary>` 或 `fixed:logic|fixed:evidence`，报价、合规、资质章必须 fixed。Task 1 的 `visible_outputs` 可为空或只记 candidate burden；Task 2.5 为每个 lead VP 在所属章收敛至少一个 required 契约：`id/purpose/supports_refs/required_fields/grounding_refs/grounding_mode(tender|evidence|illustrative)/truth_boundary/requiredness`。外部附件不放进该契约，进入人工待办。全案旅程可回访 understand → believe → value → deliver → safe → choose，不要求六阶段一一对应。
 
 `open_questions` 仍严格采用 DECISIONS.md 的 schema；每题必须有不可变 `id:"GATE-*"`，以及 title/q/why_matters/ai_assumption/depends_on/status/resolved/assumption_risk、`visibility: internal|private`、不暴露原答复的 `safe_constraint` 和 `affected_refs`。数量可为 0。涉及能力、资源、报价、案例权限、关键 KPI 和新增承诺时，列全受影响 VP/Claim/Action/Resource/Acceptance/Evidence ID；后续 committed/confirmed/公开匿名只能引用真实 resolved Gate、明确标书 Requirement 或 verified 且 scoped 的 Evidence，不能填写虚构 `GATE-*`。
 
@@ -204,6 +219,7 @@ Requirement 只有在原条款确实授权对应对象和用途时才能作为 a
 - mandatory/scoring/deliverable 原文零遗漏，所有 Requirement 已映射章节。
 - Role/Need/Criterion 有据且不虚构个人；private 没有公开投影。
 - 候选 VP 保持多角色、多价值镜头和成本层次；没有用硬门提前砍掉发散。
+- 一页纸仍明确标为 candidate，保留替代命题和研究触发条件，没有把初始判断伪装成获批策略。
 - 新能力、资源、数字和硬承诺没有被擅自确认。
 - DecisionJob、Section、VP、Claim、Action 引用一致。
 - 每个非空 authority_ref 都能解析到明确授权该对象/用途的 Requirement、verified Evidence 或 resolved Gate；Requirement 的 `authority_uses/authorizes_refs` 与被授权对象双向语义一致。

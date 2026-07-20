@@ -23,18 +23,19 @@ import uuid
 
 
 ENGINE = "v3"
-ENGINE_VERSION = "3.1"
-POLICY_VERSION = "proposal-v3.1/policy-2"
-CONTEXT_POLICY_VERSION = "proposal-v3.1/context-1"
-REALIZATION_POLICY_VERSION = "proposal-v3.1/realization-1"
-FIT_POLICY_VERSION = "proposal-v3.1/customer-fit-1"
+ENGINE_VERSION = "3.2"
+POLICY_VERSION = "proposal-v3.2/policy-1"
+CONTEXT_POLICY_VERSION = "proposal-v3.2/context-1"
+REALIZATION_POLICY_VERSION = "proposal-v3.2/realization-1"
+FIT_POLICY_VERSION = "proposal-v3.2/customer-fit-1"
 
-# v3.1 is a lean physical model, not a flag-day archive migration.  Historic
-# v3.0 state remains readable; only explicit bootstrap/migration writes the
-# new canonical schemas.
-COMPAT_ENGINE_VERSIONS = {"3.0", ENGINE_VERSION}
+# v3.2 adds a strategy ceiling without rewriting an archived run in place.
+# Historic v3.0/v3.1 state remains readable; only bootstrap/migration writes
+# the current canonical schemas.
+COMPAT_ENGINE_VERSIONS = {"3.0", "3.1", ENGINE_VERSION}
 COMPAT_POLICY_VERSIONS = {
-    "proposal-v3/policy-1", "proposal-v3.1/policy-1", POLICY_VERSION,
+    "proposal-v3/policy-1", "proposal-v3.1/policy-1",
+    "proposal-v3.1/policy-2", POLICY_VERSION,
 }
 
 SAFE_PUBLICATION_VISIBILITIES = {
@@ -62,7 +63,7 @@ SCHEMA_VERSIONS = {
     "requirements.json": "requirements/v3",
     "customer-value.json": "customer-value/v2",
     "delivery-plan.json": "delivery-plan/v1",
-    "strategy.json": "strategy/v4",
+    "strategy.json": "strategy/v5",
     "intel-pool.json": "intel-pool/v3",
     "source-manifest.json": "source-manifest/v1",
     "run-manifest.json": "run-manifest/v1",
@@ -80,7 +81,7 @@ ACCEPTED_SCHEMA_VERSIONS = {
     "requirements.json": {"requirements/v3"},
     "customer-value.json": {"customer-value/v1", "customer-value/v2"},
     "delivery-plan.json": {"delivery-plan/v1"},
-    "strategy.json": {"strategy/v3", "strategy/v4"},
+    "strategy.json": {"strategy/v3", "strategy/v4", "strategy/v5"},
     "intel-pool.json": {"intel-pool/v3"},
 }
 
@@ -135,6 +136,19 @@ CONTENT_KINDS = {"fact", "insight", "proposal", "target"}
 EPISTEMIC_STATES = {"evidenced", "inferred", "assumed"}
 COMMITMENT_LEVELS = {"none", "intended", "committed"}
 JOB_KINDS = {"understand", "believe", "value", "deliver", "safe", "choose"}
+STRATEGY_CONTEXTS = {"government_public", "commercial", "hybrid"}
+STRATEGY_DEVELOPMENT_STATES = {"candidate", "ready_for_review"}
+STRATEGY_APPROVAL_STATES = {
+    "pending", "approved", "assumed", "changes_requested",
+}
+STRATEGY_RUBRIC_DIMENSIONS = (
+    "insight_sharpness", "recallability", "deductive_coherence",
+    "differentiation", "delivery_credibility",
+)
+STRATEGY_RUBRIC_LEVELS = {
+    "deficient", "fragile", "adequate", "strong", "distinctive",
+}
+NAME_SWAP_RESULTS = {"fails", "partial", "passes", "unreviewed"}
 CONTRIBUTIONS = {
     "introduce", "prove", "operationalize", "measure", "schedule", "resource",
     "accept", "price", "derisk", "summarize", "required_restatement",
@@ -392,6 +406,20 @@ def _default_document(filename):
         base.update({
             "title": "", "depth_mode": "standard",
             "narrative": {"mode": "logic", "rationale": "", "through_line": ""},
+            "one_page_strategy": {
+                "development_status": "candidate",
+                "client_context": "hybrid",
+                "customer_tension": {}, "sharp_insight": {},
+                "core_thesis": {}, "logic_chain": {},
+                "differentiation": {
+                    "name_swap_test": "unreviewed",
+                }, "proof_plan": [],
+                "delivery_credibility": {}, "rubric_review": {},
+                "approval": {
+                    "status": "pending", "reviewed_by": None,
+                    "reviewed_at": None, "note": "",
+                },
+            },
             "decision_map": {"destination": "", "not_yet_specified": [], "out_of_scope": []},
             "open_questions": [], "sections": [],
             "change_log": [],
@@ -443,7 +471,8 @@ def init_state(state_dir, mode="standard", lang="zh", source_manifest=None,
         "mode": mode,
         "lang": lang,
         "capabilities": [
-            "customer_value", "delivery_plan", "task2_5", "compiled_context",
+            "customer_value", "delivery_plan", "task2_5", "strategy_page",
+            "strategy_review", "compiled_context",
             "realization", "requirement_realization", "safe_projection",
             "scoped_authority", "customer_fit", "last_good",
         ],
@@ -525,8 +554,77 @@ def _legacy_evidence(legacy, used):
     return records
 
 
+def _legacy_strategy_page(strategy):
+    """Build an honest draft-only strategy page for an explicit old-state migration."""
+    narrative = strategy.get("narrative") or {}
+    decision_map = strategy.get("decision_map") or {}
+    big_idea = (strategy.get("big_idea") or strategy.get("title")
+                or "旧策略主张待复核")
+    insight = (strategy.get("buyer_insight") or narrative.get("through_line")
+               or big_idea)
+    destination = decision_map.get("destination") or insight
+    review = {
+        key: {
+            "level": "fragile",
+            "finding": "由旧状态迁移，尚未按 v3.2 策略关卡独立复核。",
+            "next_revision": "用本项目证据和客户判断重新校准。",
+        }
+        for key in (
+            "insight_sharpness", "recallability", "deductive_coherence",
+            "differentiation", "delivery_credibility",
+        )
+    }
+    return {
+        "development_status": "ready_for_review",
+        "client_context": "hybrid",
+        "customer_tension": {
+            "surface_need": destination,
+            "underlying_tension": narrative.get("through_line") or insight,
+            "why_now": narrative.get("rationale") or destination,
+            "grounding_refs": [],
+        },
+        "sharp_insight": {
+            "statement": insight,
+            "why_non_obvious": "这是旧策略的兼容投影，迁移后必须复核其项目特异性。",
+            "grounding_refs": [],
+        },
+        "core_thesis": {
+            "statement": big_idea,
+            "recall_line": big_idea,
+            "strategic_choice": narrative.get("through_line") or big_idea,
+            "refuses": ["不以并列能力清单代替全案主张。"],
+        },
+        "logic_chain": {
+            "from_insight": insight,
+            "to_strategy": narrative.get("through_line") or big_idea,
+            "to_expression": big_idea,
+            "to_execution": "各章按既有客户判断任务和交付动作继续推导。",
+            "to_proof": "只以既有 Claim、Evidence 与验收边界证明。",
+        },
+        "differentiation": {
+            "specificity": big_idea,
+            "name_swap_test": "partial",
+            "why": "旧状态未做独立互换测试，迁移后需人工复核。",
+        },
+        "proof_plan": [],
+        "delivery_credibility": {
+            "mechanism": "沿用已建模的动作、责任、资源与验收链。",
+            "owner_logic": "责任只取自既有 DeliveryRole。",
+            "checkpoints": ["沿用既有章节和验收节点"],
+            "acceptance_logic": "不得强于既有 AcceptanceContract。",
+            "boundaries": ["迁移状态只允许安全草案，仍需人工策略复核。"],
+        },
+        "rubric_review": review,
+        "approval": {
+            "status": "assumed", "reviewed_by": "migration",
+            "reviewed_at": None,
+            "note": "兼容迁移仅解锁安全草案，不代表人工批准或可直接递交。",
+        },
+    }
+
+
 def _upgrade_to_lean_documents(documents):
-    """Return an explicit v3.1 copy; never rewrite an existing archive in place."""
+    """Return an explicit current copy; never rewrite an archive in place."""
     upgraded = copy.deepcopy(documents)
     cv = upgraded.get("customer-value.json") or {}
     if cv.get("schema_version") != "customer-value/v2":
@@ -539,7 +637,7 @@ def _upgrade_to_lean_documents(documents):
     upgraded["customer-value.json"] = cv
 
     strategy = upgraded.get("strategy.json") or {}
-    if strategy.get("schema_version") != "strategy/v4":
+    if strategy.get("schema_version") not in ("strategy/v4", "strategy/v5"):
         legacy_jobs = {
             item.get("id"): item
             for item in _as_list(strategy.get("decision_jobs"))
@@ -562,7 +660,27 @@ def _upgrade_to_lean_documents(documents):
             section.pop("secondary_decision_job_ref", None)
             section.setdefault("visible_outputs", [])
         strategy.pop("decision_jobs", None)
-        strategy["schema_version"] = "strategy/v4"
+    for section in _as_list(strategy.get("sections")):
+        if not isinstance(section, dict):
+            continue
+        section.setdefault("visible_outputs", [])
+        if "strategy_role" not in section:
+            job = section.get("decision_job") or {}
+            transition = job.get("transition") or {}
+            section["strategy_role"] = {
+                "contribution": (job.get("expected_judgment")
+                                 or section.get("title")
+                                 or "本章策略贡献待复核"),
+                "inherits": (transition.get("inherits")
+                             or job.get("entry_judgment")
+                             or "承接客户的初始判断"),
+                "hands_off": (transition.get("hands_off")
+                              or "交给下一章节继续论证"),
+            }
+    if strategy.get("schema_version") != "strategy/v5":
+        strategy["one_page_strategy"] = _legacy_strategy_page(strategy)
+    strategy.pop("decision_jobs", None)
+    strategy["schema_version"] = "strategy/v5"
     upgraded["strategy.json"] = strategy
     return upgraded
 
@@ -750,7 +868,8 @@ def migrate_state(source_dir, output_dir, mode="standard", lang="zh"):
             "engine": ENGINE, "engine_version": ENGINE_VERSION,
             "fallback_policy": "explicit", "mode": mode, "lang": lang,
             "capabilities": [
-                "customer_value", "delivery_plan", "task2_5", "compiled_context",
+                "customer_value", "delivery_plan", "task2_5", "strategy_page",
+                "strategy_review", "compiled_context",
                 "realization", "requirement_realization", "safe_projection",
                 "scoped_authority", "customer_fit", "legacy_adapter"],
             "policy_version": POLICY_VERSION,
@@ -896,7 +1015,8 @@ def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
         })
         run.setdefault("revision", 1)
         run.setdefault("capabilities", [
-            "customer_value", "delivery_plan", "task2_5", "compiled_context",
+            "customer_value", "delivery_plan", "task2_5", "strategy_page",
+            "strategy_review", "compiled_context",
             "realization", "requirement_realization", "safe_projection",
             "scoped_authority", "customer_fit"])
         _write_json_atomic(os.path.join(staging, "run-manifest.json"), run)
@@ -1381,7 +1501,7 @@ def _validate_relations(documents, registry, diagnostics):
         ref = _entity_id(section)
         for target_ref in _ref_list(section, "addresses"):
             _expect_ref(registry, ref, target_ref, {"requirement"}, diagnostics, "addresses")
-        if strategy.get("schema_version") != "strategy/v4":
+        if strategy.get("schema_version") not in ("strategy/v4", "strategy/v5"):
             for field in ("primary_decision_job_ref", "secondary_decision_job_ref"):
                 for target_ref in _ref_list(section, field):
                     _expect_ref(registry, ref, target_ref, {"decision_job"}, diagnostics, field)
@@ -2147,7 +2267,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
         jobs = {item.get("id"): item for item in effective_jobs if item.get("id")}
         for section in sections:
             ref = _entity_id(section) or "section-%s" % section.get("n")
-            if strategy.get("schema_version") == "strategy/v4":
+            if strategy.get("schema_version") in ("strategy/v4", "strategy/v5"):
                 primary = ([section.get("decision_job")]
                            if isinstance(section.get("decision_job"), dict) else [])
                 secondary = ([section.get("secondary_decision_job")]
@@ -2160,7 +2280,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                 diagnostics.append(_diagnostic("section.primary_job", "orphan", "blocker", "%s has %s primary DecisionJobs" % (ref, len(primary)), "exactly one primary DecisionJob", [ref], ["task3", "submission"], "task2.5", "compile one primary customer decision job"))
             if len(secondary) > 1:
                 diagnostics.append(_diagnostic("section.secondary_job", "redundant", "blocker", "%s has %s secondary DecisionJobs" % (ref, len(secondary)), "zero or one secondary DecisionJob", [ref], ["task3"], "task2.5"))
-            if strategy.get("schema_version") != "strategy/v4":
+            if strategy.get("schema_version") not in ("strategy/v4", "strategy/v5"):
                 for job_ref in primary + secondary:
                     job = jobs.get(job_ref) or {}
                     if job.get("section_ref") != ref:
@@ -2286,7 +2406,7 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
             if item.get("portfolio_role") == "lead" and item.get("id")
         }
         missing_visible_leads = (lead_refs - required_output_vps
-                                 if strategy.get("schema_version") == "strategy/v4"
+                                 if strategy.get("schema_version") in ("strategy/v4", "strategy/v5")
                                  else set())
         for lead_ref in sorted(missing_visible_leads):
             diagnostics.append(_diagnostic(
@@ -2295,6 +2415,254 @@ def _validate_lifecycle(documents, registry, diagnostics, stage):
                 "at least one required visible output that lets the evaluator inspect the lead value",
                 [lead_ref], ["task3", "submission"], "task2.5",
                 "add a small project-specific output contract to the owning section"))
+
+
+def _strategy_quality_diagnostics(documents, registry, stage):
+    """Validate the v3.2 strategy ceiling without pretending taste is numeric."""
+    strategy = documents.get("strategy.json") or {}
+    if strategy.get("schema_version") != "strategy/v5":
+        return []
+    diagnostics = []
+    page = strategy.get("one_page_strategy")
+    if not isinstance(page, dict):
+        return [_diagnostic(
+            "strategy.page.schema", "schema", "fatal",
+            "strategy/v5 has no one_page_strategy object",
+            "one project-specific strategy page", ["strategy.json"],
+            ["compile"], "task1")]
+
+    context = page.get("client_context")
+    if context not in STRATEGY_CONTEXTS:
+        diagnostics.append(_diagnostic(
+            "strategy.context", "schema", "fatal",
+            "one_page_strategy.client_context=%r" % context,
+            "government_public|commercial|hybrid", ["strategy.json"],
+            ["compile"], "task1"))
+    development = page.get("development_status")
+    if development not in STRATEGY_DEVELOPMENT_STATES:
+        diagnostics.append(_diagnostic(
+            "strategy.development", "schema", "fatal",
+            "one_page_strategy.development_status=%r" % development,
+            "candidate|ready_for_review", ["strategy.json"],
+            ["compile"], "task1"))
+
+    required_text = (
+        ("customer_tension", "surface_need"),
+        ("customer_tension", "underlying_tension"),
+        ("customer_tension", "why_now"),
+        ("sharp_insight", "statement"),
+        ("sharp_insight", "why_non_obvious"),
+        ("core_thesis", "statement"),
+        ("core_thesis", "recall_line"),
+        ("core_thesis", "strategic_choice"),
+        ("logic_chain", "from_insight"),
+        ("logic_chain", "to_strategy"),
+        ("logic_chain", "to_expression"),
+        ("logic_chain", "to_execution"),
+        ("logic_chain", "to_proof"),
+        ("differentiation", "specificity"),
+        ("differentiation", "why"),
+        ("delivery_credibility", "mechanism"),
+        ("delivery_credibility", "owner_logic"),
+        ("delivery_credibility", "acceptance_logic"),
+    )
+    missing_page_fields = []
+    for parent, field in required_text:
+        value = page.get(parent)
+        if not isinstance(value, dict) or not _nonempty(value.get(field)):
+            missing_page_fields.append("%s.%s" % (parent, field))
+    if missing_page_fields:
+        diagnostics.append(_diagnostic(
+            "strategy.page.missing", "uncovered", "blocker",
+            "one-page strategy misses: %s" % ", ".join(missing_page_fields),
+            "one complete project-specific strategy page, not placeholders",
+            ["strategy.json"], ["task3", "submission"], "task2.5",
+            "complete the one-page strategy before drafting sections"))
+
+    recall_line = ((page.get("core_thesis") or {}).get("recall_line")
+                   if isinstance(page.get("core_thesis"), dict) else None)
+    if (_nonempty(strategy.get("big_idea")) and _nonempty(recall_line)
+            and strategy.get("big_idea").strip() != recall_line.strip()):
+        diagnostics.append(_diagnostic(
+            "strategy.recall_line.drift", "contradictory", "blocker",
+            "big_idea and core_thesis.recall_line are different",
+            "one exact memory sentence projected consistently across canonical state",
+            ["strategy.json"], ["task3", "submission"], "task2.5",
+            "choose one recall line and update both fields in the same ChangeSet"))
+
+    def validate_refs(parent, field, allowed_types):
+        value = page.get(parent) or {}
+        for target_ref in _ref_list(value, field):
+            _expect_ref(
+                registry, "one_page_strategy.%s" % parent, target_ref,
+                allowed_types, diagnostics, field)
+
+    validate_refs(
+        "customer_tension", "grounding_refs",
+        {"requirement", "customer_need", "decision_criterion", "evidence"})
+    validate_refs(
+        "sharp_insight", "grounding_refs",
+        {"requirement", "customer_need", "decision_criterion", "evidence"})
+
+    proof_plan = page.get("proof_plan")
+    if not isinstance(proof_plan, list):
+        diagnostics.append(_diagnostic(
+            "strategy.proof_plan.schema", "schema", "fatal",
+            "one_page_strategy.proof_plan is not an array",
+            "an array of proof moves; it may be empty in an early candidate",
+            ["strategy.json"], ["compile"], "task1"))
+        proof_plan = []
+    for index, move in enumerate(proof_plan):
+        ref = "one_page_strategy.proof_plan[%s]" % index
+        if not isinstance(move, dict):
+            diagnostics.append(_diagnostic(
+                "strategy.proof_plan.item", "schema", "fatal",
+                "%s is not an object" % ref, "a typed proof move", [ref],
+                ["compile"], "task2.5"))
+            continue
+        if not _nonempty(move.get("purpose")):
+            diagnostics.append(_diagnostic(
+                "strategy.proof_plan.purpose", "uncovered", "blocker",
+                "%s has no evaluator-facing purpose" % ref,
+                "what this proof must make believable", [ref],
+                ["task3", "submission"], "task2.5"))
+        for target_ref in _ref_list(move, "supports_refs"):
+            _expect_ref(
+                registry, ref, target_ref,
+                {"requirement", "value_proposition", "claim", "delivery_action"},
+                diagnostics, "supports_refs")
+        for target_ref in _ref_list(move, "proof_refs"):
+            _expect_ref(
+                registry, ref, target_ref,
+                {"evidence", "metric", "delivery_action", "acceptance_contract"},
+                diagnostics, "proof_refs")
+
+    rubric = page.get("rubric_review")
+    if not isinstance(rubric, dict):
+        diagnostics.append(_diagnostic(
+            "strategy.rubric.schema", "schema", "fatal",
+            "one_page_strategy.rubric_review is not an object",
+            "five ordinal, behavior-anchored judgments", ["strategy.json"],
+            ["compile"], "task2.5"))
+        rubric = {}
+    missing_rubric_dimensions = []
+    for dimension in STRATEGY_RUBRIC_DIMENSIONS:
+        judgment = rubric.get(dimension)
+        if not isinstance(judgment, dict):
+            missing_rubric_dimensions.append(dimension)
+            continue
+        level = judgment.get("level")
+        if level not in STRATEGY_RUBRIC_LEVELS:
+            diagnostics.append(_diagnostic(
+                "strategy.rubric.level", "schema", "fatal",
+                "%s level=%r" % (dimension, level),
+                "one of %s" % sorted(STRATEGY_RUBRIC_LEVELS), [dimension],
+                ["compile"], "task2.5"))
+        for field in ("finding", "next_revision"):
+            if not _nonempty(judgment.get(field)):
+                diagnostics.append(_diagnostic(
+                    "strategy.rubric.explanation", "uncovered", "blocker",
+                    "%s has no %s" % (dimension, field),
+                    "a concrete observation and next revision, not a score",
+                    [dimension], ["task3", "submission"], "task2.5"))
+    if missing_rubric_dimensions:
+        diagnostics.append(_diagnostic(
+            "strategy.rubric.missing", "uncovered", "blocker",
+            "strategy rubric misses: %s" % ", ".join(
+                missing_rubric_dimensions),
+            "all five dimensions with level + finding + next_revision",
+            ["strategy.json"], ["task3", "submission"], "task2.5"))
+
+    differentiation = page.get("differentiation") or {}
+    swap = differentiation.get("name_swap_test")
+    if swap not in NAME_SWAP_RESULTS:
+        diagnostics.append(_diagnostic(
+            "strategy.name_swap.schema", "schema", "fatal",
+            "name_swap_test=%r" % swap,
+            "fails|partial|passes|unreviewed", ["strategy.json"],
+            ["compile"], "task2.5"))
+    elif swap in ("passes", "unreviewed"):
+        diagnostics.append(_diagnostic(
+            "strategy.name_swap.generic", "redundant", "blocker",
+            "competitor name-swap test %s" % swap,
+            "the thesis loses validity or explanatory power when replaced by a rival",
+            ["strategy.json"], ["task3", "submission"], "task2.5",
+            "replace generic virtues with a project-specific choice, mechanism and proof"))
+    elif swap == "partial":
+        diagnostics.append(_diagnostic(
+            "strategy.name_swap.partial", "customer_fit", "major",
+            "parts of the strategy survive a competitor name swap",
+            "a clearly stated project-specific edge and its proof",
+            ["strategy.json"], [], "task2.5",
+            "tighten the differentiated choice before final approval"))
+
+    for section in _as_list(strategy.get("sections")):
+        if not isinstance(section, dict):
+            continue
+        section_ref = section.get("id") or "section-%s" % section.get("n")
+        role = section.get("strategy_role")
+        if not isinstance(role, dict):
+            diagnostics.append(_diagnostic(
+                "strategy.spine.missing", "uncovered", "blocker",
+                "%s has no strategy_role" % section_ref,
+                "how the section advances, inherits and hands off the core thesis",
+                [section_ref], ["task3", "submission"], "task2.5"))
+            continue
+        missing = [field for field in ("contribution", "inherits", "hands_off")
+                   if not _nonempty(role.get(field))]
+        if missing:
+            diagnostics.append(_diagnostic(
+                "strategy.spine.incomplete", "uncovered", "blocker",
+                "%s strategy_role misses %s" % (section_ref, ", ".join(missing)),
+                "a complete section-to-thesis handoff", [section_ref],
+                ["task3", "submission"], "task2.5"))
+
+    approval = page.get("approval")
+    if not isinstance(approval, dict):
+        diagnostics.append(_diagnostic(
+            "strategy.approval.schema", "schema", "fatal",
+            "one_page_strategy.approval is not an object",
+            "pending|approved|assumed|changes_requested review state",
+            ["strategy.json"], ["compile"], "main"))
+        approval = {}
+    approval_status = approval.get("status")
+    if approval_status not in STRATEGY_APPROVAL_STATES:
+        diagnostics.append(_diagnostic(
+            "strategy.approval.status", "schema", "fatal",
+            "strategy approval status=%r" % approval_status,
+            "pending|approved|assumed|changes_requested", ["strategy.json"],
+            ["compile"], "main"))
+    elif approval_status in ("pending", "changes_requested"):
+        diagnostics.append(_diagnostic(
+            "strategy.approval.pending", "uncovered", "blocker",
+            "one-page strategy is %s" % approval_status,
+            "one human strategy checkpoint before section drafting",
+            ["strategy.json"], ["task3", "submission"], "human",
+            "review the one-page strategy; approve it or request one focused revision"))
+    elif approval_status == "assumed":
+        diagnostics.append(_diagnostic(
+            "strategy.approval.assumed", "overcommitted", "blocker",
+            "one-page strategy uses an automatic or migration assumption",
+            "human approval before direct submission", ["strategy.json"],
+            ["submission"], "human",
+            "confirm the strategy page or keep the output draft-only"))
+    elif approval_status == "approved":
+        reviewer = str(approval.get("reviewed_by") or "").strip().lower()
+        if not reviewer or reviewer in ("task2.5", "auto", "migration", "model"):
+            diagnostics.append(_diagnostic(
+                "strategy.approval.invalid_reviewer", "contradictory", "blocker",
+                "approved strategy has no human reviewer",
+                "a traceable human approval", ["strategy.json"],
+                ["task3", "submission"], "human"))
+
+    if development == "candidate":
+        diagnostics.append(_diagnostic(
+            "strategy.candidate", "uncovered", "blocker",
+            "one-page strategy is still a divergent candidate",
+            "research-informed ready_for_review strategy before writing",
+            ["strategy.json"], ["task3", "submission"], "task2.5",
+            "converge the candidate after research without deleting the reserve pool"))
+    return diagnostics
 
 
 def _resource_diagnostics(documents):
@@ -2921,6 +3289,8 @@ def check_canonical(state_dir, stage="draft", realization_dir=None,
     registry = _build_registry(documents, diagnostics)
     _validate_relations(documents, registry, diagnostics)
     _validate_lifecycle(documents, registry, diagnostics, stage)
+    diagnostics.extend(_strategy_quality_diagnostics(
+        documents, registry, stage))
     diagnostics.extend(_resource_diagnostics(documents))
     diagnostics.extend(_delivery_structure_diagnostics(documents))
     coverage = coverage_diagnostics(documents, realization_dir if stage == "submission" else None)
@@ -2969,7 +3339,7 @@ def check_canonical(state_dir, stage="draft", realization_dir=None,
 
 
 def _effective_decision_paths(customer_value):
-    """Return the v3.1 path model, deriving it for untouched v3.0 archives."""
+    """Return the lean path model, deriving it for untouched v3.0 archives."""
     if (customer_value.get("schema_version") == "customer-value/v2"
             or "decision_paths" in customer_value):
         return [
@@ -3032,7 +3402,7 @@ def _embedded_job(section, field, slot):
 
 def _effective_section_jobs(strategy):
     """Flatten embedded v4 jobs for validators and context compilation."""
-    if (strategy.get("schema_version") == "strategy/v4"
+    if (strategy.get("schema_version") in ("strategy/v4", "strategy/v5")
             or any(isinstance(item, dict) and "decision_job" in item
                    for item in _as_list(strategy.get("sections")))):
         jobs = []
@@ -3220,10 +3590,47 @@ def _task25_transition_issues(before, after):
     after_strategy = after.get("strategy.json") or {}
     for field in (
             "title", "bid_type", "depth_mode", "language", "buyer_insight",
-            "win_themes", "big_idea", "narrative", "budget_strategy",
-            "decision_map"):
+            "budget_strategy", "decision_map"):
         if before_strategy.get(field) != after_strategy.get(field):
             issues.append("task2.5 cannot mutate strategy authority field %s" % field)
+
+    before_page = before_strategy.get("one_page_strategy") or {}
+    after_page = after_strategy.get("one_page_strategy") or {}
+    before_approval = before_page.get("approval") or {}
+    after_approval = after_page.get("approval") or {}
+    before_approval_status = before_approval.get("status")
+    after_approval_status = after_approval.get("status")
+    if (after_approval_status in ("approved", "assumed")
+            and after_approval_status != before_approval_status):
+        issues.append(
+            "task2.5 cannot self-approve or auto-assume the one-page strategy")
+
+    def without_approval(page):
+        projected = copy.deepcopy(page) if isinstance(page, dict) else {}
+        projected.pop("approval", None)
+        return projected
+
+    before_roles = [
+        (item.get("id"), copy.deepcopy(item.get("strategy_role")))
+        for item in _as_list(before_strategy.get("sections"))
+        if isinstance(item, dict)
+    ]
+    after_roles = [
+        (item.get("id"), copy.deepcopy(item.get("strategy_role")))
+        for item in _as_list(after_strategy.get("sections"))
+        if isinstance(item, dict)
+    ]
+    strategy_semantics_changed = any((
+        before_strategy.get("win_themes") != after_strategy.get("win_themes"),
+        before_strategy.get("big_idea") != after_strategy.get("big_idea"),
+        before_strategy.get("narrative") != after_strategy.get("narrative"),
+        without_approval(before_page) != without_approval(after_page),
+        before_roles != after_roles,
+    ))
+    if (strategy_semantics_changed and before_approval_status == "approved"
+            and after_approval_status == "approved"):
+        issues.append(
+            "task2.5 must invalidate human strategy approval after semantic changes")
 
     def compare(filename, collection, protected):
         old_items = _entities_by_id(before.get(filename), collection)
@@ -3574,7 +3981,7 @@ def promote_research(state_dir, intel_proposal_path, links_proposal_path):
 
 
 def apply_auto_state(state_dir):
-    """Convert open v3 decisions to traceable assumptions through a ChangeSet."""
+    """Convert explicit -auto decisions/review to traceable draft assumptions."""
     documents, issues = load_state(state_dir)
     if issues:
         return {"passed": False, "issues": issues}
@@ -3585,6 +3992,7 @@ def apply_auto_state(state_dir):
             "not_yet_specified must first be routed to a decision, research gap, or out_of_scope"
         ]}
     decision_operations = []
+    strategy_review_operation = None
     pending_updates = {}
     converted = 0
     diagnostics = []
@@ -3653,9 +4061,34 @@ def apply_auto_state(state_dir):
         for affected_ref in _ref_list(decision, "affected_refs"):
             demote_affected(affected_ref, gate_ref)
         converted += 1
-    if not decision_operations:
-        return {"passed": True, "issues": [], "converted": 0}
+
+    page = strategy.get("one_page_strategy")
+    if (strategy.get("schema_version") == "strategy/v5"
+            and isinstance(page, dict)
+            and page.get("development_status") == "ready_for_review"):
+        approval = page.get("approval") or {}
+        if approval.get("status") == "pending":
+            updated_page = copy.deepcopy(page)
+            updated_page["approval"] = {
+                "status": "assumed", "reviewed_by": "auto",
+                "reviewed_at": None,
+                "note": (
+                    "Explicit -auto mode assumed the research-informed strategy "
+                    "for safe drafting only; human review is still required."
+                ),
+            }
+            strategy_review_operation = {
+                "file": "strategy.json", "op": "replace",
+                "path": "/one_page_strategy", "value": updated_page,
+            }
+    if not decision_operations and not strategy_review_operation:
+        return {
+            "passed": True, "issues": [], "converted": 0,
+            "strategy_review_assumed": False,
+        }
     operations = list(decision_operations)
+    if strategy_review_operation:
+        operations.append(strategy_review_operation)
     for (filename, collection, index), updated in sorted(pending_updates.items()):
         operations.append({
             "file": filename, "op": "replace",
@@ -3664,7 +4097,7 @@ def apply_auto_state(state_dir):
     touched = sorted(set(operation["file"] for operation in operations))
     changeset = {
         "schema_version": SCHEMA_VERSIONS["changeset"],
-        "changeset_id": "CS-AUTO-DECISIONS-%s" % (strategy.get("revision") + 1),
+        "changeset_id": "CS-AUTO-STATE-%s" % (strategy.get("revision") + 1),
         "producer": "main",
         "base_revisions": {filename: documents[filename].get("revision") for filename in touched},
         "rationale": "Apply explicit -auto conservative assumptions without presenting them as confirmed",
@@ -3677,7 +4110,7 @@ def apply_auto_state(state_dir):
             + [_entity_id(value) for value in pending_updates.values() if _entity_id(value)]
         )),
     }
-    path = os.path.join(state_dir, "proposals", "changes", ".auto-decisions.json")
+    path = os.path.join(state_dir, "proposals", "changes", ".auto-state.json")
     _write_json_atomic(path, changeset)
     try:
         result = apply_changeset(state_dir, path)
@@ -3685,6 +4118,8 @@ def apply_auto_state(state_dir):
         try: os.unlink(path)
         except OSError: pass
     result["converted"] = converted if result.get("passed") else 0
+    result["strategy_review_assumed"] = bool(
+        result.get("passed") and strategy_review_operation)
     result["auto_demoted_refs"] = sorted(
         _entity_id(value) for value in pending_updates.values() if _entity_id(value))
     return result
@@ -3937,6 +4372,77 @@ def _safe_section(section):
     ))
 
 
+def _safe_strategy_page(strategy):
+    """Project the approved strategic spine without self-scores or review state."""
+    page = strategy.get("one_page_strategy")
+    if not isinstance(page, dict):
+        thesis = strategy.get("big_idea") or strategy.get("title")
+        return {
+            "client_context": "legacy_unspecified",
+            "core_thesis": {
+                "statement": thesis, "recall_line": thesis,
+                "strategic_choice": (strategy.get("narrative") or {}).get(
+                    "through_line"),
+            },
+        }
+    return {
+        "client_context": page.get("client_context"),
+        "customer_tension": _project(
+            page.get("customer_tension") or {},
+            ("surface_need", "underlying_tension", "why_now", "grounding_refs")),
+        "sharp_insight": _project(
+            page.get("sharp_insight") or {},
+            ("statement", "why_non_obvious", "grounding_refs")),
+        "core_thesis": _project(
+            page.get("core_thesis") or {},
+            ("statement", "recall_line", "strategic_choice", "refuses")),
+        "logic_chain": _project(
+            page.get("logic_chain") or {},
+            ("from_insight", "to_strategy", "to_expression", "to_execution",
+             "to_proof")),
+        "differentiation": _project(
+            page.get("differentiation") or {}, ("specificity",)),
+        "proof_plan": [
+            _project(item, ("purpose", "supports_refs", "proof_refs", "remaining_gap"))
+            for item in _as_list(page.get("proof_plan"))
+            if isinstance(item, dict)
+        ],
+        "delivery_credibility": _project(
+            page.get("delivery_credibility") or {},
+            ("mechanism", "owner_logic", "checkpoints", "acceptance_logic",
+             "boundaries")),
+    }
+
+
+def _strategy_spine(strategy):
+    """Compile one non-duplicated map from each Section's owned strategy_role."""
+    jobs_by_section = {}
+    for job in _effective_section_jobs(strategy):
+        if job.get("section_ref") and job.get("_embedded_slot") != "secondary":
+            jobs_by_section[job["section_ref"]] = job
+    spine = []
+    sections = [
+        item for item in _as_list(strategy.get("sections"))
+        if isinstance(item, dict)
+    ]
+    for section in sorted(
+            sections,
+            key=lambda item: (item.get("n") is None, item.get("n") or 0)):
+        section_ref = section.get("id")
+        role = section.get("strategy_role") or {}
+        job = jobs_by_section.get(section_ref) or {}
+        spine.append({
+            "section_ref": section_ref,
+            "n": section.get("n"),
+            "title": section.get("title"),
+            "contribution": role.get("contribution"),
+            "inherits": role.get("inherits"),
+            "hands_off": role.get("hands_off"),
+            "expected_judgment": job.get("expected_judgment"),
+        })
+    return spine
+
+
 def _safe_visible_output(output):
     return _project(output, (
         "id", "purpose", "supports_refs", "required_fields",
@@ -4168,6 +4674,9 @@ def _compile_value_selection(documents):
             "acceptance_contracts": copy.deepcopy(_as_list(delivery.get("acceptance_contracts"))),
             "decisions": copy.deepcopy(_as_list(strategy.get("open_questions"))),
             "sections": copy.deepcopy(_as_list(strategy.get("sections"))),
+            "candidate_strategy": copy.deepcopy(
+                strategy.get("one_page_strategy") or {}),
+            "candidate_section_spine": _strategy_spine(strategy),
             "draft_policy": draft_policy,
         },
         "may_use": {},
@@ -4297,6 +4806,16 @@ def _compile_section(documents, section_id):
     return {
         "section_ref": section_ref,
         "must_use": {
+            "one_page_strategy": _safe_strategy_page(strategy),
+            "section_spine": _strategy_spine(strategy),
+            "current_strategy_role": copy.deepcopy(
+                section.get("strategy_role") or {}),
+            "prior_outline_summary": [
+                item for item in _strategy_spine(strategy)
+                if (isinstance(item.get("n"), int)
+                    and isinstance(section.get("n"), int)
+                    and item.get("n") < section.get("n"))
+            ],
             "section": _safe_section(section), "requirements": requirements,
             "decision_jobs": [_safe_job(item) for item in jobs],
             "customer_roles": [_safe_role(item) for item in _collect_by_refs(_as_list(cv.get("roles")), role_refs)],
@@ -4396,6 +4915,9 @@ def _compile_exec_summary(documents, state_dir):
             })
     return {
         "must_use": {
+            "one_page_strategy": _safe_strategy_page(
+                documents["strategy.json"]),
+            "section_spine": _strategy_spine(documents["strategy.json"]),
             "realized_claims": [_safe_claim(item) for item in claims],
             "realized_actions": [_safe_action(item) for item in actions],
             "realized_value_propositions": [_safe_vp(item) for item in vps],
@@ -4415,6 +4937,9 @@ def _compile_redteam(documents, role, state_dir):
     return {
         "must_use": {
             "audit_role": role,
+            "one_page_strategy": _safe_strategy_page(
+                documents["strategy.json"]),
+            "section_spine": _strategy_spine(documents["strategy.json"]),
             "requirements": copy.deepcopy(documents["requirements.json"]),
             "canonical_gate_summary": checked["counts"],
             "root_diagnostics": checked["diagnostics"],
@@ -4425,9 +4950,33 @@ def _compile_redteam(documents, role, state_dir):
     }
 
 
+def _compile_strategy_review(documents):
+    strategy = documents["strategy.json"]
+    page = copy.deepcopy(strategy.get("one_page_strategy") or {})
+    return {
+        "must_use": {
+            "one_page_strategy": page,
+            "section_spine": _strategy_spine(strategy),
+            "big_idea": strategy.get("big_idea"),
+            "narrative": copy.deepcopy(strategy.get("narrative") or {}),
+        },
+        "may_use": {},
+        "forbidden": {
+            "self_approval": True,
+            "rule_count_as_quality": True,
+            "customer_visible_internal_rubric": True,
+        },
+        "expected_outputs": [
+            "one concise human decision: approve or request one focused revision"
+        ],
+    }
+
+
 def compile_context(state_dir, target, target_id=None, role=None, output_path=None,
                     token_budget=24000):
-    if target not in ("research", "value-selection", "section", "exec-summary", "redteam"):
+    if target not in (
+            "research", "value-selection", "strategy-review", "section",
+            "exec-summary", "redteam"):
         return {"passed": False, "issues": ["unsupported context target"]}
     documents, load_issues = load_state(state_dir)
     if load_issues:
@@ -4450,6 +4999,7 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
     try:
         if target == "research": payload = _compile_research(documents)
         elif target == "value-selection": payload = _compile_value_selection(documents)
+        elif target == "strategy-review": payload = _compile_strategy_review(documents)
         elif target == "section":
             if target_id is None: raise ValueError("section target requires --id")
             payload = _compile_section(documents, target_id)
@@ -5375,7 +5925,7 @@ def add_cli_parsers(sub):
     p = sub.add_parser("promote-research"); p.add_argument("--state-dir", required=True); p.add_argument("--intel-proposal", required=True); p.add_argument("--links-proposal", required=True)
     p = sub.add_parser("apply-auto-state"); p.add_argument("--state-dir", required=True)
     p = sub.add_parser("freeze-snapshot"); p.add_argument("--state-dir", required=True); p.add_argument("--force", action="store_true")
-    p = sub.add_parser("compile-context"); p.add_argument("--state-dir", required=True); p.add_argument("--target", required=True, choices=["research", "value-selection", "section", "exec-summary", "redteam"]); p.add_argument("--id", default=None); p.add_argument("--role", default=None); p.add_argument("--output", default=None); p.add_argument("--token-budget", default=24000, type=int)
+    p = sub.add_parser("compile-context"); p.add_argument("--state-dir", required=True); p.add_argument("--target", required=True, choices=["research", "value-selection", "strategy-review", "section", "exec-summary", "redteam"]); p.add_argument("--id", default=None); p.add_argument("--role", default=None); p.add_argument("--output", default=None); p.add_argument("--token-budget", default=24000, type=int)
     p = sub.add_parser("audit-realization"); p.add_argument("--state-dir", required=True); p.add_argument("--section-ref", required=True); p.add_argument("--section", required=True); p.add_argument("--hints", default=None, help="deprecated v3.0 compatibility input"); p.add_argument("--brief", required=True); p.add_argument("--semantic", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("customer-fit"); p.add_argument("--state-dir", required=True); p.add_argument("--checkpoint", default="strategy", choices=["strategy", "submission"]); p.add_argument("--judgments", default=None); p.add_argument("--realization-dir", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("archive-state"); p.add_argument("--state-dir", required=True); p.add_argument("--bundle-dir", required=True); p.add_argument("--allow-draft", action="store_true")

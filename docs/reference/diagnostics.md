@@ -63,6 +63,7 @@
 |:---|:---|:---|
 | `state.*`、`schema.*`、`ref.*`、`manifest.*` | 五文件、版本、全局 ID、source/run manifest | `main` 或对应文件 |
 | `decision.*` | Gate ID、状态、open、fog、assumed | `gate1` |
+| `strategy.*` | 一页纸完整性、互换测试、rubric、批准与 Section spine | `task2.5` / `human` |
 | `need.*`、`vp.*`、`portfolio.*` | 客户结果、价值路径、lead 选择 | `task1` / `task2.5` |
 | `evidence.*`、`claim.evidence*` | 用途、第三方边界、匿名投影、证据质量 | `task2` |
 | `claim.*`、`metric.*` | Claim 三轴、scope、测量、authority、Action 强度 | `task2.5` / `gate1` |
@@ -73,6 +74,8 @@
 | `realization.*` | brief lineage、snapshot、正文 hash、语义状态、摘要 | `task3` / `task3.5` |
 
 具体修复以诊断对象的 `owner`、`observed`、`expected` 和 `repair_options` 为准；同一前缀的不同规则可能回到不同 owner。
+
+红队另用 `failure_class` 做质量归因：`strategy_hollow`、`throughline_break`、`cliche_style` 或 `none`。它不是新的 canonical kind；一次质疑只选一个主失败，用于决定回 Task 2.5/Section spine 还是 Task 3 表达层。
 
 `acceptance.authority_scope` 是 bootstrap/draft 的前置完整性门：AcceptanceContract 一旦填写 `authority_ref`，该 authority 必须已经对 AC 的精确对象与 `commitment_authority` 用途具备 scope。若标书 Requirement 确实规定了该交付/验收，由 Task 1 在 Requirement 上补齐 `authority_uses` 与 `authorizes_refs`；若没有，就清空伪 authority 并将新增边界交给 Gate，不能等 Task 2.5 通过舍弃交付路径来绕过。
 

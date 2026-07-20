@@ -36,7 +36,8 @@ python3 tools/prop_tools.py check-canonical --state-dir "$STATE" --stage submiss
 | `task1`、Requirement、Role、Need、Section 映射 | Task 1 | 补拆标书、客户结果或章节映射 |
 | `gate1`、能力、资源、预算、authority、assumed | Gate 1 | 由投标人确认、缩小范围、降级承诺或撤回 |
 | `task2`、Evidence、private-only、质量不足 | Task 2 | 抓取原文、补 scoped link、保留 gap 或降低 Claim 强度 |
-| `task2.5`、lead、VP、Claim、Action、DecisionJob、visible output contract | Task 2.5 | 重新选择组合、补完整执行链/成果契约或退回候选 |
+| `task2.5`、one-page、name swap、section spine、lead、VP、Claim、Action、DecisionJob、visible output | Task 2.5 | 重收敛策略/组合，补完整推导、执行链或成果契约 |
+| `human`、strategy approval pending/assumed | 写作前策略关卡 | 一次批准当前一页纸，或给一条 focused revision 回 Task 2.5 |
 | `task3`、Requirement 未回答、成果字段未填、正文遗漏 | 对应章节 writer | 用当前 brief 重写该章，再独立审计 |
 | `task3.5`、summary 白名单或过度表述 | 方案综述 | 只复用 valid realization，删除新增主张 |
 | realization stale / invalid | 独立 auditor | 重新编译 brief，对当前正文重新审计 |
@@ -65,6 +66,10 @@ python3 tools/prop_tools.py compile-context --state-dir "$STATE" \
 ### `decision.open`、`decision.fog` 或 `decision.assumed`
 
 把能查的事实交研究，把范围外事项明确排除；只有投标人能决定的边界进入 Gate 1。`assumed` 必须由人工确认并同步修改实际对象，不能在 submission 阶段豁免。
+
+### `strategy.approval.*` 或 `strategy.name_swap.*`
+
+pending / changes_requested 表示还不能写章节；从 `strategy-review` 一次检查张力、洞察、记忆句、推导、互换和 section spine。`name_swap=passes` 不是改公司名或加形容词，而是回 Task 2.5 补项目特定选择、机制与证明。`assumed` 可保留安全草案，但直接递交前必须由人批准并重做快照绑定产物。
 
 ### Evidence / authority blocker
 

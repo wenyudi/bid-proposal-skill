@@ -56,7 +56,7 @@ python3 -m py_compile tools/prop_tools.py tools/prop_v3.py
 - 不新增 legacy 功能；只维护紧急回退和旧项目可读性。
 - schema 变化必须显式升级 `schema_version` 或提供安全迁移，不能把 unknown / inferred 自动升为 verified / committed / publishable。
 - 当前 generation snapshot 绑定五份 canonical 与 source/run fingerprint。除非同时完成依赖级失效设计和测试，否则任一 authority 输入变化后都应让 snapshot-bound brief、章节、摘要和 realization 失效。
-- v3.1 新状态使用 `customer-value/v2` 与 `strategy/v4`；旧 v1/v3 archive 必须保持只读兼容，不能静默重写。
+- v3.2 新状态使用 `customer-value/v2` 与 `strategy/v5`；旧 customer-value/v1 与 strategy/v3/v4 archive 必须保持只读兼容，不能静默重写。显式迁移的一页纸策略只能 assumed，不能冒充人工批准。
 - `archive-state --allow-draft` 只能放宽 submission blocker，不能接收 schema、source 或 fatal 损坏。
 - 客户稿继续禁止 URL、内部 ID、private 原句、策略/模式/工具痕迹和适配度。
 

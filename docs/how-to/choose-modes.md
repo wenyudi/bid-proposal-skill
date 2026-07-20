@@ -7,8 +7,8 @@
 | 场景 | 参数 | 影响 |
 |:---|:---|:---|
 | 小额、时间紧、竞争较弱，或先做初稿快评 | `-quick` | 聚焦研究；每批审 3 章；1 个 integrated 红队 |
-| 常规政企传媒标 | 不写参数 | standard；每批审 3 章；buyer_expert + audit_rival 两组红队 |
-| 预算大、多轮答辩、竞争强或风险高 | `-deep` | 更宽候选池和 Evidence；每批审 2 章；四独立红队 |
+| 常规政企传媒标 | 不写参数 | standard；每批审 3 章；strategy_critic + audit_rival 两组红队 |
+| 预算大、多轮答辩、竞争强或风险高 | `-deep` | 更宽候选池和 Evidence；每批审 2 章；buyer + strategy_critic + audit + rival |
 
 深度影响工作量，不改变硬门。`-quick` 也不能跳过 mandatory、真实性、预算、授权和兑现检查。
 
@@ -44,7 +44,7 @@
 
 默认保留人工关卡：
 
-- standard / deep：Gate 1 决策确认 + Gate 2 红队定稿；
+- standard / deep：Gate 1 真实边界确认 + 一次写作前策略确认 + Gate 2 红队定稿；
 - quick：用 integrated 红队减少调用；若要 `submission_ready`，仍需 Gate 2 attestation。
 
 只有需要无人值守地产出保守草案时才使用 `-auto`：
@@ -53,7 +53,7 @@
 /proposal /路径/项目.pdf -quick -auto
 ```
 
-`-auto` 会把仍需人拍板的问题记录为 `assumed`，并撤销或降级依赖这些问题的 committed / confirmed / 发布授权。它可以解锁安全草案，但最终一定是 `submission_ready=false`，直到人工确认并重新复验。unknown 资源、预算和容量继续保持 unknown；系统使用 draft_ready/intended/planned 语义，不为推进生成补造 provisional low/high。
+`-auto` 会把仍需人拍板的问题和写作前的一页纸策略批准记录为 `assumed`，并撤销或降级依赖这些问题的 committed / confirmed / 发布授权。它可以解锁安全草案，但最终一定是 `submission_ready=false`，直到人工确认并重新复验。unknown 资源、预算和容量继续保持 unknown；系统使用 draft_ready/intended/planned 语义，不为推进生成补造 provisional low/high。
 
 不要用 `-auto` 绕过团队可用性、报价、免费增值、关键 KPI、SLA、案例署名或数字发布授权。
 

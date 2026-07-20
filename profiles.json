@@ -24,7 +24,7 @@
     "v3_candidate_breadth": {"low": 8, "high": 14},
     "v3_evidence_depth": "balanced",
     "v3_context_token_budget": 24000,
-    "redteam_roles": ["buyer_expert", "audit_rival"],
+    "redteam_roles": ["strategy_critic", "audit_rival"],
     "audit_batch_size": 3
   },
   "deep": {
@@ -38,7 +38,7 @@
     "v3_candidate_breadth": {"low": 12, "high": 20},
     "v3_evidence_depth": "deep",
     "v3_context_token_budget": 36000,
-    "redteam_roles": ["buyer", "expert", "audit", "rival"],
+    "redteam_roles": ["buyer", "strategy_critic", "audit", "rival"],
     "audit_batch_size": 2
   }
 }

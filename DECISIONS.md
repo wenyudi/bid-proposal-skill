@@ -95,7 +95,7 @@ Task 3、Task 3.5 与红队无 canonical 写权限。它们发现边界问题时
 - `open_questions` **没有数量下限**。路线本来就清晰时允许 `[]`；禁止为了模式配额凑问题。
 - 每个 open question 必须有全局唯一、不可变的 `GATE-*` id；只有 producer=gate1/human/main 能把它 resolved。作为 authority 时，`affected_refs` 必须明确包含被授权对象，任意虚构字符串不能解锁承诺。
 - `depends_on` 只引用同一数组中的 `title`；不得自依赖、循环依赖或引用不存在的名称。
-- `resolved` 保存用户原意，不只写“已确认”。答案还要同步回 `buyer_insight`、`differentiators`、`budget_strategy`、`narrative`、`sections` 等真正受影响字段。
+- `resolved` 保存用户原意，不只写“已确认”。答案还要同步回 `buyer_insight`、`budget_strategy`、候选策略、Claim/Action/Resource、`narrative`、`sections` 等真正受影响字段。
 - v3 的 `resolved` 原文留在内部 canonical；section brief 只编译 `safe_constraint` 和受影响对象的 approved projection。涉及底价、关系、个人偏好或内部争议时 `visibility=private`，不得把原答复发送给写作/红队或写进正文。
 
 ## 状态与决策前沿
@@ -141,19 +141,36 @@ $PY {TOOLSDIR}/prop_tools.py check-strategy {TMPDIR}/strategy.json --mode {depth
    - 已证明不影响终点 → 移入 `out_of_scope`；
    - 仍不够清楚 → 留在迷雾，继续解决它依赖的前沿。
 7. 重新计算前沿，下一轮仍只问一个。用户主动说“其余全部按推荐”时，可按其明确授权批量标记，不强迫逐题确认。
-8. 前沿、被阻塞和迷雾均清零后，给出“已确认决策摘要”，最后只问一次“是否按这版策略继续”。v3 应用最终确认 ChangeSet 并运行 `check-canonical --stage draft`；legacy 运行 `--require-settled`。Task 2 可在决策已清后开始，写作还须 Task 2.5 后的 generation gate。
+8. 前沿、被阻塞和迷雾均清零后，给出“能力与承诺边界摘要”并进入研究；不在研究前要求用户批准最终创意策略。写作还须通过 Task 2.5 后的一页纸策略关卡与 generation gate。
+
+## 写作前的一页纸策略关卡
+
+这不是第二套 Gate 地图，也不逐项问五个 rubric 维度。Task 2.5 研究后写 `development_status=ready_for_review` 与 `approval=pending`，主 agent 运行 `compile-context --target strategy-review`，一次展示：
+
+- 客户张力与依据；
+- 尖锐洞察、核心命题和十秒记忆句；
+- 洞察→策略→表达→执行→证明；
+- 名称互换结果、落地可信度和五维弱项；
+- 每章对核心命题的独有贡献与交接。
+
+然后只问：“是否按这一页进入写作？”
+
+- 用户确认：`producer=human` 的 ChangeSet 只把当前页写为 `approval.status=approved`，记录 `reviewed_by/reviewed_at/note`；若同时改句子，也在同一事务内更新 Big Idea/narrative/Section strategy role。
+- 用户要求修改：写 `changes_requested` 与一条聚焦意见，回 Task 2.5；不要让 writer 先写几章试试看。
+- 核心语义以后变化：原批准自动失效，必须回到 pending 并重走一次关卡。
+- 这一页是唯一高价值人工策略检查点；Gate 1 仍只确认真实能力/资源/授权，Gate 2 只处理成稿后的根因。
 
 ### `-auto` 行为
 
 `-auto` 不弹 Gate，但也不得把假设伪装成用户确认：
 
 1. 将迷雾逐项归位：可保守假设的升格为 open 决策；可研究的移入 `intel_needs`；范围外的移入 `out_of_scope`。
-2. v3 运行 `$PY {TOOLSDIR}/prop_tools.py apply-auto-state --state-dir {TMPDIR}`；legacy 才运行 `apply-auto-decisions strategy.json`。不要手改三个状态字段。
+2. v3 在 Gate 1 运行一次 `$PY {TOOLSDIR}/prop_tools.py apply-auto-state --state-dir {TMPDIR}`；Task 2.5 形成 ready-for-review 一页纸后再运行一次，把策略批准明确记为 `assumed`。legacy 才运行 `apply-auto-decisions strategy.json`。不要手改状态字段。
 3. v3 在 Task 2.5 后运行 generation gate；legacy 运行 `check-strategy ... --auto --require-settled`。
 4. Task 2.5 不得仅因同一边界仍未人工确认而把 assumed 重开为 open；它应按 safe_constraint 形成收窄的 draft_ready/intended/planned 草案。unknown resource/budget 继续保持 unknown，禁止为通过 generation 编造 provisional low/high。
 5. 新 Evidence 确实改变边界而需要重开时，完整 Gate 对象必须同步设为 `status=open`、`resolved=null`、`assumption_risk=false`；不得留下 assumed/resolved 残值。auto 再由 `apply-auto-state` 原子转换，不能手改回 assumed。
-6. 所有 assumed 决策必须随卷册进入内部研判和人工待办，递交前由投标人复核。
-7. v3 assumed 决策是 submission blocker。它可以解锁安全草案，但不能用 soft score、auto 标志或 accepted risk 豁免成可直接递交。
+6. 所有 assumed 决策与 assumed 策略批准必须随卷册进入内部研判和人工待办，递交前由投标人复核。
+7. v3 assumed 决策/策略都是 submission blocker。它们可以解锁安全草案，但不能用 soft score、auto 标志或 accepted risk 豁免成可直接递交。
 
 ## Gate 2：红队定稿循环
 

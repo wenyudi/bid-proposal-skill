@@ -1,6 +1,6 @@
 # 为什么需要快照与兑现审计
 
-canonical 正确，不代表最终文字真的表达了它。writer 可能漏写 Requirement、把 intended 写成保证、扩大 scope，或用流程名词替代客户真正想看到的成果。v3.1 用 snapshot 固定输入，用独立 realization 审计固定“当前正文究竟兑现了什么”。
+canonical 正确，不代表最终文字真的表达了它。writer 可能漏写 Requirement、把 intended 写成保证、扩大 scope，或用流程名词替代客户真正想看到的成果。v3.2 还可能出现一页纸正确但章节主线漂移；它用 snapshot 固定输入，用独立 realization 审计固定兑现，再用 strategy critic 检查全案推导。
 
 ## Snapshot 解决版本混用
 
@@ -20,7 +20,7 @@ generation gate 达到 `safe_draft_ready` 后，`freeze-snapshot` 绑定：
 
 v3.0 让 writer 同时写 `realization-hints`，再让 auditor 校验。这产生两份 sidecar、重复定位和额外出错面，而且 writer 的自我定位不能替代独立证据。
 
-v3.1 中 writer 只写客户正文。未参与写作的 auditor 直接从全文为每条预期对象给出唯一逐字 quote：
+v3.2 中 writer 只写客户正文。未参与写作的 auditor 直接从全文为每条预期对象给出唯一逐字 quote：
 
 - Claim/Action：contribution、entailed/partial/contradicted/overstated/not_found、实际 scope/commitment 和 Evidence；
 - Requirement：addressed/partial/missing/contradicted；

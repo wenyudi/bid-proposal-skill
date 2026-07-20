@@ -76,7 +76,7 @@ promote-research --state-dir DIR
 apply-auto-state --state-dir DIR
 ```
 
-把 v3 的 open 决策转为可追溯 `assumed`。运行前 `not_yet_specified` 必须已经归入明确决策、研究 gap 或 out of scope。依赖该 Gate 的 committed、confirmed 或发布授权会被同步降级。
+把 v3 的 open 决策转为可追溯 `assumed`。Task 2.5 后再次运行时，也会把 ready-for-review 且 pending 的一页纸策略写成 `assumed`，只解锁安全草案；明确 `changes_requested` 不会被自动覆盖。运行前 `not_yet_specified` 必须已经归位；依赖 Gate 的 committed、confirmed 或发布授权会被同步降级。
 
 ### `freeze-snapshot`
 
@@ -90,7 +90,7 @@ freeze-snapshot --state-dir DIR [--force]
 
 ```text
 compile-context --state-dir DIR
-                --target research|value-selection|section|exec-summary|redteam
+                --target research|value-selection|strategy-review|section|exec-summary|redteam
                 [--id ID] [--role ROLE] [--output FILE]
                 [--token-budget N]
 ```
@@ -101,9 +101,10 @@ compile-context --state-dir DIR
 |:---|:---|:---|
 | `research` | 无 | `derived/briefs/research.json` |
 | `value-selection` | 无 | `derived/briefs/value-selection.json` |
+| `strategy-review` | 无；非 snapshot-bound | `derived/briefs/strategy-review.json` |
 | `section` | 必须 `--id CH-*` | `derived/briefs/sections/<section-ref>.json` |
 | `exec-summary` | 无 | `derived/briefs/exec-summary.json` |
-| `redteam` | 必须 `--role`；profile 可取 integrated / buyer_expert / audit_rival / 四独立角色 | `derived/briefs/redteam/<role>.json` |
+| `redteam` | 必须 `--role`；profile 可取 integrated / strategy_critic / audit_rival / buyer / audit / rival | `derived/briefs/redteam/<role>.json` |
 
 `--token-budget` 的 CLI 默认值为 24000。proposal 主流程对 `value-selection` 显式使用当前模式 `v3_context_token_budget` 的 1.5 倍（quick / standard / deep 为 24000 / 36000 / 54000），因为 Task 2.5 必须接收可完整 upsert 和交叉校验的 canonical 对象；超限时仍 fail-closed，不会静默删 must_use。
 

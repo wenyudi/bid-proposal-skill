@@ -1,6 +1,6 @@
 # proposal
 
-面向广告与传媒公司的政企技术标生成 skill。proposal 3.1 默认使用 lean v3：先校验标书要求、客户价值、证据、责任、资源与验收边界，再生成客户容易阅读、投标人能够兑现的方案。
+面向广告与传媒公司的政企技术标生成 skill。proposal 3.2 默认使用 strategy-led lean v3：先校验标书要求与真实边界，再把候选洞察收敛成一页纸策略，让所有章节围绕同一句评委可复述的主张展开。
 
 > 合规零遗漏 · 真懂客户 · 亮点值得选 · 证据可信 · 交付可兑现 · 风险妥帖
 
@@ -11,6 +11,7 @@
 - 把 mandatory、评分项、预算和交付物拆成不可被创意文案覆盖的硬门。
 - 从实际判断、使用、监督和担责角色出发，连接客户需求、决策标准与价值主张。
 - 候选阶段保持发散，公开研究后才选择 lead / supporting 亮点；不按亮点数量或篇幅凑竞争力。
+- 把“想”和“写”分开：研究后先确认客户张力、尖锐洞察、记忆句、推导链、互换测试和逐章贡献，再启动分章写作。
 - 把承诺连接到动作、责任、资源、时点和验收，避免“创意很好，但无法落地”。
 - 让每个 lead 亮点在正文交出一个小而具体的客户可见成果，不用流程名词或外部附件冒充证明。
 - writer 只写 Markdown；独立审计直接检查要求、Claim/Action 和成果字段是否兑现、是否夸大。
@@ -30,8 +31,9 @@
    ```
 
 3. 在 Gate 1 逐题确认只有投标人能决定的能力、资源、报价或授权边界。
-4. 调研、亮点选择、分章写作和独立审计完成后，在 Gate 2 处理红队根因并确认定稿。
-5. 只在最终 receipt 明确 `delivery_status=submission_ready`，且人工待办中的硬项已清零后，才把 `技术方案-完整版.md` 作为递交稿继续排版。
+4. 调研和亮点选择后，只确认一次一页纸策略，再启动分章写作。
+5. 独立审计完成后，在 Gate 2 处理策略批评与其他红队根因并确认定稿。
+6. 只在最终 receipt 明确 `delivery_status=submission_ready`，且人工待办中的硬项已清零后，才把 `技术方案-完整版.md` 作为递交稿继续排版。
 
 第一次使用建议跟随[完成第一份方案](docs/tutorial/first-proposal.md)。
 
@@ -72,6 +74,7 @@
 | 整理标书、素材和纪要 | [准备输入](docs/how-to/prepare-inputs.md) |
 | 选择 quick / deep / narrative / auto | [选择运行模式](docs/how-to/choose-modes.md) |
 | 录入和核验真实案例 | [维护案例库](docs/how-to/manage-casebase.md) |
+| 用赢标案和失败史校准“品味” | [校准策略品味](docs/how-to/calibrate-strategy-taste.md) |
 | 恢复 v3 或迁移旧项目 | [恢复与迁移](docs/how-to/resume-or-migrate.md) |
 | 处理失败、stale 或 blocker | [解除阻断](docs/how-to/resolve-blockers.md) |
 | 评估修订是否更优 | [运行方案质量基线](docs/how-to/run-evaluation-baseline.md) |
@@ -82,6 +85,7 @@
 | 查诊断字段和严重度 | [诊断参考](docs/reference/diagnostics.md) |
 | 理解为什么改成 v3 | [为什么是 v3](docs/explanation/why-v3.md) |
 | 理解客户价值底座 | [客户价值模型](docs/explanation/customer-value-model.md) |
+| 理解为何先做一页纸策略 | [策略质量上限](docs/explanation/strategy-quality-ceiling.md) |
 | 理解证据、授权和隐私 | [证据、授权与隐私](docs/explanation/evidence-authority-and-privacy.md) |
 | 理解快照与兑现审计 | [兑现审计与快照](docs/explanation/realization-and-snapshots.md) |
 
