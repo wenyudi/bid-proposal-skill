@@ -16,7 +16,7 @@
 | 006 | 双标型评估基线:数字运营 + 内容视频 fixture、质量清单、真实 pre-change run | P1 | L | 007,001,002,004** | BLOCKED — fixtures ready; pre-change run invalid because its source was not frozen before v3.1 edits |
 | 005 | 叙事工艺送达写作 agent(TYPES.md → Task 3/3.5 断链) | P2 | M | 004* | DONE — `narratives.json` 单一事实源，brief 只注入当前短 guide |
 | 008 | 项目化成果与竞争稿就绪门:proof contract → brief → 独立审计 → submission | P1 | L | 004,006***;005* | REJECTED — 原方案过重；由 v3.1 轻量 `visible_outputs` 实现核心效果，不新增 readiness/canonical |
-| 009 | v4 轻量重建:商业方案 + 默认图片 PPT 交接 | P0 | L | — | TODO — 动手第一步先打 tag `v3.4.0-heavy`;规格与 STOP conditions 见 009 文件 |
+| 009 | v4 轻量重建:商业方案 + 默认图片 PPT 交接 | P0 | L | — | DONE — 2026-07-20 完成;tag `v3.4.0-heavy` 已建;工具 14 tests 绿;端到端真实运行为验收续项 |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

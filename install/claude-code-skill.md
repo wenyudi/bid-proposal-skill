@@ -1,7 +1,11 @@
 # 安装到 Claude Code
 
-安装与宿主注册说明已迁移到统一的 GitHub 文档：
+仓库是 skill 的唯一事实来源。宿主入口 `~/.agents/skills/proposal/SKILL.md` 只指向本仓库，不复制完整定义。
 
-- [安装并注册 proposal](../docs/how-to/install-and-register.md)
+注册步骤：
 
-旧路径保留用于兼容已有书签。仓库仍是 skill 的唯一事实来源；不要把完整 prompts 复制到宿主入口。
+1. clone 本仓库到本地（如 `~/Code/proposal`）。
+2. 在宿主 skills 目录建入口 `proposal/SKILL.md`，指向仓库绝对路径（参见 `../.agents/skills/proposal/SKILL.md` 示例：读取仓库的 `SKILL.md` 并执行 v4 流程）。
+3. 新开会话输入 `/proposal <标书或brief路径> [素材路径]`。
+
+用法与产物见 [README](../README.md)。

@@ -1,112 +1,69 @@
 # proposal
 
-面向广告与传媒公司的政企技术标生成 skill。proposal 3.4 默认使用 presentation-ready comparative strategy：先校验标书要求与真实边界，再用研究比较最终命题与最强替代，收敛一页纸策略和一个客户主亮点，让正文与可选图片 PPT 结构稿围绕同一句评委可复述的主张展开。
+面向广告与传媒公司的商业方案与投标方案生成 skill（v4）。给一批材料，产出一份成熟、客户可读的方案：全案围绕一句评委/客户能复述的**主张**展开；有评分表时以评分表为骨架覆盖每一项，并默认产出图片 PPT 结构稿交给下游图片工作流。
 
-> 合规零遗漏 · 真懂客户 · 亮点值得选 · 证据可信 · 交付可兑现 · 风险妥帖
-
-本项目只覆盖技术标。投标函、授权书、承诺函、法定报价表等仍须按标书原模板填写。
+> 低仪式、高工艺 · 缺口具体虚构补全 + 风险登记 · 地板零失分、天花板顶满 · PPT 默认交接
 
 ## 它解决什么
 
-- 把 mandatory、评分项、预算和交付物拆成不可被创意文案覆盖的硬门。
-- 从实际判断、使用、监督和担责角色出发，连接客户需求、决策标准与价值主张。
-- 候选阶段保持发散；公开研究发现新价值机制时可重新打开候选，再选择 lead / supporting，不按亮点数量或篇幅凑竞争力。
-- 把“想”和“写”分开：研究后比较最终命题与最强替代，确认决定性依据、取舍、记忆句、推导链、互换测试和逐章贡献，再启动分章写作。
-- 把“生成”和“挑错”分开：策略与正文使用正向模式和明确输出契约，反模式只进入独立 critic 与失败复盘。
-- 把承诺连接到动作、责任、资源、时点和验收，避免“创意很好，但无法落地”。
-- 让每个 lead 在正文交出小而具体的客户可见成果，并只选一个 signature 主亮点，其余成果退到支撑与查验层。
-- writer 只写 Markdown；独立审计直接检查要求、Claim/Action 和成果字段是否兑现、是否夸大。
-- 最终用 PPT 呈现时，把已审计内容压缩为 core/appendix 页序、唯一 signature 页、准确上屏文案、画面任务和素材清单，再交给 image2 等图片工作流。
-- 把 private 纪要、内部模型、URL、诊断和适配度留在内部，不破坏客户阅读体验。
+- 有评分表时先拆成**地板**（客观/mandatory）与**天花板**（高权重主观项），正文覆盖每一项、用**响应对照索引**证明，并把力气按权重压到高分项。
+- 把"想"和"写"分开：先发散多个主张、按短板 + 差异化收敛一版**制胜一页纸**（含最强替代与互换测试），一次人工确认后再并行分章写作。
+- 缺失素材用**具体、可信**的内容虚构补全，让方案读起来成熟完整；每处虚构源头申报进 `_风险与待核实.md`，按 权重×风险 排序供你核实替换。
+- 独立于 writer 的**三-lens 复核**（覆盖审计 / 对手视角抓"合规但空" / 文风与漏报），循环到过。
+- 默认把定稿压成图片 PPT 结构稿（core/appendix、唯一 signature 页、上屏文案、画面任务、素材三模式、证据图红线），交给 image2 等图片工作流。
 
-复杂任务找路和压力追问的思路参考了 [mattpocock/skills](https://github.com/mattpocock/skills) 中的 wayfinder 与 grill-me，并已内生为 canonical、ChangeSet、单题 Gate 和根因诊断；运行时不需要 skill 之间互相调用。生成阶段统一采用“目标—依据—工作顺序—安全替代—输出契约”，缺失事实会落为 `unknown/gap + owner`。
+政企技术标的重型合规引擎（5-canonical + 硬门）已退役到 git 历史 tag `v3.4.0-heavy`；需要时 `git checkout v3.4.0-heavy` 恢复。
 
 ## 快速开始
 
-要求 Python 3.8+。运行宿主还需要具备文件读写、子 agent 和联网检索/抓取能力；Python 工具本身只使用标准库。
+要求 Python 3.8+（工具只用标准库）；运行宿主需具备文件读写、子 agent 和联网检索/抓取能力。新开会话，输入：
 
-1. 按[安装与注册指南](docs/how-to/install-and-register.md) clone 仓库并注册 skill。
-2. 新开会话，输入：
+```text
+/proposal /绝对路径/标书或brief.pdf /绝对路径/素材/
+```
 
-   ```text
-   /proposal /绝对路径/招标文件.pdf /绝对路径/投标素材/ -deep -story
-   ```
-
-3. 在 Gate 1 逐题确认只有投标人能决定的能力、资源、报价或授权边界。
-4. 调研后比较最终命题与最强替代，只确认一次一页纸策略和 signature 主亮点，再启动分章写作。
-5. 独立审计完成后，在 Gate 2 处理策略批评与其他红队根因并确认定稿。
-6. 需要图片版 PPT 时，生成并确认 `_PPT生产包/outline.md`，再交给图片工作流完成样张、逐页生成和 PPTX。
-7. 只在最终 receipt 明确 `delivery_status=submission_ready`，且人工待办中的硬项已清零后，才把客户可见内容继续排版。
-
-第一次使用建议跟随[完成第一份方案](docs/tutorial/first-proposal.md)。
+1. Task 1 拆评分表、收敛制胜一页纸，只确认一次"是否按这一页写"。
+2. 并行写作 + 三-lens 复核后，定稿正文、响应对照索引与图片 PPT 结构稿一起产出。
+3. 把 `_PPT生产包` 交给图片工作流做样张与逐页生成。
+4. 递交前清零 `_风险与待核实.md` 里的高风险项（虚构占位替换为真实素材）。
 
 ## 常用调用
 
 ```text
-/proposal <标书路径或粘贴文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-ppt] [-auto] [-legacy]
+/proposal <标书/brief 路径或粘贴文本> [素材路径] [-no-ppt] [-auto]
 ```
 
-- 无深度标志为 standard；`-quick` 用于小标或时间紧，`-deep` 用于重点标。
-- 无叙事标志时按标书选择；叙事只决定表达，不得裁剪评分项或加强承诺。
-- 默认 v3；`-v3` 只是兼容标志。只有显式 `-legacy` 才运行 2.x 回退链。
-- `-auto` 生成的是保守草案。任何 assumed 决策都会阻断直接递交。
-- `-ppt` 在内容审计和 Gate 2 后追加图片 PPT 结构生产包；图片与 PPTX 由下游工作流生成。
-- `casebase/` 中非 `_` 开头的案例会自动纳入；沟通、踏勘和售前纪要须标 `[notes]`。
-
-模式与组合示例见[选择深度、叙事和关卡模式](docs/how-to/choose-modes.md)。
+- 无深度/叙事旗标——永远尽力做到最好，叙事按标型自动选。
+- `-no-ppt`：只出正文，不产 PPT 结构稿。
+- `-auto`：跳过唯一人工确认，产草案（assumed 决策阻断直接递交）。
+- `casebase/` 中非 `_` 开头案例自动纳入；沟通/踏勘纪要标 `[notes]`。
 
 ## 你会得到什么
 
 ```text
 <方案标题>-<时间戳>/
-├── 技术方案-完整版.md          客户可见递交稿
-├── 分册/                       目录、对照表、综述和各章
-├── _内部研判.md                内部：策略、来源、fit、红队
-├── _人工待办.md                内部：假设、缺口、占位符
-├── _PPT生产包/                 可选：结构稿与图片工作流交接 JSON
-├── _acceptance-receipt.json    内部：绑定 state/report hash 的终验结论
-└── _state/                     内部：canonical、快照和审计状态
+├── 方案正文.md              客户可读递交稿
+├── 响应对照索引.md          有评分表时；交付级
+├── _PPT生产包/              outline.md + deck-blueprint.json + presentation-validation.json
+├── _风险与待核实.md          内部：虚构/假设做实清单（权重×风险排序）
+├── _研判.md                 内部：评分表拆解、一页纸、来源
+├── _score-table.json        内部：机器可读评分表
+└── _sections/               内部：分章工作文件
 ```
 
-下划线开头的文件和目录一律不递交。输出、归档和就绪信号详见[输出与可递交状态参考](docs/reference/outputs-and-readiness.md)。
-
-## 文档
-
-| 你现在要做什么 | 文档 |
-|:---|:---|
-| 第一次完整跑通 | [完成第一份方案](docs/tutorial/first-proposal.md) |
-| 安装或注册 | [安装与注册](docs/how-to/install-and-register.md) |
-| 整理标书、素材和纪要 | [准备输入](docs/how-to/prepare-inputs.md) |
-| 选择 quick / deep / narrative / auto | [选择运行模式](docs/how-to/choose-modes.md) |
-| 录入和核验真实案例 | [维护案例库](docs/how-to/manage-casebase.md) |
-| 用赢标案和失败史校准“品味” | [校准策略品味](docs/how-to/calibrate-strategy-taste.md) |
-| 恢复 v3 或迁移旧项目 | [恢复与迁移](docs/how-to/resume-or-migrate.md) |
-| 处理失败、stale 或 blocker | [解除阻断](docs/how-to/resolve-blockers.md) |
-| 评估修订是否更优 | [运行方案质量基线](docs/how-to/run-evaluation-baseline.md) |
-| 生成 PPT 结构稿并交给 image2 | [生成 PPT 结构稿与图片工作流交接](docs/how-to/create-ppt-handoff.md) |
-| 查方案质量评估清单 | [方案修订质量评估清单](docs/reference/quality-checklist.md) |
-| 查 PPT blueprint 字段与校验 | [Presentation blueprint 参考](docs/reference/presentation-blueprint.md) |
-| 查命令与参数 | [命令行参考](docs/reference/command-line.md) |
-| 查流程、Task 和 Gate | [流程与硬门参考](docs/reference/workflow-and-gates.md) |
-| 查状态文件和写权限 | [Canonical 状态参考](docs/reference/canonical-state.md) |
-| 查诊断字段和严重度 | [诊断参考](docs/reference/diagnostics.md) |
-| 理解为什么改成 v3 | [为什么是 v3](docs/explanation/why-v3.md) |
-| 理解客户价值底座 | [客户价值模型](docs/explanation/customer-value-model.md) |
-| 理解为何先做一页纸策略 | [策略质量上限](docs/explanation/strategy-quality-ceiling.md) |
-| 理解证据、授权和隐私 | [证据、授权与隐私](docs/explanation/evidence-authority-and-privacy.md) |
-| 理解快照与兑现审计 | [兑现审计与快照](docs/explanation/realization-and-snapshots.md) |
+`_` 开头文件不递交。
 
 ## 安全边界
 
-proposal 不会替投标人确认资质、业绩、人员、报价、资源容量或保证性 KPI。以下任一情况存在时，输出不可直接递交：
+proposal 不替投标人确认资质、业绩、报价、资源容量或保证性 KPI。缺失素材会被**具体虚构补全**以保持方案完整，但每处都登记在 `_风险与待核实.md`；这些占位在核实/替换前**不可直接递交**，最终汇报首句会明确提示。证据类图片（案例现场、资质、数据截图）永不生成，只走真实素材。
 
-- 最终状态为 `submission_ready=false` 或未给出最终可递交结论；
-- mandatory、真实性、预算、授权、法律或兑现硬门未通过；
-- 正文仍有占位符，或 `_人工待办.md` 仍有硬项；
-- 运行使用了未经人工确认的 `-auto` 假设。
+## 文档
 
-`customer-fit` 只用于内部发现短板，输出 ordinal rating，不是评委分数或中标概率；未评价维度不会被包装成 competitive/strong。
+| 你要做什么 | 文档 |
+|:---|:---|
+| 查 PPT blueprint 字段与校验 | [Presentation blueprint 参考](docs/reference/presentation-blueprint.md) |
+| 改这个 skill | [贡献指南](CONTRIBUTING.md) |
 
 ## 维护
 
-仓库入口包括 [SKILL.md](SKILL.md)、[RULES.md](RULES.md)、[DECISIONS.md](DECISIONS.md)、[TYPES.md](TYPES.md) 和 `tools/`。修改前请阅读[贡献指南](CONTRIBUTING.md)。
+仓库入口：[SKILL.md](SKILL.md)、`prompts/`、`references/`、`tools/prop_tools.py`。改动前读 [CONTRIBUTING.md](CONTRIBUTING.md)。

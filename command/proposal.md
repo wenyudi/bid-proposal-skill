@@ -1,5 +1,5 @@
 ---
-description: 政企传媒投标方案 v3.4 — 比较策略命题、一页纸主线、客户主亮点、PPT 结构稿与 receipt 终验
+description: 商业方案与投标方案 v4 — 拆评分表、制胜一页纸、缺口虚构补全+风险登记、响应对照索引与默认图片 PPT 结构稿
 ---
 
 <command-instruction>
@@ -10,26 +10,13 @@ skill(name="proposal")
 ```
 
 Parse `$ARGUMENTS`:
-- 标书输入：本地文件路径（.pdf/.docx/.md/.txt）或粘贴的标书文本（二者必居其一，否则向用户索要）
-- 可选素材：资质/报价参考的路径；**沟通纪要**（踏勘/答疑会/售前笔记 → 标 `[notes]`，只作理解输入，不进正文）
-- 案例库：`{SKILLDIR}/casebase/` 非空则自动纳入，无需传路径
-- 模式标志：
-  - `-quick` → 快速应标（小标/时间紧）
-  - `-deep`  → 大标/重点项目（强竞争/多轮答辩）
-  - 无标志   → 标准投标（默认）
-- 叙事标志（可选，可与模式标志并用；无标志则由 Task1 按标书特征自动判定）：
-  - `-logic`    → 逻辑征服（论证链服人，适合技术分权重高/专家评委/暗标）
-  - `-story`    → 故事打动（叙事弧线动人，适合城市形象/文旅/品牌传播/有讲标环节）
-  - `-vision`   → 愿景共创（未来图景+伙伴关系，适合多年框架/长期代运营）
-  - `-evidence` → 数据实证（可核验结果说话，适合效果导向/投放增长类）
-- 关卡标志：
-  - `-auto` → 自动生成安全草案，跳过人工确认；`apply-auto-state` 将 Gate 与写作前策略批准记为 assumed、降级失效授权并进入待办，receipt 必须为 draft_only
-  - 无标志  → 默认停 ⛳ Gate 1、一次一页纸策略确认与 ⛳ Gate 2；每轮只问一个决策并给推荐。quick 合并红队调用，但要 submission-ready 仍需 Gate 2 attestation
-- 演示交付标志：
-  - `-ppt` → Gate 2 后追加 audited PPT 结构稿与 `_PPT生产包`；只做 image2 等图片工作流的前置交接，不在 proposal 内生成图片或 PPTX
-- 引擎标志：
-  - 无标志 / `-v3` → v3（默认；`-v3` 仅作兼容 no-op）
-  - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`，并使用独立的 legacy 状态与章节
+- 标书/brief 输入：本地文件路径（.pdf/.docx/.md/.txt）或粘贴文本（必需，否则向用户索要并等待）
+- 可选素材：能力/案例/报价/团队/品牌路径；沟通纪要（踏勘/答疑/售前 → 标 `[notes]`，只作内部校准，不进正文）
+- 案例库：`casebase/` 非 `_` 开头案例自动纳入
+- 标志：
+  - `-no-ppt` → 只出正文，跳过图片 PPT 结构稿（默认产出 PPT）
+  - `-auto`   → 跳过唯一人工确认，产保守草案；assumed 决策与虚构占位阻断直接递交
+- 无深度/叙事标志：永远尽力做到最好，叙事按标型自动选
 </command-instruction>
 
 <user-request>
@@ -38,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.4.0 · presentation-ready default
+proposal skill · 4.0.0 · lightweight commercial & bid proposal
 ```
