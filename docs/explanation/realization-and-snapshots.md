@@ -1,6 +1,6 @@
 # 为什么需要快照与兑现审计
 
-canonical 正确，不代表最终文字真的表达了它。writer 可能漏写 Requirement、把 intended 写成保证、扩大 scope，或用流程名词替代客户真正想看到的成果。v3.3 还可能出现一页纸正确但章节主线漂移；它用 snapshot 固定输入，用独立 realization 审计固定兑现，再用 strategy critic 检查全案推导、主亮点和阅读效率。
+canonical 正确，不代表最终文字真的表达了它。writer 可能漏写 Requirement、把 intended 写成保证、扩大 scope，或用流程名词替代客户真正想看到的成果。v3.4 还可能出现一页纸正确但章节或 PPT 页序主线漂移；它用 snapshot 固定输入，用独立 realization 审计固定兑现，再用 strategy critic 与 presentation validation 检查全案推导、主亮点和阅读效率。
 
 ## Snapshot 解决版本混用
 
@@ -10,7 +10,7 @@ generation gate 达到 `safe_draft_ready` 后，`freeze-snapshot` 绑定：
 - `source-manifest.json` 与 `run-manifest.json` hash；
 - 当前 policy version。
 
-结果是一个 `GS-*`。section、exec-summary 和 redteam brief 都记录它；fingerprint 不变时，各章 `compile-context` 直接复用已通过的 snapshot，避免重复做完整 generation 校验。
+结果是一个 `GS-*`。section、exec-summary、presentation 和 redteam brief 都记录它；fingerprint 不变时，各章 `compile-context` 直接复用已通过的 snapshot，避免重复做完整 generation 校验。
 
 当前仍采用全局失效：任一 canonical 或 authority manifest 改变，所有 snapshot-bound brief/章节/摘要/realization 都需重编译和复验。它比局部依赖图昂贵，但在投标承诺相互影响时更安全。
 
@@ -20,7 +20,7 @@ generation gate 达到 `safe_draft_ready` 后，`freeze-snapshot` 绑定：
 
 v3.0 让 writer 同时写 `realization-hints`，再让 auditor 校验。这产生两份 sidecar、重复定位和额外出错面，而且 writer 的自我定位不能替代独立证据。
 
-v3.3 中 writer 只写客户正文。未参与写作的 auditor 直接从全文为每条预期对象给出唯一逐字 quote：
+v3.4 中 writer 只写客户正文。未参与写作的 auditor 直接从全文为每条预期对象给出唯一逐字 quote：
 
 - Claim/Action：contribution、entailed/partial/contradicted/overstated/not_found、实际 scope/commitment 和 Evidence；
 - Requirement：addressed/partial/missing/contradicted；
@@ -57,6 +57,8 @@ Requirement addressed 和 Claim entailed 仍可能只得到一段正确但抽象
 
 综述最容易比正文说得更大。只有全部正式章 valid 后，工具才编译 exec-summary brief；白名单来自正式章 authoritative realization。综述可以压缩和重组已兑现内容，不能创造新 Claim、数字、案例、visible output 或强化承诺，并且仍需独立 audit。
 
+PPT 结构稿使用同一原则，但进一步把已兑现内容压缩为逐页判断与画面任务。`presentation` brief 只在正式章节 valid 后生成；blueprint 继续受 snapshot、required refs 和 truth boundary 约束。图片模型负责视觉呈现，不重新决定事实、策略或承诺。
+
 ## 什么变化需要重做什么
 
 | 变化 | 必须重做 |
@@ -64,6 +66,7 @@ Requirement addressed 和 Claim entailed 仍可能只得到一段正确但抽象
 | canonical / source / run | generation gate、snapshot、全部绑定 brief/正文/audit、摘要、装配与终验 |
 | 某章正文（canonical 未变） | 该章 audit；若摘要引用，再重编译/复审摘要 |
 | 方案综述正文 | 综述 audit |
+| PPT blueprint / outline | `validate-presentation`；若上游正文或 canonical 变化，先重新 compile presentation |
 | report 内容或路径 | `validate-run`；归档前再 `finalize-run` |
 | 恢复到新目录 | 重新 freeze/compile/audit；旧 compiled path 不跨目录有效 |
 

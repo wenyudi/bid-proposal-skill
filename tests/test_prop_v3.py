@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 
@@ -349,6 +350,127 @@ def _make_submission_ready_lean_state(directory):
     return documents, compiled, audited
 
 
+def _presentation_blueprint(compiled):
+    brief = compiled["brief"]
+    must_use = brief["must_use"]
+    strategy = must_use["one_page_strategy"]
+    thesis = strategy["core_thesis"]["recall_line"]
+    signature_ref = strategy["signature_output_ref"]
+    return {
+        "schema_version": "presentation-blueprint/v1",
+        "generation_snapshot_id": brief["generation_snapshot_id"],
+        "brief_hash": brief["brief_hash"],
+        "status": "outline_draft",
+        "deck": {
+            "title": "客户价值测试项目提案",
+            "audience": "采购方评标委员会与业务负责人",
+            "purpose": "让评委理解并相信单一责任链能够降低交付风险",
+            "aspect_ratio": "16:9",
+            "language": "zh",
+            "core_thesis": thesis,
+            "signature_output_ref": signature_ref,
+            "signature_slide_ref": "SLIDE-02",
+            "sample_slide_ref": "SLIDE-02",
+            "story_arc": [
+                {"beat": "进入", "purpose": "建立项目判断语境",
+                 "slide_refs": ["SLIDE-01"]},
+                {"beat": "主张与亮点", "purpose": "用责任卡证明核心选择",
+                 "slide_refs": ["SLIDE-02"]},
+                {"beat": "兑现", "purpose": "交出动作和验收闭环",
+                 "slide_refs": ["SLIDE-03"]},
+            ],
+            "visual_system": {
+                "concept": "一条可追踪的责任线贯穿全案",
+                "palette": "深蓝底、青绿色责任节点、白色正文",
+                "typography": "结论式大标题配紧凑信息层级",
+                "image_language": "清晰路径图与项目化责任卡",
+                "layout_rhythm": "主张页强聚焦，证明页用流程和卡片变化",
+            },
+        },
+        "slides": [
+            {
+                "id": "SLIDE-01", "n": 1, "track": "core",
+                "role": "cover", "emphasis": "standard",
+                "title": "一条责任链，贯穿每次交付",
+                "audience_takeaway": "本案围绕一个可验收的责任机制展开",
+                "render_text": {
+                    "title": "一条责任链，贯穿每次交付",
+                    "subhead": "客户价值测试项目提案",
+                    "key_points": [], "labels": [],
+                },
+                "visual": {
+                    "main_visual": "一条发光路径连接关键交付节点",
+                    "composition": "大标题居左，责任路径从左下延伸至右上",
+                    "prompt_seed": "克制的项目提案封面，一条清晰责任路径贯穿画面",
+                    "asset_requests": [{
+                        "asset_id": "ASSET-01", "role": "封面抽象责任路径",
+                        "mode": "generate", "status": "generate",
+                        "path": None, "rights_status": "cleared",
+                    }],
+                },
+                "source_refs": [], "truth_boundary": "",
+                "transition": {
+                    "inherits": "评委尚未看到本案的核心选择",
+                    "hands_off": "进入责任机制的客户价值证明",
+                },
+            },
+            {
+                "id": "SLIDE-02", "n": 2, "track": "core",
+                "role": "signature", "emphasis": "signature",
+                "title": "责任与检查节点，在一页内即可确认",
+                "audience_takeaway": "核心主张已经变成可当场检查的项目成果",
+                "render_text": {
+                    "title": "责任与检查节点，在一页内即可确认",
+                    "subhead": "项目责任卡",
+                    "key_points": ["责任人：项目经理", "检查节点：每个阶段交付前"],
+                    "labels": ["责任人", "检查节点"],
+                },
+                "visual": {
+                    "main_visual": "项目责任卡与两段式检查路径",
+                    "composition": "责任卡占据主视觉，节点路径作为支撑",
+                    "prompt_seed": "突出一张项目责任卡，清楚呈现责任人与检查节点",
+                    "asset_requests": [{
+                        "asset_id": "ASSET-02", "role": "signature 责任卡",
+                        "mode": "generate", "status": "generate",
+                        "path": None, "rights_status": "cleared",
+                    }],
+                },
+                "source_refs": [
+                    signature_ref, "VP-CLOSED-LOOP", "CL-CLOSED-LOOP", "M-01"],
+                "truth_boundary": "呈现已审计责任人与检查节点，不扩展额外 SLA",
+                "transition": {
+                    "inherits": "全案需要一个可指认的主要证明",
+                    "hands_off": "说明责任卡如何进入完整交付闭环",
+                },
+            },
+            {
+                "id": "SLIDE-03", "n": 3, "track": "core",
+                "role": "summary", "emphasis": "supporting",
+                "title": "责任、动作与验收共同闭合交付",
+                "audience_takeaway": "方案具有明确动作和验收路径",
+                "render_text": {
+                    "title": "责任、动作与验收共同闭合交付",
+                    "subhead": None,
+                    "key_points": ["单一责任人", "阶段检查", "验收留痕"],
+                    "labels": ["责任", "动作", "验收"],
+                },
+                "visual": {
+                    "main_visual": "责任、动作、验收三段闭环图",
+                    "composition": "横向三段流程，结论置于右侧",
+                    "prompt_seed": "用三段流程清楚解释责任动作与验收的闭环关系",
+                    "asset_requests": [],
+                },
+                "source_refs": ["DA-CLOSED-LOOP", "S-01"],
+                "truth_boundary": "沿用已审计动作与验收表述",
+                "transition": {
+                    "inherits": "主亮点已经可见",
+                    "hands_off": "形成评委可复述的最终判断",
+                },
+            },
+        ],
+    }
+
+
 class ProposalV3Tests(unittest.TestCase):
     def test_malformed_changeset_returns_repairable_issue(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -598,7 +720,7 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(
             installed["strategy.json"]["schema_version"], "strategy/v5"
         )
-        self.assertEqual(run["engine_version"], "3.3")
+        self.assertEqual(run["engine_version"], "3.4")
         self.assertTrue({
             "comparative_strategy", "research_reopen", "signature_output",
             "bootstrap_scaffold", "redteam_fit_judgments",
@@ -1573,14 +1695,29 @@ class ProposalV3Tests(unittest.TestCase):
             _make_state(state)
             with open(os.path.join(state, "sections", "section-1.md"), "w", encoding="utf-8") as handle:
                 handle.write("可恢复的章节正文\n")
+            presentation_path = os.path.join(
+                state, "presentation", "deck-blueprint.json")
+            _write_json(presentation_path, {
+                "schema_version": "presentation-blueprint/v1",
+                "revision": 1,
+            })
             first = prop_v3.archive_state(state, bundle, require_submission_ready=False)
             strategy_path = os.path.join(state, "strategy.json")
             strategy = prop_v3._read_json(strategy_path)
             strategy["revision"] = 2
             _write_json(strategy_path, strategy)
+            _write_json(presentation_path, {
+                "schema_version": "presentation-blueprint/v1",
+                "revision": 2,
+            })
             second = prop_v3.archive_state(state, bundle, require_submission_ready=False)
             archived = prop_v3._read_json(os.path.join(bundle, "_state", "strategy.json"))
             previous = prop_v3._read_json(os.path.join(bundle, "_state.last-good", "strategy.json"))
+            archived_presentation = prop_v3._read_json(os.path.join(
+                bundle, "_state", "presentation", "deck-blueprint.json"))
+            previous_presentation = prop_v3._read_json(os.path.join(
+                bundle, "_state.last-good", "presentation",
+                "deck-blueprint.json"))
             with open(os.path.join(bundle, "_state", "sections", "section-1.md"), "r", encoding="utf-8") as handle:
                 archived_section = handle.read()
 
@@ -1588,6 +1725,8 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(second["passed"], second.get("issues"))
         self.assertEqual(archived["revision"], 2)
         self.assertEqual(previous["revision"], 1)
+        self.assertEqual(archived_presentation["revision"], 2)
+        self.assertEqual(previous_presentation["revision"], 1)
         self.assertEqual(archived_section, "可恢复的章节正文\n")
 
     def test_archive_promotion_failure_preserves_target_and_last_good(self):
@@ -1779,6 +1918,21 @@ class ProposalV3Tests(unittest.TestCase):
             "supporting",
         )
 
+    def test_previous_33_policy_remains_readable(self):
+        documents = _lean_documents()
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            run_path = os.path.join(directory, "run-manifest.json")
+            run = prop_v3._read_json(run_path)
+            run.update(
+                engine_version="3.3",
+                policy_version="proposal-v3.3/policy-1",
+            )
+            _write_json(run_path, run)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertTrue(checked["passed"], checked["issues"])
+
     def test_section_narrative_role_overrides_or_scopes_secondary_guide(self):
         fixed_documents = _lean_documents()
         fixed_documents["strategy.json"]["narrative"].update(
@@ -1916,6 +2070,68 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(
             {item["field"] for item in signature["realized_fields"]},
             {"责任人", "检查节点"})
+
+    def test_presentation_blueprint_compiles_from_realized_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_submission_ready_lean_state(directory)
+            compiled = prop_v3.compile_context(directory, "presentation")
+            blueprint_path = os.path.join(
+                directory, "presentation-blueprint-input.json")
+            _write_json(blueprint_path, _presentation_blueprint(compiled))
+            output_dir = os.path.join(directory, "ppt-production")
+            validated = prop_v3.validate_presentation(
+                directory, compiled["output_path"], blueprint_path,
+                output_dir)
+            outline = Path(validated["outline_path"]).read_text(
+                encoding="utf-8") if validated["passed"] else ""
+            validation = (
+                prop_v3._read_json(validated["validation_path"])
+                if validated["passed"] else {})
+
+        self.assertTrue(compiled["passed"], compiled.get("issues"))
+        must_use = compiled["brief"]["must_use"]
+        self.assertEqual(
+            must_use["signature_output"]["id"],
+            "OUT-RESPONSIBILITY-CARD")
+        self.assertEqual(
+            {item["id"] for item in must_use["requirement_responses"]},
+            {"M-01", "S-01"})
+        self.assertTrue(validated["passed"], validated.get("issues"))
+        self.assertEqual(validated["slide_count"], 3)
+        self.assertIn("## 叙事节拍", outline)
+        self.assertIn("责任与检查节点，在一页内即可确认", outline)
+        self.assertIn("只有“上屏文案”进入画面", outline)
+        self.assertNotIn("M-01", outline)
+        self.assertEqual(validation["status"], "ready_for_outline_review")
+        self.assertFalse(validation["image_generation_started"])
+
+    def test_presentation_blueprint_rejects_unrealized_refs_and_lost_signature(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_submission_ready_lean_state(directory)
+            compiled = prop_v3.compile_context(directory, "presentation")
+            blueprint = _presentation_blueprint(compiled)
+            signature = blueprint["slides"][1]
+            signature["source_refs"] = [
+                "EV-PRIVATE-NOT-IN-BRIEF", "VP-CLOSED-LOOP", "M-01"]
+            blueprint["slides"][2]["role"] = "signature"
+            blueprint_path = os.path.join(directory, "invalid-blueprint.json")
+            _write_json(blueprint_path, blueprint)
+            result = prop_v3.validate_presentation(
+                directory, compiled["output_path"], blueprint_path)
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(any(
+            "outside the audited brief" in issue for issue in result["issues"]
+        ), result["issues"])
+        self.assertTrue(any(
+            "signature slide must cite" in issue
+            or "misses required presentation refs" in issue
+            for issue in result["issues"]
+        ), result["issues"])
+        self.assertTrue(any(
+            "signature role requires signature emphasis" in issue
+            for issue in result["issues"]
+        ), result["issues"])
 
     def test_fresh_redteam_quotes_compile_into_fit_judgments(self):
         with tempfile.TemporaryDirectory() as directory:

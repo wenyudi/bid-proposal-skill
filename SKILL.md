@@ -1,19 +1,19 @@
 ---
 name: proposal
-description: "政企传媒技术标 v3.3：拆硬要求，研究后比较策略命题，收敛评委可复述的一页纸与一个主亮点，再以同一主线生成可兑现正文，独立审计、策略批评和一键终验。Use when 用户要写投标方案、应标文件、政企客户提案，提供标书要求出方案，或输入 /proposal。"
+description: "政企传媒技术标 v3.4：拆硬要求，研究后比较策略命题，收敛评委可复述的一页纸与一个主亮点，再以同一主线生成可兑现正文或图片 PPT 结构稿，独立审计、策略批评和一键终验。Use when 用户要写投标方案、应标文件、政企客户提案、PPT 提案结构或图片版演示前置稿，提供标书要求出方案，或输入 /proposal。"
 ---
 
-# proposal v3.3
+# proposal v3.4
 
 为广告/传媒公司生成政企技术标。目标是让关键评委记住一个有据的核心主张，并沿同一推导链相信：方案懂客户、亮点值得选、正文有可检查成果、证据可信、交付可验、风险妥帖，同时 mandatory/scoring 零遗漏。每章以独有认知增量共同支撑这条主线。
 
-v3.3 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGACY.md`。错误保持显式，交付名称始终与 receipt 的真实 readiness 一致。
+v3.4 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGACY.md`。错误保持显式，交付名称始终与 receipt 的真实 readiness 一致。
 
 ## 交付与底层状态
 
 - 输入：标书路径或全文；可附资质、报价、团队、案例和品牌资料。沟通/踏勘纪要标 `[notes]`，只作 private 校准。
 - 自动读取 `casebase/` 中非 `_` 开头案例。
-- 客户卷册：`技术方案-完整版.md`、`分册/`。内部文件：`_内部研判.md`、`_人工待办.md`、`_state/`、`_acceptance-receipt.json`，均不递交。
+- 客户卷册：`技术方案-完整版.md`、`分册/`。需要图片版演示时另产 `_PPT生产包/outline.md + deck-blueprint.json`，交给下游图片工作流。内部文件：`_内部研判.md`、`_人工待办.md`、`_state/`、`_acceptance-receipt.json`，均不直接递交。
 - 范围只到技术标；投标函、授权书、承诺函和法定报价表按标书模板另行套用。
 
 五份 canonical 是唯一事实源：
@@ -45,7 +45,7 @@ v3.3 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGAC
 - 每个 committed Action 有唯一 accountable、责任、时点、资源、预算 treatment 与 Acceptance；组合不漏算、不超载。
 - 每章一个内嵌 primary DecisionJob、最多一个 secondary；每个 lead VP 至少一个 required customer-visible output。realization valid 需要全部 required fields 填实。
 - `strategy/v5` 写作前必须有 research-informed 一页纸：尖锐洞察、记忆句、推导链、最强替代与决定性依据、互换测试、落地可信度和逐章 spine；全部成果只选一个 `signature` 主亮点。人工只批准一次。`-auto` 可 assumed 生成安全草案，但阻断递交。
-- 每章 Requirement + Claim/Action + visible output 由未参与写作的 auditor 独立复核；综述只用 valid 白名单。
+- 每章 Requirement + Claim/Action + visible output 由未参与写作的 auditor 独立复核；综述和 PPT 结构稿只用 valid 白名单。
 
 这些约束只在底层出现。客户正文使用自然的客户语言，以事实投影、方案语气和明确边界保持真实；模型名、ID、状态、覆盖标签、fit、审计过程和 reserve 候选留在内部状态。
 
@@ -53,12 +53,13 @@ v3.3 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGAC
 
 - 深度：`-quick` / standard（默认）/ `-deep`。
 - 叙事：`-logic` / `-story` / `-vision` / `-evidence`；未指定由 Task 1 按 `TYPES.md` 选择，短 guide 从 `narratives.json` 编译。
+- 演示交付：`-ppt` 或用户明确要求 PPT/图片版方案时，在 Gate 2 后生成 `_PPT生产包`；默认流程不增加该阶段。
 - `profiles.json` 决定 token、字数、`redteam_roles` 和 `audit_batch_size`。v3 章节数完全等于 `strategy.sections`；profile 固定章数只用于 legacy。
 - Python 记为 `$PY`；JSON/Markdown 使用 UTF-8 无 BOM。
 
 生成阶段采用正向提示：先给交付目标和依据，再给工作顺序、安全替代动作与输出契约；缺失信息落为 `unknown/gap + owner`。真实性、隐私、授权和 mandatory 保留为少量硬边界。
 
-参考按阶段渐进加载：Task 1 只读 `references/strategy-patterns.md`；Task 2.5 先按策略骨架形成候选，再用 `references/strategy-rubric.md` 复核；writer 只读 `references/writing-patterns.md`；策略红队读取 rubric、`references/contrast-examples.md` 与 `references/anti-patterns.md`。反模式只服务独立批评和失败复盘，避免在生成前压缩发散或锚定套话。合成样例只作教学材料。真实失败按 `casebase/_quality-lessons/_template.md` 复盘，人工确认后才提升为共享样例。
+参考按阶段渐进加载：Task 1 只读 `references/strategy-patterns.md`；Task 2.5 先按策略骨架形成候选，再用 `references/strategy-rubric.md` 复核；writer 只读 `references/writing-patterns.md`；PPT planner 只读 `references/presentation-patterns.md`；策略红队读取 rubric、`references/contrast-examples.md` 与 `references/anti-patterns.md`。反模式只服务独立批评和失败复盘，避免在生成前压缩发散或锚定套话。合成样例只作教学材料。真实失败按 `casebase/_quality-lessons/_template.md` 复盘，人工确认后才提升为共享样例。
 
 派 agent 前由主 agent赋值：`{LANG}`、`{MODE}`、`{TMPDIR}`、`{CURRENT_YEAR}`、`{COUNTRY}`、`{BRIEF_PATH}`。再把 profile 的 `max_chars` 按评分权重、决策复杂度与 required visible output 负担分配为各章 `{PER_SECTION_CHARS}`，全部章节预算之和位于总上限内；它是 ceiling 而非填满目标。auditor 的 `{AUDIT_ITEMS}` 是 2–3 章列表，每项含 section ref、brief/section/semantic output 路径。
 
@@ -137,7 +138,23 @@ $PY {TOOLSDIR}/prop_tools.py audit-realization --state-dir "$TMPDIR" --section-r
 
 全部根因经人工处置后写 `resolved`；其余状态保持 open，`-auto` 保持 draft-only。
 
-### 5. 一键终验、归档与 receipt
+### 5. 可选 PPT 结构稿与图片工作流交接
+
+用户要求 PPT、图片版方案或 image2 生产包时，在 Gate 2 根因处理完成并基于最新 canonical/realization 重装配后运行：
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target presentation --token-budget <profile context budget>
+# 用 prompts/task3d_presentation_blueprint.md 生成 $TMPDIR/presentation/deck-blueprint.json
+$PY {TOOLSDIR}/prop_tools.py validate-presentation --state-dir "$TMPDIR" --brief "$TMPDIR/derived/briefs/presentation.json" --blueprint "$TMPDIR/presentation/deck-blueprint.json" --output-dir "$BUNDLE/_PPT生产包"
+```
+
+presentation brief 只投影已通过独立审计的 Requirement、VP/Claim/Action、Evidence 与 visible output。planner 把它们压缩为 core/appendix 两条轨：核心轨完成最短说服链，附录轨承接长名单、效果图系列、尺寸材质、预算和风险查验；全案只有一张 signature 页，并将它指定为下游样张页。
+
+`validate-presentation` 绑定当前 snapshot 与 brief，检查连续页码、story arc、required refs、唯一 signature、上屏文案、素材路径和 truth boundary，再确定性生成 `_PPT生产包/outline.md`。结果状态是 `ready_for_outline_review`，不表示图片已生成。
+
+把 `outline.md` 与 `deck-blueprint.json` 交给图片 PPT 工作流；后者继续完成页序确认、视觉风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。参考 PDF/PPT 只作为 `style_reference` 提取可见风格，方案事实仍来自 blueprint。proposal 本身不调用图片模型，避免两个 skill 互相依赖。
+
+### 6. 一键终验、归档与 receipt
 
 最终重装配后只调用聚合入口；它一次完成 compliance、QA、submission canonical、ordinal customer-fit、human todo，并复用同一 checked result：
 
@@ -152,9 +169,9 @@ $PY {TOOLSDIR}/prop_tools.py finalize-run --state-dir "$TMPDIR" --report "$REPOR
 
 ## 最终汇报
 
-用用户语言简洁给出：标题/标型/章数/叙事，lead/supporting 的客户结果，mandatory/scoring 与 `submission_ready`，fit rating 和 1–3 个 top gaps（明确不是评委分或中标概率），红队与待办计数，卷册/递交稿/receipt 路径。
+用用户语言简洁给出：标题/标型/章数/叙事，lead/supporting 的客户结果，mandatory/scoring 与 `submission_ready`，fit rating 和 1–3 个 top gaps（明确不是评委分或中标概率），红队与待办计数，卷册/递交稿/receipt 路径。请求 PPT 时另给结构稿页数、signature/sample 页、`needs_user` 素材数和 `_PPT生产包` 路径。
 
 delivery status 为 draft-only 时，首句写“已生成草案，不可直接递交”；submission-ready 时按正式方案汇报。
 
 ---
-`proposal skill · 3.3.0 · comparative-strategy default`
+`proposal skill · 3.4.0 · presentation-ready comparative strategy`

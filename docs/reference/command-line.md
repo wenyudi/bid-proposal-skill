@@ -99,7 +99,7 @@ freeze-snapshot --state-dir DIR [--force]
 
 ```text
 compile-context --state-dir DIR
-                --target research|value-selection|strategy-review|section|exec-summary|redteam
+                --target research|value-selection|strategy-review|section|exec-summary|presentation|redteam
                 [--id ID] [--role ROLE] [--output FILE]
                 [--token-budget N]
 ```
@@ -113,13 +113,14 @@ compile-context --state-dir DIR
 | `strategy-review` | 无；非 snapshot-bound | `derived/briefs/strategy-review.json` |
 | `section` | 必须 `--id CH-*` | `derived/briefs/sections/<section-ref>.json` |
 | `exec-summary` | 无 | `derived/briefs/exec-summary.json` |
+| `presentation` | 无；要求正式章节 realization valid | `derived/briefs/presentation.json` |
 | `redteam` | 必须 `--role`；profile 可取 integrated / strategy_critic / audit_rival / buyer / audit / rival | `derived/briefs/redteam/<role>.json` |
 
 `--token-budget` 的 CLI 默认值为 24000。proposal 主流程对 `value-selection` 显式使用当前模式 `v3_context_token_budget` 的 1.5 倍（quick / standard / deep 为 24000 / 36000 / 54000），因为 Task 2.5 必须接收可完整 upsert 和交叉校验的 canonical 对象；超限时仍 fail-closed，不会静默删 must_use。
 
 默认 token budget 是 `24000`。超限时只允许裁掉 `may_use`；`must_use` 仍超限则 brief 状态为 `blocked`，需要拆任务或显式提高预算。
 
-section / exec-summary / redteam 属于 snapshot-bound brief；即使指定 `--output`，路径也必须位于本 run 的 `STATE/derived/briefs/` 下，避免跨 run lineage 混用。
+section / exec-summary / presentation / redteam 属于 snapshot-bound brief；即使指定 `--output`，路径也必须位于本 run 的 `STATE/derived/briefs/` 下，避免跨 run lineage 混用。
 
 ### `audit-realization`
 
@@ -143,13 +144,22 @@ customer-fit --state-dir DIR
 
 生成十维客户适配度内部诊断。默认 checkpoint 是 `strategy`；submission 会检查 realization。可选 judgments 必须为各维度提供有效 level、reason 和 source refs，否则使用确定性锚点或标为 `not_evaluated`。filled visible output 证明成果完整，不推断 reading efficiency；阅读判断需要 report-anchored semantic judgment。overall 只输出 withheld / fragile / credible / competitive / strong；不输出数字分、权重或区间。
 
+### `validate-presentation`
+
+```text
+validate-presentation --state-dir DIR --brief FILE --blueprint FILE
+                      [--output-dir DIR]
+```
+
+校验 `presentation-blueprint/v1` 的 snapshot/brief lineage、页序、story arc、required refs、唯一 signature/sample 页、上屏文案、视觉任务、素材路径和 truth boundary。通过后写 `deck-blueprint.json`、确定性 `outline.md` 与 `presentation-validation.json`；状态为 `ready_for_outline_review`，不生成图片或 PPTX。完整字段见 [Presentation blueprint 参考](presentation-blueprint.md)。
+
 ### `archive-state`
 
 ```text
 archive-state --state-dir DIR --bundle-dir DIR [--allow-draft]
 ```
 
-把 canonical、manifests、realization、sections 和关键 derived 结果原子归档到 bundle 的 `_state/`。默认要求 canonical submission gate 通过。`--allow-draft` 可归档结构完好的草案，但不能绕过 schema、source 或 fatal 损坏。
+把 canonical、manifests、realization、sections、state 内 presentation 生产包和关键 derived 结果原子归档到 bundle 的 `_state/`。默认要求 canonical submission gate 通过。`--allow-draft` 可归档结构完好的草案，但不能绕过 schema、source 或 fatal 损坏。
 
 ### `validate-run`
 

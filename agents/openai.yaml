@@ -1,4 +1,4 @@
 interface:
   display_name: "Proposal 技术标"
-  short_description: "比较策略命题，以一页纸主线和一个主亮点贯穿可兑现的政企技术标"
-  default_prompt: "使用 $proposal 根据这份标书和投标素材，研究并比较策略命题，收敛一页纸主线和一个客户主亮点，再生成可审计、可兑现的政企传媒技术标。"
+  short_description: "比较策略主线，生成可兑现技术标与图片 PPT 结构稿"
+  default_prompt: "使用 $proposal 根据这份标书和投标素材比较策略命题，收敛一个主亮点并生成可审计技术标；如需 PPT，再输出可交给图片工作流的结构稿。"

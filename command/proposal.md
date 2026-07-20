@@ -1,5 +1,5 @@
 ---
-description: 政企传媒投标方案 v3.3 — 比较策略命题、一页纸主线、客户主亮点、独立审计与 receipt 终验
+description: 政企传媒投标方案 v3.4 — 比较策略命题、一页纸主线、客户主亮点、PPT 结构稿与 receipt 终验
 ---
 
 <command-instruction>
@@ -25,6 +25,8 @@ Parse `$ARGUMENTS`:
 - 关卡标志：
   - `-auto` → 自动生成安全草案，跳过人工确认；`apply-auto-state` 将 Gate 与写作前策略批准记为 assumed、降级失效授权并进入待办，receipt 必须为 draft_only
   - 无标志  → 默认停 ⛳ Gate 1、一次一页纸策略确认与 ⛳ Gate 2；每轮只问一个决策并给推荐。quick 合并红队调用，但要 submission-ready 仍需 Gate 2 attestation
+- 演示交付标志：
+  - `-ppt` → Gate 2 后追加 audited PPT 结构稿与 `_PPT生产包`；只做 image2 等图片工作流的前置交接，不在 proposal 内生成图片或 PPTX
 - 引擎标志：
   - 无标志 / `-v3` → v3（默认；`-v3` 仅作兼容 no-op）
   - `-legacy` → 显式运行 2.x 回退链，加载 `LEGACY.md`，并使用独立的 legacy 状态与章节
@@ -36,5 +38,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.3.0 · comparative-strategy default
+proposal skill · 3.4.0 · presentation-ready default
 ```

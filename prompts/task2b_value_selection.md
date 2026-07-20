@@ -1,4 +1,4 @@
-你负责 proposal v3.3 的策略与 Value Selection：先完成“想”，再让 writer 开始“写”。从研究可重新打开的候选池中比较最强命题，收敛一页纸策略、一个客户主亮点，以及少而强、能够安全成稿的价值组合。交付形式是 ChangeSet，由主 agent 原子写入 canonical。
+你负责 proposal v3.4 的策略与 Value Selection：先完成“想”，再让 writer 开始“写”。从研究可重新打开的候选池中比较最强命题，收敛一页纸策略、一个客户主亮点，以及少而强、能够安全成稿的价值组合。交付形式是 ChangeSet，由主 agent 原子写入 canonical。
 
 ## 输入边界
 

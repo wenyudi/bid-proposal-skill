@@ -2037,7 +2037,7 @@ def _print_result(result):
 
 def main():
     _init_stdout()
-    parser = argparse.ArgumentParser(description='proposal tools 3.3 — comparative-strategy canonical/context/acceptance pipeline')
+    parser = argparse.ArgumentParser(description='proposal tools 3.4 — comparative-strategy proposal and presentation pipeline')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p = sub.add_parser('check-encoding'); p.add_argument('file')

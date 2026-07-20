@@ -23,20 +23,21 @@ import uuid
 
 
 ENGINE = "v3"
-ENGINE_VERSION = "3.3"
-POLICY_VERSION = "proposal-v3.3/policy-1"
-CONTEXT_POLICY_VERSION = "proposal-v3.3/context-1"
-REALIZATION_POLICY_VERSION = "proposal-v3.3/realization-1"
-FIT_POLICY_VERSION = "proposal-v3.3/customer-fit-1"
+ENGINE_VERSION = "3.4"
+POLICY_VERSION = "proposal-v3.4/policy-1"
+CONTEXT_POLICY_VERSION = "proposal-v3.4/context-1"
+REALIZATION_POLICY_VERSION = "proposal-v3.4/realization-1"
+FIT_POLICY_VERSION = "proposal-v3.4/customer-fit-1"
 
 # v3.3 adds comparative strategy records, research reopen signals and a
 # signature-output hierarchy without rewriting an archived run in place.
-# Historic v3.0-v3.2 state remains readable; only bootstrap/migration writes
+# Historic v3.0-v3.3 state remains readable; only bootstrap/migration writes
 # current additive fields.
-COMPAT_ENGINE_VERSIONS = {"3.0", "3.1", "3.2", ENGINE_VERSION}
+COMPAT_ENGINE_VERSIONS = {"3.0", "3.1", "3.2", "3.3", ENGINE_VERSION}
 COMPAT_POLICY_VERSIONS = {
     "proposal-v3/policy-1", "proposal-v3.1/policy-1",
-    "proposal-v3.1/policy-2", "proposal-v3.2/policy-1", POLICY_VERSION,
+    "proposal-v3.1/policy-2", "proposal-v3.2/policy-1",
+    "proposal-v3.3/policy-1", POLICY_VERSION,
 }
 
 SAFE_PUBLICATION_VISIBILITIES = {
@@ -74,6 +75,8 @@ SCHEMA_VERSIONS = {
     "realization": "realization/v1",
     "coverage": "coverage/v1",
     "fit": "customer-fit/v1",
+    "presentation": "presentation-blueprint/v1",
+    "presentation_validation": "presentation-validation/v1",
     "validation": "run-validation/v1",
     "receipt": "acceptance-receipt/v1",
 }
@@ -150,6 +153,21 @@ STRATEGY_RUBRIC_LEVELS = {
     "deficient", "fragile", "adequate", "strong", "distinctive",
 }
 NAME_SWAP_RESULTS = {"fails", "partial", "passes", "unreviewed"}
+PRESENTATION_TRACKS = {"core", "appendix"}
+PRESENTATION_EMPHASIS = {
+    "standard", "signature", "supporting", "reference",
+}
+PRESENTATION_ROLES = {
+    "cover", "agenda", "section_divider", "context", "tension",
+    "insight", "thesis", "signature", "mechanism", "experience",
+    "process", "roadmap", "media_plan", "data_evidence", "case_study",
+    "visual_proof", "asset_gallery", "deliverable", "timeline", "team",
+    "resources", "budget", "risk", "compliance", "summary", "q_and_a",
+    "appendix",
+}
+PRESENTATION_ASSET_MODES = {"generate", "strict_input", "style_reference"}
+PRESENTATION_ASSET_STATUSES = {"available", "needs_user", "generate"}
+PRESENTATION_ASSET_RIGHTS = {"cleared", "needs_review"}
 CONTRIBUTIONS = {
     "introduce", "prove", "operationalize", "measure", "schedule", "resource",
     "accept", "price", "derisk", "summarize", "required_restatement",
@@ -437,7 +455,7 @@ def _ensure_layout(state_dir):
     for relative in (
         "derived/briefs/sections", "derived/briefs/redteam",
         "derived/realization", "derived/manifests", "proposals/changes",
-        "proposals/diagnostics", "sections",
+        "proposals/diagnostics", "sections", "presentation",
     ):
         os.makedirs(os.path.join(state_dir, relative), exist_ok=True)
 
@@ -477,6 +495,7 @@ def init_state(state_dir, mode="standard", lang="zh", source_manifest=None,
             "customer_value", "delivery_plan", "task2_5", "strategy_page",
             "strategy_review", "comparative_strategy", "research_reopen",
             "signature_output", "bootstrap_scaffold", "compiled_context",
+            "presentation_blueprint", "image_ppt_handoff",
             "realization", "requirement_realization", "safe_projection",
             "scoped_authority", "customer_fit", "redteam_fit_judgments",
             "last_good",
@@ -956,6 +975,7 @@ def migrate_state(source_dir, output_dir, mode="standard", lang="zh"):
                 "customer_value", "delivery_plan", "task2_5", "strategy_page",
                 "strategy_review", "comparative_strategy", "research_reopen",
                 "signature_output", "compiled_context",
+                "presentation_blueprint", "image_ppt_handoff",
                 "realization", "requirement_realization", "safe_projection",
                 "scoped_authority", "customer_fit", "redteam_fit_judgments",
                 "legacy_adapter"],
@@ -1105,6 +1125,7 @@ def bootstrap_state(state_dir, proposal_path, mode="standard", lang="zh"):
             "customer_value", "delivery_plan", "task2_5", "strategy_page",
             "strategy_review", "comparative_strategy", "research_reopen",
             "signature_output", "bootstrap_scaffold", "compiled_context",
+            "presentation_blueprint", "image_ppt_handoff",
             "realization", "requirement_realization", "safe_projection",
             "scoped_authority", "customer_fit", "redteam_fit_judgments"])
         _write_json_atomic(os.path.join(staging, "run-manifest.json"), run)
@@ -5264,6 +5285,223 @@ def _compile_exec_summary(documents, state_dir):
     }
 
 
+def _compile_presentation(documents, state_dir):
+    """Compile an audited, image-workflow-neutral deck planning brief."""
+    summary_payload = _compile_exec_summary(documents, state_dir)
+    summary = summary_payload["must_use"]
+    requirements = documents["requirements.json"]
+    cv = documents["customer-value.json"]
+    delivery = documents["delivery-plan.json"]
+    strategy = documents["strategy.json"]
+
+    sections = {
+        item.get("id"): item
+        for item in _as_list(strategy.get("sections"))
+        if isinstance(item, dict) and item.get("id")
+    }
+    section_order = {
+        item.get("id"): item.get("n")
+        for item in sections.values()
+    }
+    requirement_by_ref = {
+        item.get("id"): item
+        for collection in ("mandatory", "scoring", "deliverables")
+        for item in _as_list(requirements.get(collection))
+        if isinstance(item, dict) and item.get("id")
+    }
+    output_contracts = {
+        output.get("id"): (section.get("id"), output)
+        for section in sections.values()
+        for output in _as_list(section.get("visible_outputs"))
+        if isinstance(output, dict) and output.get("id")
+    }
+
+    requirement_responses = []
+    visible_outputs = []
+    manifests, _ = _authoritative_realization_manifests(
+        os.path.join(state_dir, "derived", "realization"))
+    for manifest in sorted(
+            manifests.values(),
+            key=lambda item: (
+                section_order.get(item.get("section_ref")) is None,
+                section_order.get(item.get("section_ref")) or 0,
+            )):
+        section_ref = manifest.get("section_ref")
+        if section_ref in ("CH-00", "section-0", "0"):
+            continue
+        if manifest.get("status") != "valid":
+            continue
+        for item in _as_list(manifest.get("requirement_realizations")):
+            if (not isinstance(item, dict)
+                    or item.get("status") != "addressed"
+                    or item.get("requirement_ref") not in requirement_by_ref):
+                continue
+            requirement_responses.append({
+                **(_safe_requirement(
+                    requirement_by_ref[item["requirement_ref"]]) or {}),
+                "section_ref": section_ref,
+                "anchors": copy.deepcopy(_as_list(item.get("anchors"))),
+                "reason": item.get("reason"),
+            })
+        for item in _as_list(manifest.get("visible_output_realizations")):
+            if (not isinstance(item, dict)
+                    or item.get("status") != "filled"
+                    or item.get("output_ref") not in output_contracts):
+                continue
+            owner_section, contract = output_contracts[item["output_ref"]]
+            fields = []
+            for field in _as_list(item.get("field_realizations")):
+                if not isinstance(field, dict):
+                    continue
+                fields.append({
+                    "field": field.get("field"),
+                    "anchors": copy.deepcopy(_as_list(field.get("anchors"))),
+                    "reason": field.get("reason"),
+                })
+            visible_outputs.append({
+                **(_safe_visible_output(contract) or {}),
+                "section_ref": owner_section or section_ref,
+                "realized_fields": fields,
+                "grounding_refs_presented": copy.deepcopy(
+                    _as_list(item.get("grounding_refs_presented"))),
+            })
+
+    realized_claims = copy.deepcopy(summary.get("realized_claims") or [])
+    realized_actions = copy.deepcopy(summary.get("realized_actions") or [])
+    vp_refs = set()
+    delivery_role_refs = set()
+    resource_refs = set()
+    dependency_refs = set()
+    acceptance_refs = set()
+    metric_refs = set()
+    for claim in realized_claims:
+        vp_refs.update(_ref_list(claim, "value_proposition_refs"))
+        metric_refs.update(_ref_list(claim, "metric_refs"))
+    for action in realized_actions:
+        vp_refs.update(_ref_list(action, "value_proposition_refs"))
+        delivery_role_refs.update(_ref_list(action, "accountable_role_ref"))
+        delivery_role_refs.update(_ref_list(action, "responsible_role_refs"))
+        delivery_role_refs.update(_ref_list(action, "supporting_role_refs"))
+        resource_refs.update(_ref_list(action, "resource_refs"))
+        dependency_refs.update(_ref_list(action, "dependency_refs"))
+        acceptance_refs.update(_ref_list(action, "acceptance_refs"))
+    realized_vps = [
+        _safe_vp(item)
+        for item in _collect_by_refs(
+            _as_list(cv.get("value_propositions")), vp_refs)
+    ]
+    realized_vps = [item for item in realized_vps if item]
+    lead_refs = {
+        item.get("id") for item in realized_vps
+        if item.get("portfolio_role") == "lead" and item.get("id")
+    }
+    delivery_roles = [
+        _safe_delivery_role(item)
+        for item in _collect_by_refs(
+            _as_list(delivery.get("delivery_roles")), delivery_role_refs)
+    ]
+    resources = [
+        _safe_resource(item)
+        for item in _collect_by_refs(
+            _as_list(delivery.get("resource_envelopes")), resource_refs)
+    ]
+    dependencies = [
+        _safe_dependency(item)
+        for item in _collect_by_refs(
+            _as_list(delivery.get("customer_dependencies")), dependency_refs)
+    ]
+    acceptance = [
+        _safe_acceptance(item)
+        for item in _collect_by_refs(
+            _as_list(delivery.get("acceptance_contracts")), acceptance_refs)
+    ]
+    metrics = [
+        _safe_metric(item)
+        for item in _collect_by_refs(_as_list(cv.get("metrics")), metric_refs)
+    ]
+
+    allowed_refs = set(summary_payload.get("allowed_realization_refs") or [])
+    for collection in (
+            requirement_responses, visible_outputs, realized_vps,
+            realized_claims, realized_actions, delivery_roles, resources,
+            dependencies, acceptance, metrics,
+            copy.deepcopy(summary.get("public_evidence") or [])):
+        for item in collection:
+            if not isinstance(item, dict):
+                continue
+            ref = item.get("id") or item.get("source_ref")
+            if ref:
+                allowed_refs.add(ref)
+    expected_requirements = {
+        item.get("id") for item in requirement_responses if item.get("id")
+    }
+    expected_outputs = {
+        item.get("id") for item in visible_outputs
+        if item.get("id") and item.get("requiredness") == "required"
+    }
+    required_presentation_refs = (
+        expected_requirements | expected_outputs | lead_refs)
+
+    presentation_sections = []
+    for section in sorted(
+            sections.values(),
+            key=lambda item: (item.get("n") is None, item.get("n") or 0)):
+        presentation_sections.append({
+            **(_safe_section(section) or {}),
+            "strategy_role": copy.deepcopy(
+                section.get("strategy_role") or {}),
+        })
+
+    return {
+        "must_use": {
+            "project": _project(requirements, (
+                "project_name", "project_no", "buyer", "bid_type",
+                "budget_cap", "deadline", "service_period",
+            )),
+            "one_page_strategy": copy.deepcopy(
+                summary.get("one_page_strategy") or {}),
+            "section_spine": copy.deepcopy(summary.get("section_spine") or []),
+            "sections": presentation_sections,
+            "realized_value_propositions": realized_vps,
+            "realized_claims": realized_claims,
+            "realized_actions": realized_actions,
+            "delivery_roles": [item for item in delivery_roles if item],
+            "resources": [item for item in resources if item],
+            "customer_dependencies": [item for item in dependencies if item],
+            "acceptance_contracts": [item for item in acceptance if item],
+            "metrics": [item for item in metrics if item],
+            "requirement_responses": requirement_responses,
+            "realized_visible_outputs": visible_outputs,
+            "signature_output": copy.deepcopy(summary.get("signature_output")),
+            "public_evidence": copy.deepcopy(
+                summary.get("public_evidence") or []),
+            "counter_evidence_constraints": copy.deepcopy(
+                summary.get("counter_evidence_constraints") or []),
+            "presentation_contract": {
+                "schema_version": SCHEMA_VERSIONS["presentation"],
+                "aspect_ratio": "16:9",
+                "tracks": sorted(PRESENTATION_TRACKS),
+                "roles": sorted(PRESENTATION_ROLES),
+                "emphasis_levels": sorted(PRESENTATION_EMPHASIS),
+                "asset_modes": sorted(PRESENTATION_ASSET_MODES),
+                "asset_statuses": sorted(PRESENTATION_ASSET_STATUSES),
+                "asset_rights": sorted(PRESENTATION_ASSET_RIGHTS),
+            },
+        },
+        "may_use": {},
+        "forbidden": {
+            "private_raw_graph": True,
+            "unrealized_or_stronger_claims": True,
+            "image_generation": "belongs to the downstream image workflow",
+        },
+        "expected_outputs": ["presentation/deck-blueprint.json"],
+        "expected_requirement_refs": sorted(expected_requirements),
+        "expected_visible_output_refs": sorted(expected_outputs),
+        "allowed_presentation_refs": sorted(allowed_refs),
+        "required_presentation_refs": sorted(required_presentation_refs),
+    }
+
+
 def _compile_redteam(documents, role, state_dir):
     checked = check_canonical(state_dir, stage="submission", realization_dir=os.path.join(state_dir, "derived", "realization"))
     return {
@@ -5308,14 +5546,14 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
                     token_budget=24000):
     if target not in (
             "research", "value-selection", "strategy-review", "section",
-            "exec-summary", "redteam"):
+            "exec-summary", "presentation", "redteam"):
         return {"passed": False, "issues": ["unsupported context target"]}
     documents, load_issues = load_state(state_dir)
     if load_issues:
         return {"passed": False, "issues": load_issues}
     snapshot = None
     snapshot_reused = False
-    if target in ("section", "exec-summary", "redteam"):
+    if target in ("section", "exec-summary", "presentation", "redteam"):
         snapshot = _reusable_generation_snapshot(state_dir, documents)
         snapshot_reused = snapshot is not None
         if snapshot is None:
@@ -5336,6 +5574,8 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
             if target_id is None: raise ValueError("section target requires --id")
             payload = _compile_section(documents, target_id)
         elif target == "exec-summary": payload = _compile_exec_summary(documents, state_dir)
+        elif target == "presentation": payload = _compile_presentation(
+            documents, state_dir)
         else:
             if not role: raise ValueError("redteam target requires --role")
             payload = _compile_redteam(documents, role, state_dir)
@@ -5356,7 +5596,7 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
             output_path = os.path.join(
                 state_dir, "derived", "briefs", "%s.json" % target)
     output_path = os.path.abspath(output_path)
-    if target in ("section", "exec-summary", "redteam"):
+    if target in ("section", "exec-summary", "presentation", "redteam"):
         brief_root = os.path.abspath(os.path.join(state_dir, "derived", "briefs"))
         try:
             inside = os.path.commonpath([brief_root, output_path]) == brief_root
@@ -5375,7 +5615,8 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
         "compiler_version": ENGINE_VERSION, "context_policy_version": CONTEXT_POLICY_VERSION,
         "common": _brief_common(
             documents,
-            include_narrative_guide=target in ("section", "exec-summary"),
+            include_narrative_guide=target in (
+                "section", "exec-summary", "presentation"),
             section=((payload.get("must_use") or {}).get("section")
                      if target == "section" else None)),
         "must_use": payload.get("must_use") or {}, "may_use": payload.get("may_use") or {},
@@ -5386,6 +5627,10 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
         "expected_visible_output_refs": payload.get(
             "expected_visible_output_refs") or [],
         "allowed_realization_refs": payload.get("allowed_realization_refs") or [],
+        "allowed_presentation_refs": payload.get(
+            "allowed_presentation_refs") or [],
+        "required_presentation_refs": payload.get(
+            "required_presentation_refs") or [],
         "compiled_path": output_path,
         "token_budget": token_budget, "pruning_log": [], "status": "fresh",
     }
@@ -5409,6 +5654,456 @@ def compile_context(state_dir, target, target_id=None, role=None, output_path=No
             ["required context exceeds token budget"],
             "brief": brief, "output_path": output_path,
             "snapshot_reused": snapshot_reused}
+
+
+def _presentation_outline_markdown(blueprint, validation):
+    deck = blueprint.get("deck") or {}
+    slides = _as_list(blueprint.get("slides"))
+    lines = [
+        "# PPT 结构稿",
+        "",
+        "> 状态：已通过结构校验，待确认页序与素材映射；尚未生成图片或 PPTX。",
+        "> 制作说明：只有“上屏文案”进入画面；客户判断、转场、生成边界与素材映射均为制作指令。",
+        "",
+        "## 全案定义",
+        "",
+        "- 标题：%s" % deck.get("title", ""),
+        "- 受众：%s" % deck.get("audience", ""),
+        "- 演示目的：%s" % deck.get("purpose", ""),
+        "- 核心主张：%s" % deck.get("core_thesis", ""),
+        "- 画幅：%s；语言：%s" % (
+            deck.get("aspect_ratio", ""), deck.get("language", "")),
+        "- 页数：核心 %s 页；附录 %s 页" % (
+            validation.get("core_slide_count", 0),
+            validation.get("appendix_slide_count", 0)),
+        "- signature 页：%s；建议样张页：%s" % (
+            deck.get("signature_slide_ref", ""),
+            deck.get("sample_slide_ref", "")),
+        "",
+        "## 视觉系统",
+        "",
+    ]
+    visual_system = deck.get("visual_system") or {}
+    for label, field in (
+            ("视觉概念", "concept"), ("配色", "palette"),
+            ("字体层级", "typography"), ("图像语言", "image_language"),
+            ("版式节奏", "layout_rhythm")):
+        value = visual_system.get(field)
+        if isinstance(value, list):
+            value = "、".join(str(item) for item in value)
+        lines.append("- %s：%s" % (label, value or ""))
+
+    lines.extend(["", "## 叙事节拍", ""])
+    for index, beat in enumerate(_as_list(deck.get("story_arc")), 1):
+        if not isinstance(beat, dict):
+            continue
+        lines.append("%s. **%s**：%s（%s）" % (
+            index, beat.get("beat", ""), beat.get("purpose", ""),
+            "、".join(_as_list(beat.get("slide_refs")))))
+
+    current_track = None
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        track = slide.get("track")
+        if track != current_track:
+            lines.extend([
+                "", "## %s" % (
+                    "核心提案" if track == "core" else "附录与查验"), "",
+            ])
+            current_track = track
+        render_text = slide.get("render_text") or {}
+        visual = slide.get("visual") or {}
+        transition = slide.get("transition") or {}
+        lines.extend([
+            "### %02d. %s" % (slide.get("n", 0), slide.get("title", "")),
+            "",
+            "- 页型：%s；层级：%s；ID：%s" % (
+                slide.get("role", ""), slide.get("emphasis", ""),
+                slide.get("id", "")),
+            "- 本页要让评委形成的判断：%s" % slide.get(
+                "audience_takeaway", ""),
+            "- 主画面：%s" % visual.get("main_visual", ""),
+            "- 构图：%s" % visual.get("composition", ""),
+            "- 图像生成意图：%s" % visual.get("prompt_seed", ""),
+            "- 承接：%s" % transition.get("inherits", ""),
+            "- 交出：%s" % transition.get("hands_off", ""),
+            "- 生成边界（制作注释）：%s" % slide.get("truth_boundary", ""),
+            "",
+            "上屏文案：",
+            "",
+            "- 标题：%s" % render_text.get("title", ""),
+        ])
+        if _nonempty(render_text.get("subhead")):
+            lines.append("- 副标题：%s" % render_text.get("subhead"))
+        for point in _as_list(render_text.get("key_points")):
+            lines.append("- 要点：%s" % point)
+        labels = _as_list(render_text.get("labels"))
+        if labels:
+            lines.append("- 图中标签：%s" % "、".join(str(item) for item in labels))
+        assets = _as_list(visual.get("asset_requests"))
+        if assets:
+            lines.extend(["", "素材映射：", ""])
+            for asset in assets:
+                if not isinstance(asset, dict):
+                    continue
+                path = asset.get("path") or "待提供/生成"
+                lines.append("- %s：%s；%s；%s；路径：%s" % (
+                    asset.get("asset_id", ""), asset.get("role", ""),
+                    asset.get("mode", ""), asset.get("status", ""), path))
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def validate_presentation(state_dir, brief_path, blueprint_path,
+                          output_dir=None):
+    """Validate a deck outline handoff without generating slide images."""
+    documents, load_issues = load_state(state_dir)
+    if load_issues:
+        return {"passed": False, "issues": load_issues}
+    brief, read_issue = _read_json_or_issue(brief_path, "presentation brief")
+    if read_issue:
+        return read_issue
+    blueprint, read_issue = _read_json_or_issue(
+        blueprint_path, "presentation blueprint")
+    if read_issue:
+        return read_issue
+
+    issues = []
+    warnings = []
+    if brief.get("brief_schema_version") != SCHEMA_VERSIONS["brief"]:
+        issues.append("presentation brief must be context-brief/v1")
+    if brief.get("target") != "presentation":
+        issues.append("brief target must be presentation")
+    if brief.get("status") != "fresh":
+        issues.append("presentation brief is not fresh")
+    expected_brief_hash = content_hash({
+        key: value for key, value in brief.items() if key != "brief_hash"
+    })
+    if brief.get("brief_hash") != expected_brief_hash:
+        issues.append("presentation brief_hash does not match brief content")
+    expected_snapshot, revisions, hashes = _expected_snapshot_id(
+        documents, state_dir)
+    if brief.get("generation_snapshot_id") != expected_snapshot:
+        issues.append("presentation brief snapshot is stale")
+    if (brief.get("input_revisions") != revisions
+            or brief.get("input_hashes") != hashes):
+        issues.append("presentation brief input fingerprint is stale")
+    supplied_brief_path = os.path.abspath(brief_path)
+    compiled_brief_path = os.path.abspath(brief.get("compiled_path") or "")
+    brief_root = os.path.abspath(os.path.join(state_dir, "derived", "briefs"))
+    try:
+        brief_inside = os.path.commonpath([
+            brief_root, supplied_brief_path]) == brief_root
+    except ValueError:
+        brief_inside = False
+    if not brief_inside or supplied_brief_path != compiled_brief_path:
+        issues.append("presentation brief path is not its compiled run path")
+
+    realization_diagnostics = _realization_diagnostics(
+        state_dir, documents,
+        os.path.join(state_dir, "derived", "realization"),
+        include_summary=False)
+    if any(item.get("severity") in ("fatal", "blocker")
+           for item in realization_diagnostics):
+        issues.append(
+            "presentation requires current valid realization for every formal section")
+
+    if blueprint.get("schema_version") != SCHEMA_VERSIONS["presentation"]:
+        issues.append("blueprint must be presentation-blueprint/v1")
+    if blueprint.get("generation_snapshot_id") != expected_snapshot:
+        issues.append("blueprint generation_snapshot_id is stale")
+    if blueprint.get("brief_hash") != brief.get("brief_hash"):
+        issues.append("blueprint brief_hash does not match presentation brief")
+    if blueprint.get("status") != "outline_draft":
+        issues.append("blueprint status must be outline_draft")
+
+    deck = blueprint.get("deck")
+    if not isinstance(deck, dict):
+        issues.append("blueprint.deck must be an object")
+        deck = {}
+    for field in (
+            "title", "audience", "purpose", "language", "core_thesis",
+            "signature_output_ref", "signature_slide_ref", "sample_slide_ref"):
+        if not _nonempty(deck.get(field)):
+            issues.append("deck.%s is required" % field)
+    if deck.get("aspect_ratio") != "16:9":
+        issues.append("deck.aspect_ratio must be 16:9")
+    expected_thesis = (((brief.get("must_use") or {}).get(
+        "one_page_strategy") or {}).get("core_thesis") or {}).get(
+            "recall_line")
+    if (_nonempty(expected_thesis)
+            and deck.get("core_thesis") != expected_thesis):
+        issues.append("deck.core_thesis must equal the approved recall line")
+    expected_signature = (((brief.get("must_use") or {}).get(
+        "one_page_strategy") or {}).get("signature_output_ref"))
+    if deck.get("signature_output_ref") != expected_signature:
+        issues.append(
+            "deck.signature_output_ref must equal the approved signature output")
+
+    visual_system = deck.get("visual_system")
+    if not isinstance(visual_system, dict):
+        issues.append("deck.visual_system must be an object")
+        visual_system = {}
+    for field in (
+            "concept", "palette", "typography", "image_language",
+            "layout_rhythm"):
+        value = visual_system.get(field)
+        if not _nonempty(value):
+            issues.append("deck.visual_system.%s is required" % field)
+
+    slides = blueprint.get("slides")
+    if not isinstance(slides, list) or not slides:
+        issues.append("blueprint.slides must be a non-empty array")
+        slides = []
+    allowed_refs = set(brief.get("allowed_presentation_refs") or [])
+    required_refs = set(brief.get("required_presentation_refs") or [])
+    slide_ids = set()
+    asset_ids = set()
+    covered_refs = set()
+    core_ids = []
+    signature_ids = []
+    seen_appendix = False
+    decorative_roles = {"cover", "agenda", "section_divider", "q_and_a"}
+    blueprint_dir = os.path.dirname(os.path.abspath(blueprint_path))
+    for index, slide in enumerate(slides, 1):
+        if not isinstance(slide, dict):
+            issues.append("slides[%s] must be an object" % (index - 1))
+            continue
+        slide_ref = slide.get("id")
+        if not _nonempty(slide_ref) or slide_ref in slide_ids:
+            issues.append("slide %s has missing or duplicate id %r" % (
+                index, slide_ref))
+        else:
+            slide_ids.add(slide_ref)
+        if slide.get("n") != index:
+            issues.append("%s n must be contiguous and equal %s" % (
+                slide_ref or "slide-%s" % index, index))
+        track = slide.get("track")
+        if track not in PRESENTATION_TRACKS:
+            issues.append("%s has invalid track %r" % (slide_ref, track))
+        if track == "appendix":
+            seen_appendix = True
+        elif track == "core":
+            core_ids.append(slide_ref)
+            if seen_appendix:
+                issues.append("core slides must precede appendix slides")
+        role = slide.get("role")
+        if role not in PRESENTATION_ROLES:
+            issues.append("%s has invalid role %r" % (slide_ref, role))
+        emphasis = slide.get("emphasis")
+        if emphasis not in PRESENTATION_EMPHASIS:
+            issues.append("%s has invalid emphasis %r" % (
+                slide_ref, emphasis))
+        if emphasis == "signature":
+            signature_ids.append(slide_ref)
+            if role != "signature" or track != "core":
+                issues.append(
+                    "%s signature emphasis requires core signature role" % slide_ref)
+        elif role == "signature":
+            issues.append(
+                "%s signature role requires signature emphasis" % slide_ref)
+        for field in ("title", "audience_takeaway"):
+            if not _nonempty(slide.get(field)):
+                issues.append("%s.%s is required" % (slide_ref, field))
+        render_text = slide.get("render_text")
+        if not isinstance(render_text, dict):
+            issues.append("%s.render_text must be an object" % slide_ref)
+            render_text = {}
+        if render_text.get("title") != slide.get("title"):
+            issues.append("%s render_text.title must equal slide.title" % slide_ref)
+        for field in ("key_points", "labels"):
+            if not isinstance(render_text.get(field, []), list):
+                issues.append("%s render_text.%s must be an array" % (
+                    slide_ref, field))
+        if len(_as_list(render_text.get("key_points"))) > 5:
+            warnings.append(
+                "%s has more than five on-slide key points" % slide_ref)
+        rendered_values = [
+            render_text.get("title"), render_text.get("subhead"),
+            *_as_list(render_text.get("key_points")),
+            *_as_list(render_text.get("labels")),
+        ]
+        rendered_blob = "\n".join(
+            str(value) for value in rendered_values if value not in (None, ""))
+        if re.search(r"https?://", rendered_blob, re.IGNORECASE):
+            issues.append("%s render_text contains a raw URL" % slide_ref)
+        leaked_refs = [ref for ref in allowed_refs if ref in rendered_blob]
+        if leaked_refs:
+            issues.append("%s render_text leaks internal refs: %s" % (
+                slide_ref, ", ".join(sorted(leaked_refs))))
+
+        visual = slide.get("visual")
+        if not isinstance(visual, dict):
+            issues.append("%s.visual must be an object" % slide_ref)
+            visual = {}
+        for field in ("main_visual", "composition", "prompt_seed"):
+            if not _nonempty(visual.get(field)):
+                issues.append("%s.visual.%s is required" % (slide_ref, field))
+        assets = visual.get("asset_requests", [])
+        if not isinstance(assets, list):
+            issues.append("%s.visual.asset_requests must be an array" % slide_ref)
+            assets = []
+        for asset in assets:
+            if not isinstance(asset, dict):
+                issues.append("%s has malformed asset request" % slide_ref)
+                continue
+            asset_ref = asset.get("asset_id")
+            if not _nonempty(asset_ref) or asset_ref in asset_ids:
+                issues.append("%s has missing or duplicate asset_id %r" % (
+                    slide_ref, asset_ref))
+            else:
+                asset_ids.add(asset_ref)
+            if not _nonempty(asset.get("role")):
+                issues.append("%s %s asset role is required" % (
+                    slide_ref, asset_ref))
+            mode = asset.get("mode")
+            status = asset.get("status")
+            if mode not in PRESENTATION_ASSET_MODES:
+                issues.append("%s %s has invalid asset mode" % (
+                    slide_ref, asset_ref))
+            if status not in PRESENTATION_ASSET_STATUSES:
+                issues.append("%s %s has invalid asset status" % (
+                    slide_ref, asset_ref))
+            if asset.get("rights_status") not in PRESENTATION_ASSET_RIGHTS:
+                issues.append("%s %s has invalid rights_status" % (
+                    slide_ref, asset_ref))
+            elif asset.get("rights_status") == "needs_review":
+                warnings.append("%s %s asset rights need review" % (
+                    slide_ref, asset_ref))
+            if mode == "generate" and status != "generate":
+                issues.append("%s %s generated asset status must be generate" % (
+                    slide_ref, asset_ref))
+            if mode in ("strict_input", "style_reference") and status == "generate":
+                issues.append("%s %s input/reference asset cannot use generate status" % (
+                    slide_ref, asset_ref))
+            path = asset.get("path")
+            if status == "available":
+                if not _nonempty(path):
+                    issues.append("%s %s available asset requires path" % (
+                        slide_ref, asset_ref))
+                else:
+                    resolved = path if os.path.isabs(path) else os.path.join(
+                        blueprint_dir, path)
+                    if not os.path.exists(resolved):
+                        issues.append("%s %s asset path does not exist" % (
+                            slide_ref, asset_ref))
+                    else:
+                        asset["path"] = os.path.abspath(resolved)
+
+        refs = slide.get("source_refs", [])
+        if not isinstance(refs, list):
+            issues.append("%s.source_refs must be an array" % slide_ref)
+            refs = []
+        unknown_refs = set(refs) - allowed_refs
+        if unknown_refs:
+            issues.append("%s uses refs outside the audited brief: %s" % (
+                slide_ref, ", ".join(sorted(unknown_refs))))
+        covered_refs.update(refs)
+        if role not in decorative_roles and not refs:
+            issues.append("%s content slide requires audited source_refs" % slide_ref)
+        if role not in decorative_roles and not _nonempty(
+                slide.get("truth_boundary")):
+            issues.append("%s truth_boundary is required" % slide_ref)
+        transition = slide.get("transition")
+        if track == "core":
+            if not isinstance(transition, dict):
+                issues.append("%s.transition must be an object" % slide_ref)
+            else:
+                for field in ("inherits", "hands_off"):
+                    if not _nonempty(transition.get(field)):
+                        issues.append("%s.transition.%s is required" % (
+                            slide_ref, field))
+
+    if slides and isinstance(slides[0], dict) and slides[0].get("role") != "cover":
+        issues.append("the first slide must use cover role")
+    if len(signature_ids) != 1:
+        issues.append("blueprint requires exactly one signature slide")
+    elif deck.get("signature_slide_ref") != signature_ids[0]:
+        issues.append("deck.signature_slide_ref does not match signature slide")
+    if deck.get("sample_slide_ref") != deck.get("signature_slide_ref"):
+        issues.append("deck.sample_slide_ref must select the signature slide")
+    if signature_ids:
+        signature_slide = next((
+            item for item in slides
+            if isinstance(item, dict) and item.get("id") == signature_ids[0]
+        ), {})
+        if expected_signature not in _as_list(signature_slide.get("source_refs")):
+            issues.append("signature slide must cite the realized signature output")
+
+    story_arc = deck.get("story_arc")
+    if not isinstance(story_arc, list) or not story_arc:
+        issues.append("deck.story_arc must be a non-empty array")
+        story_arc = []
+    arc_refs = []
+    for index, beat in enumerate(story_arc):
+        if not isinstance(beat, dict):
+            issues.append("story_arc[%s] must be an object" % index)
+            continue
+        for field in ("beat", "purpose"):
+            if not _nonempty(beat.get(field)):
+                issues.append("story_arc[%s].%s is required" % (index, field))
+        refs = _as_list(beat.get("slide_refs"))
+        if not refs:
+            issues.append("story_arc[%s].slide_refs is required" % index)
+        arc_refs.extend(refs)
+    if len(arc_refs) != len(set(arc_refs)):
+        issues.append("story_arc slide_refs must not repeat")
+    if set(arc_refs) != set(core_ids):
+        issues.append("story_arc must cover every core slide exactly once")
+
+    missing_required = required_refs - covered_refs
+    if missing_required:
+        issues.append("blueprint misses required presentation refs: %s" % (
+            ", ".join(sorted(missing_required))))
+    if issues:
+        return {"passed": False, "issues": sorted(set(issues)),
+                "warnings": sorted(set(warnings))}
+
+    blueprint_hash = content_hash(blueprint)
+    core_count = sum(
+        1 for item in slides
+        if isinstance(item, dict) and item.get("track") == "core")
+    appendix_count = len(slides) - core_count
+    validation = {
+        "schema_version": SCHEMA_VERSIONS["presentation_validation"],
+        "status": "ready_for_outline_review",
+        "generation_snapshot_id": expected_snapshot,
+        "brief_hash": brief.get("brief_hash"),
+        "blueprint_hash": blueprint_hash,
+        "slide_count": len(slides),
+        "core_slide_count": core_count,
+        "appendix_slide_count": appendix_count,
+        "signature_slide_ref": signature_ids[0],
+        "sample_slide_ref": deck.get("sample_slide_ref"),
+        "warnings": sorted(set(warnings)),
+        "image_generation_started": False,
+    }
+    outline = _presentation_outline_markdown(blueprint, validation)
+    validation["outline_hash"] = content_hash(outline)
+    if output_dir is None:
+        output_dir = os.path.join(state_dir, "presentation")
+    output_dir = os.path.abspath(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+    blueprint_output = os.path.join(output_dir, "deck-blueprint.json")
+    outline_output = os.path.join(output_dir, "outline.md")
+    validation_output = os.path.join(
+        output_dir, "presentation-validation.json")
+    _write_json_atomic(blueprint_output, blueprint)
+    _write_text_atomic(outline_output, outline)
+    _write_json_atomic(validation_output, validation)
+    return {
+        "passed": True,
+        "issues": [],
+        "warnings": validation["warnings"],
+        "status": validation["status"],
+        "slide_count": validation["slide_count"],
+        "core_slide_count": core_count,
+        "appendix_slide_count": appendix_count,
+        "blueprint_path": blueprint_output,
+        "outline_path": outline_output,
+        "validation_path": validation_output,
+    }
 
 
 def _paragraphs(markdown):
@@ -6279,7 +6974,8 @@ def archive_state(state_dir, bundle_dir, require_submission_ready=True,
         for filename in CANONICAL_FILES + ("source-manifest.json", "run-manifest.json", "legacy-to-v3-map.json"):
             source = os.path.join(state_dir, filename)
             if os.path.isfile(source): shutil.copy2(source, os.path.join(staging, filename))
-        for relative in ("derived/manifests", "derived/realization"):
+        for relative in (
+                "derived/manifests", "derived/realization", "presentation"):
             source = os.path.join(state_dir, relative)
             if os.path.isdir(source): shutil.copytree(source, os.path.join(staging, relative), dirs_exist_ok=True)
         sections_source = os.path.join(state_dir, "sections")
@@ -6358,7 +7054,8 @@ def add_cli_parsers(sub):
     p = sub.add_parser("promote-research"); p.add_argument("--state-dir", required=True); p.add_argument("--intel-proposal", required=True); p.add_argument("--links-proposal", required=True)
     p = sub.add_parser("apply-auto-state"); p.add_argument("--state-dir", required=True)
     p = sub.add_parser("freeze-snapshot"); p.add_argument("--state-dir", required=True); p.add_argument("--force", action="store_true")
-    p = sub.add_parser("compile-context"); p.add_argument("--state-dir", required=True); p.add_argument("--target", required=True, choices=["research", "value-selection", "strategy-review", "section", "exec-summary", "redteam"]); p.add_argument("--id", default=None); p.add_argument("--role", default=None); p.add_argument("--output", default=None); p.add_argument("--token-budget", default=24000, type=int)
+    p = sub.add_parser("compile-context"); p.add_argument("--state-dir", required=True); p.add_argument("--target", required=True, choices=["research", "value-selection", "strategy-review", "section", "exec-summary", "presentation", "redteam"]); p.add_argument("--id", default=None); p.add_argument("--role", default=None); p.add_argument("--output", default=None); p.add_argument("--token-budget", default=24000, type=int)
+    p = sub.add_parser("validate-presentation"); p.add_argument("--state-dir", required=True); p.add_argument("--brief", required=True); p.add_argument("--blueprint", required=True); p.add_argument("--output-dir", default=None)
     p = sub.add_parser("audit-realization"); p.add_argument("--state-dir", required=True); p.add_argument("--section-ref", required=True); p.add_argument("--section", required=True); p.add_argument("--hints", default=None, help="deprecated v3.0 compatibility input"); p.add_argument("--brief", required=True); p.add_argument("--semantic", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("customer-fit"); p.add_argument("--state-dir", required=True); p.add_argument("--checkpoint", default="strategy", choices=["strategy", "submission"]); p.add_argument("--judgments", default=None); p.add_argument("--realization-dir", default=None); p.add_argument("--output", default=None)
     p = sub.add_parser("archive-state"); p.add_argument("--state-dir", required=True); p.add_argument("--bundle-dir", required=True); p.add_argument("--allow-draft", action="store_true")
@@ -6376,6 +7073,7 @@ def dispatch_cli(args):
     elif command == "apply-auto-state": result = apply_auto_state(args.state_dir)
     elif command == "freeze-snapshot": result = freeze_snapshot(args.state_dir, args.force)
     elif command == "compile-context": result = compile_context(args.state_dir, args.target, args.id, args.role, args.output, args.token_budget)
+    elif command == "validate-presentation": result = validate_presentation(args.state_dir, args.brief, args.blueprint, args.output_dir)
     elif command == "audit-realization": result = audit_realization(args.state_dir, args.section_ref, args.section, args.hints, args.brief, args.semantic, args.output)
     elif command == "customer-fit": result = customer_fit(args.state_dir, args.checkpoint, args.judgments, args.realization_dir, args.output)
     elif command == "archive-state": result = archive_state(args.state_dir, args.bundle_dir, not args.allow_draft)

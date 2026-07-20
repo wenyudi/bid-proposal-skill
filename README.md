@@ -1,6 +1,6 @@
 # proposal
 
-面向广告与传媒公司的政企技术标生成 skill。proposal 3.3 默认使用 comparative-strategy lean v3：先校验标书要求与真实边界，再用研究比较最终命题与最强替代，收敛一页纸策略和一个客户主亮点，让所有章节围绕同一句评委可复述的主张展开。
+面向广告与传媒公司的政企技术标生成 skill。proposal 3.4 默认使用 presentation-ready comparative strategy：先校验标书要求与真实边界，再用研究比较最终命题与最强替代，收敛一页纸策略和一个客户主亮点，让正文与可选图片 PPT 结构稿围绕同一句评委可复述的主张展开。
 
 > 合规零遗漏 · 真懂客户 · 亮点值得选 · 证据可信 · 交付可兑现 · 风险妥帖
 
@@ -16,6 +16,7 @@
 - 把承诺连接到动作、责任、资源、时点和验收，避免“创意很好，但无法落地”。
 - 让每个 lead 在正文交出小而具体的客户可见成果，并只选一个 signature 主亮点，其余成果退到支撑与查验层。
 - writer 只写 Markdown；独立审计直接检查要求、Claim/Action 和成果字段是否兑现、是否夸大。
+- 最终用 PPT 呈现时，把已审计内容压缩为 core/appendix 页序、唯一 signature 页、准确上屏文案、画面任务和素材清单，再交给 image2 等图片工作流。
 - 把 private 纪要、内部模型、URL、诊断和适配度留在内部，不破坏客户阅读体验。
 
 复杂任务找路和压力追问的思路参考了 [mattpocock/skills](https://github.com/mattpocock/skills) 中的 wayfinder 与 grill-me，并已内生为 canonical、ChangeSet、单题 Gate 和根因诊断；运行时不需要 skill 之间互相调用。生成阶段统一采用“目标—依据—工作顺序—安全替代—输出契约”，缺失事实会落为 `unknown/gap + owner`。
@@ -34,20 +35,22 @@
 3. 在 Gate 1 逐题确认只有投标人能决定的能力、资源、报价或授权边界。
 4. 调研后比较最终命题与最强替代，只确认一次一页纸策略和 signature 主亮点，再启动分章写作。
 5. 独立审计完成后，在 Gate 2 处理策略批评与其他红队根因并确认定稿。
-6. 只在最终 receipt 明确 `delivery_status=submission_ready`，且人工待办中的硬项已清零后，才把 `技术方案-完整版.md` 作为递交稿继续排版。
+6. 需要图片版 PPT 时，生成并确认 `_PPT生产包/outline.md`，再交给图片工作流完成样张、逐页生成和 PPTX。
+7. 只在最终 receipt 明确 `delivery_status=submission_ready`，且人工待办中的硬项已清零后，才把客户可见内容继续排版。
 
 第一次使用建议跟随[完成第一份方案](docs/tutorial/first-proposal.md)。
 
 ## 常用调用
 
 ```text
-/proposal <标书路径或粘贴文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-auto] [-legacy]
+/proposal <标书路径或粘贴文本> [素材路径] [-quick|-deep] [-logic|-story|-vision|-evidence] [-ppt] [-auto] [-legacy]
 ```
 
 - 无深度标志为 standard；`-quick` 用于小标或时间紧，`-deep` 用于重点标。
 - 无叙事标志时按标书选择；叙事只决定表达，不得裁剪评分项或加强承诺。
 - 默认 v3；`-v3` 只是兼容标志。只有显式 `-legacy` 才运行 2.x 回退链。
 - `-auto` 生成的是保守草案。任何 assumed 决策都会阻断直接递交。
+- `-ppt` 在内容审计和 Gate 2 后追加图片 PPT 结构生产包；图片与 PPTX 由下游工作流生成。
 - `casebase/` 中非 `_` 开头的案例会自动纳入；沟通、踏勘和售前纪要须标 `[notes]`。
 
 模式与组合示例见[选择深度、叙事和关卡模式](docs/how-to/choose-modes.md)。
@@ -60,6 +63,7 @@
 ├── 分册/                       目录、对照表、综述和各章
 ├── _内部研判.md                内部：策略、来源、fit、红队
 ├── _人工待办.md                内部：假设、缺口、占位符
+├── _PPT生产包/                 可选：结构稿与图片工作流交接 JSON
 ├── _acceptance-receipt.json    内部：绑定 state/report hash 的终验结论
 └── _state/                     内部：canonical、快照和审计状态
 ```
@@ -79,7 +83,9 @@
 | 恢复 v3 或迁移旧项目 | [恢复与迁移](docs/how-to/resume-or-migrate.md) |
 | 处理失败、stale 或 blocker | [解除阻断](docs/how-to/resolve-blockers.md) |
 | 评估修订是否更优 | [运行方案质量基线](docs/how-to/run-evaluation-baseline.md) |
+| 生成 PPT 结构稿并交给 image2 | [生成 PPT 结构稿与图片工作流交接](docs/how-to/create-ppt-handoff.md) |
 | 查方案质量评估清单 | [方案修订质量评估清单](docs/reference/quality-checklist.md) |
+| 查 PPT blueprint 字段与校验 | [Presentation blueprint 参考](docs/reference/presentation-blueprint.md) |
 | 查命令与参数 | [命令行参考](docs/reference/command-line.md) |
 | 查流程、Task 和 Gate | [流程与硬门参考](docs/reference/workflow-and-gates.md) |
 | 查状态文件和写权限 | [Canonical 状态参考](docs/reference/canonical-state.md) |

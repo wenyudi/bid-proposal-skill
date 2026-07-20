@@ -1,4 +1,4 @@
-# Task 4 命令参考（v3.3）
+# Task 4 命令参考（v3.4）
 
 权威顺序见 `SKILL.md`。本页只保留装配、红队与终验命令；所有输入属于同一 `$TMPDIR` 和 generation snapshot。
 
