@@ -1,5 +1,5 @@
 ---
-description: 政企传媒投标方案 v3.2 — 一页纸策略、客户价值、正文成果、独立审计与 receipt 终验
+description: 政企传媒投标方案 v3.3 — 比较策略命题、一页纸主线、客户主亮点、独立审计与 receipt 终验
 ---
 
 <command-instruction>
@@ -36,5 +36,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 3.2.1 · positive-generation default
+proposal skill · 3.3.0 · comparative-strategy default
 ```

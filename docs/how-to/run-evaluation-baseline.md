@@ -4,7 +4,7 @@
 
 ## 1. 确认基线窗口
 
-pre-change 必须来自已经冻结的旧 release/worktree 或此前保存的仓库外 run；当前 v3.2 工作树只能产生 post-change。记录固定 commit、policy 和测试结果：
+pre-change 必须来自已经冻结的旧 release/worktree 或此前保存的仓库外 run；当前 v3.3 工作树只能产生 post-change。记录固定 commit、policy 和测试结果：
 
 ```bash
 git status --short
@@ -124,7 +124,7 @@ cp docs/reference/quality-checklist.md "$DEST/quality-consensus.md"
 
 两名评审先独立填写 reviewer 文件，再共同填写 consensus。对每个 required document proof 的字段标 filled、partial 或 missing，并保留客户可见正文 quote 和位置；随后计算 proof_object_coverage、lead_proof_coverage、proof_field_completeness、external_substitution_violations、deferred_proof_burden、project_specificity 和 unexpected_claims。
 
-pre-change 阶段按正文人工判定；不要假装已有结构化成果 manifest。v3.2 post-change 可以读取 authoritative `visible_output_realizations`，但仍须复核正文和 strategy critic 的五测结果。
+pre-change 阶段按正文人工判定；不要假装已有结构化成果 manifest。v3.3 post-change 可以读取 authoritative `visible_output_realizations`、signature 层级和 report-anchored fit judgments，但仍须复核正文和 strategy critic 的实际引用。
 
 ## 7. 运行 post-change 并盲评
 

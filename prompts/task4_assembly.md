@@ -1,4 +1,4 @@
-# Task 4 命令参考（v3.2）
+# Task 4 命令参考（v3.3）
 
 权威顺序见 `SKILL.md`。本页只保留装配、红队与终验命令；所有输入属于同一 `$TMPDIR` 和 generation snapshot。
 
@@ -28,7 +28,7 @@ $PY {TOOLSDIR}/prop_tools.py assemble-proposal --strategy "$TMPDIR/strategy.json
 $PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target redteam --role <role>
 ```
 
-用 `task4_redteam.md` 并行派发。strategy_critic / integrated 完成复述、洞察、推导、互换、逐章贡献和落地五测；相同 root cause 合并，硬门按 owner 先修，其他按 `DECISIONS.md` 一次一题。canonical 变化后重建全部 snapshot-bound 输出。全部根因经人工处置后写真实 `gate2-decision/v1` attestation；其余状态保持 open。
+先计算当前 `$REPORT` 的 `REPORT_HASH="sha256:$(sha256sum "$REPORT" | cut -d' ' -f1)"`，替换 prompt 变量后用 `task4_redteam.md` 并行派发。strategy_critic / integrated 完成复述、洞察、推导、互换、signature、阅读效率、逐章贡献和落地测试；相同 root cause 合并，硬门按 owner 先修，其他按 `DECISIONS.md` 一次一题。canonical 或报告变化后重建相应 snapshot/report-bound 评审。全部根因经人工处置后写真实 `gate2-decision/v1` attestation；其余状态保持 open。
 
 ## 4. 聚合终验与归档
 

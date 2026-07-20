@@ -1908,6 +1908,12 @@ def validate_run(state_dir, report_path, mode='standard', lang='zh',
         requirements_path, strategy_path, report_path)
     qa = qa_proposal(
         report_path, mode, strategy_path, lang, requirements_path, state_dir)
+    compiled_judgments = None
+    if judgments_path is None:
+        compiled_judgments = prop_v3.compile_redteam_judgments(
+            state_dir, report_path)
+        if compiled_judgments.get('passed'):
+            judgments_path = compiled_judgments.get('output_path')
     fit = prop_v3.customer_fit(
         state_dir, checkpoint='submission', judgments_path=judgments_path,
         realization_dir=realization_dir, checked_result=canonical,
@@ -1943,6 +1949,7 @@ def validate_run(state_dir, report_path, mode='standard', lang='zh',
         "qa": qa,
         "canonical": canonical,
         "customer_fit": fit.get('scorecard'),
+        "customer_fit_judgments": compiled_judgments,
         "human_todo": todo,
         "gate2": gate2,
         "issues": [name for name, passed in component_passed.items()
@@ -2030,7 +2037,7 @@ def _print_result(result):
 
 def main():
     _init_stdout()
-    parser = argparse.ArgumentParser(description='proposal tools 3.2 — strategy-led canonical/context/acceptance pipeline')
+    parser = argparse.ArgumentParser(description='proposal tools 3.3 — comparative-strategy canonical/context/acceptance pipeline')
     sub = parser.add_subparsers(dest='command', required=True)
 
     p = sub.add_parser('check-encoding'); p.add_argument('file')

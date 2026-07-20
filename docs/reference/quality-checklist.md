@@ -59,7 +59,7 @@
 | project_specificity | 每个成果对象标 specific、mixed 或 generic：是否填入当前 fixture 的场景、受众、内容和输出，而非只贴字段名 | 对象状态、至少一条支持 quote |
 | unexpected_claims | 具体化过程中新增且无法由 tender/materials/授权 Evidence 支持的事实、数字、能力或效果数量 | claim、位置、查过的来源、风险级别 |
 
-pre-change 没有结构化成果 manifest 时，按本节人工判断。v3.2 post-change 优先读取 authoritative `visible_output_realizations`，但仍由人工复核正文；为保持基线可比，历史稳定键名称不改。
+pre-change 没有结构化成果 manifest 时，按本节人工判断。v3.3 post-change 优先读取 authoritative `visible_output_realizations`、signature 层级和 report-anchored judgments，但仍由人工复核正文；为保持基线可比，历史稳定键名称不改。
 
 ### Proof 字段记录表
 

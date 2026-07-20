@@ -227,6 +227,14 @@ def _lean_documents():
         "reviewed_at": "2026-07-19T00:00:00Z",
         "note": "test fixture strategy approval",
     }
+    page["selection_record"] = {
+        "selected_thesis": page["core_thesis"]["statement"],
+        "strongest_alternative": "用更多检查节点换取过程可见性",
+        "decisive_evidence_refs": ["M-01", "EV-TENDER"],
+        "accepted_tradeoff": "聚焦单一责任链，不堆叠多套并行流程",
+        "switch_signal": "标书新增多方联合签批要求时改用协同可视化命题",
+    }
+    page["signature_output_ref"] = "OUT-RESPONSIBILITY-CARD"
     documents["strategy.json"]["sections"][0]["visible_outputs"] = [{
         "id": "OUT-RESPONSIBILITY-CARD",
         "purpose": "让评委直接看到责任与检查节点",
@@ -236,6 +244,7 @@ def _lean_documents():
         "grounding_mode": "tender",
         "truth_boundary": "只呈现标书要求和已确认项目经理职责，不扩大 SLA",
         "requiredness": "required",
+        "display_role": "signature",
     }]
     return documents
 
@@ -424,6 +433,8 @@ class ProposalV3Tests(unittest.TestCase):
             must_use["requirements"]["budget_cap"],
             documents["requirements.json"]["budget_cap"],
         )
+        self.assertEqual(must_use["research_strategy_signals"], [])
+        self.assertFalse(must_use["strategy_reopen_required"])
 
     def test_value_selection_context_marks_assumed_gate_as_safe_draft(self):
         documents = _valid_documents()
@@ -518,6 +529,30 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(tender, "原始标书输入")
         self.assertRegex(manifest["sources"][0]["hash"], r"^sha256:[0-9a-f]{64}$")
 
+    def test_bootstrap_scaffold_is_deterministic_and_non_overwriting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proposals = os.path.join(directory, "proposals")
+            first = prop_v3.scaffold_bootstrap(
+                proposals, mode="deep", lang="zh")
+            strategy_path = os.path.join(
+                proposals, "task1.components", "strategy.json")
+            strategy = prop_v3._read_json(strategy_path)
+            proposal = prop_v3._read_json(first["proposal_path"])
+            with open(strategy_path, "a", encoding="utf-8") as handle:
+                handle.write("\n")
+            before = prop_v3.file_hash(strategy_path)
+            second = prop_v3.scaffold_bootstrap(proposals)
+            after = prop_v3.file_hash(strategy_path)
+
+        self.assertTrue(first["passed"], first.get("issues"))
+        self.assertEqual(strategy["schema_version"], "strategy/v5")
+        self.assertEqual(strategy["depth_mode"], "deep")
+        self.assertEqual(strategy["language"], "zh")
+        self.assertEqual(
+            set(proposal["canonical_files"]), set(prop_v3.CANONICAL_FILES))
+        self.assertFalse(second["passed"])
+        self.assertEqual(before, after)
+
     def test_componentized_bootstrap_installs_all_documents_atomically(self):
         with tempfile.TemporaryDirectory() as directory:
             tender_path = os.path.join(directory, "tender.txt")
@@ -552,6 +587,8 @@ class ProposalV3Tests(unittest.TestCase):
                 filename: prop_v3._read_json(os.path.join(directory, filename))
                 for filename in prop_v3.CANONICAL_FILES
             }
+            run = prop_v3._read_json(os.path.join(
+                directory, "run-manifest.json"))
 
         self.assertTrue(result["passed"], result.get("issues"))
         self.assertEqual(
@@ -561,6 +598,11 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(
             installed["strategy.json"]["schema_version"], "strategy/v5"
         )
+        self.assertEqual(run["engine_version"], "3.3")
+        self.assertTrue({
+            "comparative_strategy", "research_reopen", "signature_output",
+            "bootstrap_scaffold", "redteam_fit_judgments",
+        }.issubset(run["capabilities"]))
 
     def test_componentized_bootstrap_rejects_escape_without_partial_install(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1331,6 +1373,16 @@ class ProposalV3Tests(unittest.TestCase):
                     "allowed_uses": ["proposal_narrative"],
                 }],
                 "gaps": [],
+                "strategy_signals": [{
+                    "id": "SIG-VISIBLE-PROCESS",
+                    "observation": "采购人把全过程留痕列为公开管理重点",
+                    "evidence_refs": ["EV-NEW-PUBLIC"],
+                    "target_refs": ["VP-CLOSED-LOOP"],
+                    "affects": "value_proposition",
+                    "strategic_implication": "把责任闭环扩展为客户可见的过程证明",
+                    "confidence": "high",
+                }],
+                "reopen_required": True,
                 "manifest": {
                     "source_count": 1, "unique_domains": 1,
                     "fetch_method": "direct_fetch",
@@ -1362,7 +1414,111 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertIn("EL-NEW-PUBLIC", [item["id"] for item in customer["evidence_links"]])
         self.assertEqual(intel["research_manifest"]["source_count"], 1)
         self.assertEqual(intel["research_manifest"]["fetch_method"], "direct_fetch")
+        self.assertTrue(intel["research_manifest"]["reopen_required"])
+        self.assertEqual(
+            intel["research_manifest"]["strategy_signals"][0]["id"],
+            "SIG-VISIBLE-PROCESS")
+        self.assertTrue(result["reopen_required"])
         self.assertFalse(stale["passed"])
+
+    def test_strategy_signal_requires_an_actual_evidence_ref(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory)
+            intel_path = os.path.join(directory, "proposals", "task2.intel.json")
+            links_path = os.path.join(directory, "proposals", "task2.links.json")
+            _write_json(intel_path, {
+                "schema_version": "research-evidence/v1",
+                "proposal_id": "CS-T2-BAD-SIGNAL",
+                "base_revisions": {"intel-pool.json": 1},
+                "evidence_candidates": [],
+                "gaps": [],
+                "strategy_signals": [{
+                    "id": "SIG-NON-EVIDENCE",
+                    "observation": "把客户需求 ID 误当成证据",
+                    "evidence_refs": ["NEED-CERTAINTY"],
+                    "target_refs": ["VP-CLOSED-LOOP"],
+                    "affects": "value_proposition",
+                    "strategic_implication": "错误地重新打开价值候选",
+                    "confidence": "high",
+                }],
+                "reopen_required": True,
+                "manifest": {},
+            })
+            _write_json(links_path, {
+                "schema_version": "research-links/v1",
+                "changeset_id": "CS-T2-BAD-SIGNAL",
+                "base_revisions": {"customer-value.json": 1},
+                "link_candidates": [],
+            })
+            result = prop_v3.promote_research(
+                directory, intel_path, links_path)
+
+        self.assertFalse(result["passed"])
+        self.assertTrue(any(
+            "missing or non-Evidence NEED-CERTAINTY" in issue
+            for issue in result["issues"]
+        ), result["issues"])
+
+    def test_task25_reopens_candidate_space_only_with_research_signal(self):
+        def run(reopen, evidence_ref="EV-TENDER"):
+            documents = _lean_documents()
+            documents["intel-pool.json"]["research_manifest"] = {
+                "reopen_required": reopen,
+                "strategy_signals": [{
+                    "id": "SIG-NEW-VALUE",
+                    "observation": "公开材料显示客户需要过程可见性",
+                    "evidence_refs": [evidence_ref],
+                    "target_refs": ["NEED-CERTAINTY"],
+                    "affects": "value_proposition",
+                    "strategic_implication": "形成过程证明价值候选",
+                    "confidence": "high",
+                }],
+            }
+            candidate = copy.deepcopy(
+                documents["customer-value.json"]["value_propositions"][0])
+            candidate.update({
+                "id": "VP-PROCESS-VISIBILITY",
+                "name": "少追问也能看见关键进度",
+                "expected_change": "降低客户追问与汇总负担",
+                "value_mechanism": "在检查节点交付可读进度证明",
+                "relative_advantage": "把内部流程转换为客户可检查成果",
+                "status": "candidate", "portfolio_role": None,
+                "action_refs": [], "evidence_link_refs": [],
+                "research_signal_refs": ["SIG-NEW-VALUE"],
+            })
+            with tempfile.TemporaryDirectory() as directory:
+                _make_state(directory, documents)
+                path = os.path.join(directory, "reopen.json")
+                _write_json(path, {
+                    "schema_version": "changeset/v1",
+                    "changeset_id": "CS-T25-REOPEN",
+                    "producer": "task2.5",
+                    "base_revisions": {"customer-value.json": 1},
+                    "rationale": "依据研究信号重新打开价值候选",
+                    "validate_stage": "draft",
+                    "operations": [{
+                        "file": "customer-value.json", "op": "upsert",
+                        "collection": "value_propositions", "value": candidate,
+                    }],
+                    "affected_refs": [candidate["id"]],
+                })
+                return prop_v3.apply_changeset(directory, path)
+
+        allowed = run(True)
+        rejected = run(False)
+        non_evidence = run(True, "NEED-CERTAINTY")
+
+        self.assertTrue(allowed["passed"], allowed.get("issues"))
+        self.assertFalse(rejected["passed"])
+        self.assertFalse(non_evidence["passed"])
+        self.assertTrue(any(
+            "active research reopen signal" in issue
+            for issue in rejected["issues"]
+        ), rejected["issues"])
+        self.assertTrue(any(
+            "active research reopen signal" in issue
+            for issue in non_evidence["issues"]
+        ), non_evidence["issues"])
 
     def test_auto_state_unlocks_generation_but_blocks_submission(self):
         documents = _valid_documents()
@@ -1551,6 +1707,14 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(
             first["brief"]["expected_visible_output_refs"],
             ["OUT-RESPONSIBILITY-CARD"])
+        self.assertEqual(
+            first["brief"]["must_use"]["one_page_strategy"][
+                "signature_output_ref"],
+            "OUT-RESPONSIBILITY-CARD")
+        self.assertEqual(
+            first["brief"]["must_use"]["visible_outputs"][0][
+                "display_role"],
+            "signature")
         self.assertIn("narrative_guide", first["brief"]["common"])
         self.assertFalse(first["snapshot_reused"])
         self.assertTrue(second["snapshot_reused"])
@@ -1583,6 +1747,36 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertEqual(frozen["policy_version"], prop_v3.POLICY_VERSION)
         self.assertEqual(
             persisted_run["policy_version"], "proposal-v3.1/policy-1"
+        )
+
+    def test_previous_32_policy_remains_readable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            documents = _lean_documents()
+            page = documents["strategy.json"]["one_page_strategy"]
+            page.pop("selection_record", None)
+            page.pop("signature_output_ref", None)
+            for output in documents["strategy.json"]["sections"][0][
+                    "visible_outputs"]:
+                output.pop("display_role", None)
+            upgraded = prop_v3._upgrade_to_lean_documents(documents)
+            _make_state(directory, documents)
+            run_path = os.path.join(directory, "run-manifest.json")
+            run = prop_v3._read_json(run_path)
+            run.update(
+                engine_version="3.2",
+                policy_version="proposal-v3.2/policy-1",
+            )
+            _write_json(run_path, run)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        self.assertTrue(checked["passed"], checked["issues"])
+        upgraded_page = upgraded["strategy.json"]["one_page_strategy"]
+        self.assertIn("selection_record", upgraded_page)
+        self.assertIn("signature_output_ref", upgraded_page)
+        self.assertEqual(
+            upgraded["strategy.json"]["sections"][0]["visible_outputs"][0][
+                "display_role"],
+            "supporting",
         )
 
     def test_section_narrative_role_overrides_or_scopes_secondary_guide(self):
@@ -1703,6 +1897,7 @@ class ProposalV3Tests(unittest.TestCase):
                 directory, stage="submission",
                 realization_dir=os.path.join(directory, "derived", "realization"))
             fit = prop_v3.customer_fit(directory, checkpoint="submission")
+            summary = prop_v3.compile_context(directory, "exec-summary")
 
         self.assertTrue(submission["passed"], submission["issues"])
         self.assertTrue(fit["passed"], fit["issues"])
@@ -1710,6 +1905,77 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertNotIn("fit_range", fit["scorecard"]["overall"])
         self.assertFalse(any(
             "weight_range" in item for item in fit["scorecard"]["dimensions"]
+        ))
+        reading = next(
+            item for item in fit["scorecard"]["dimensions"]
+            if item["dimension"] == "reading_efficiency")
+        self.assertEqual(reading["level"], "not_evaluated")
+        signature = summary["brief"]["must_use"]["signature_output"]
+        self.assertEqual(signature["id"], "OUT-RESPONSIBILITY-CARD")
+        self.assertEqual(signature["display_role"], "signature")
+        self.assertEqual(
+            {item["field"] for item in signature["realized_fields"]},
+            {"责任人", "检查节点"})
+
+    def test_fresh_redteam_quotes_compile_into_fit_judgments(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, compiled, _ = _make_submission_ready_lean_state(directory)
+            report_path = os.path.join(directory, "report.md")
+            report_text = (
+                "项目经理对阶段检查与验收闭环承担单一责任。\n"
+                "责任人：项目经理；检查节点：每个阶段交付前。\n")
+            with open(report_path, "w", encoding="utf-8") as handle:
+                handle.write(report_text)
+            redteam_dir = os.path.join(directory, "redteam")
+            os.makedirs(redteam_dir)
+            _write_json(os.path.join(redteam_dir, "strategy_critic.json"), {
+                "schema_version": "redteam-diagnostics/v1",
+                "role": "strategy_critic",
+                "snapshot_id": compiled["brief"]["generation_snapshot_id"],
+                "report_hash": prop_v3.file_hash(report_path),
+                "strategy_tests": {
+                    "insight": {
+                        "level": "strong", "finding": "洞察落到责任摩擦",
+                        "source_quotes": ["项目经理对阶段检查与验收闭环承担单一责任。"],
+                        "confidence": "high",
+                    },
+                    "differentiation": {
+                        "level": "adequate", "finding": "机制具有项目边界",
+                        "source_quotes": ["责任人：项目经理"],
+                        "confidence": "medium",
+                    },
+                    "reading_efficiency": {
+                        "level": "strong", "finding": "责任与节点可快速定位",
+                        "source_quotes": ["检查节点：每个阶段交付前"],
+                        "confidence": "high",
+                    },
+                },
+            })
+            judgments = prop_v3.compile_redteam_judgments(
+                directory, report_path)
+            fit = prop_v3.customer_fit(
+                directory, checkpoint="submission",
+                judgments_path=judgments["output_path"])
+            redteam_path = os.path.join(redteam_dir, "strategy_critic.json")
+            stale_document = prop_v3._read_json(redteam_path)
+            stale_document["report_hash"] = "sha256:" + "0" * 64
+            _write_json(redteam_path, stale_document)
+            stale = prop_v3.compile_redteam_judgments(
+                directory, report_path,
+                output_path=os.path.join(directory, "stale-judgments.json"))
+
+        self.assertTrue(judgments["passed"], judgments.get("issues"))
+        self.assertEqual(judgments["judgment_count"], 3)
+        levels = {
+            item["dimension"]: item["level"]
+            for item in fit["scorecard"]["dimensions"]
+        }
+        self.assertEqual(levels["insight_credibility"], "strong")
+        self.assertEqual(levels["differentiation"], "adequate")
+        self.assertEqual(levels["reading_efficiency"], "strong")
+        self.assertEqual(stale["judgment_count"], 0)
+        self.assertTrue(any(
+            "different report" in warning for warning in stale["warnings"]
         ))
 
     def test_manifest_self_attestation_rejects_hand_edit_even_for_draft_archive(self):
@@ -1743,7 +2009,7 @@ class ProposalV3Tests(unittest.TestCase):
             state = os.path.join(directory, "run")
             bundle = os.path.join(directory, "bundle")
             os.makedirs(state)
-            _make_submission_ready_lean_state(state)
+            _, compiled, _ = _make_submission_ready_lean_state(state)
             report_path = os.path.join(directory, "report.md")
             with open(report_path, "w", encoding="utf-8") as handle:
                 handle.write(
@@ -1758,6 +2024,28 @@ class ProposalV3Tests(unittest.TestCase):
                     "项目经理对阶段检查与验收闭环承担单一责任。\n\n"
                     "责任人：项目经理；检查节点：每个阶段交付前。\n"
                 )
+            redteam_dir = os.path.join(state, "redteam")
+            os.makedirs(redteam_dir)
+            _write_json(os.path.join(redteam_dir, "strategy_critic.json"), {
+                "schema_version": "redteam-diagnostics/v1",
+                "role": "strategy_critic",
+                "snapshot_id": compiled["brief"]["generation_snapshot_id"],
+                "report_hash": prop_v3.file_hash(report_path),
+                "strategy_tests": {
+                    "insight": {
+                        "level": "strong", "finding": "责任摩擦清楚",
+                        "source_quotes": ["项目经理对阶段检查与验收闭环承担单一责任。"],
+                    },
+                    "differentiation": {
+                        "level": "adequate", "finding": "机制有项目边界",
+                        "source_quotes": ["责任人：项目经理"],
+                    },
+                    "reading_efficiency": {
+                        "level": "strong", "finding": "节点容易定位",
+                        "source_quotes": ["检查节点：每个阶段交付前"],
+                    },
+                },
+            })
             gate2_path = os.path.join(directory, "gate2.json")
             _write_json(gate2_path, {
                 "schema_version": "gate2-decision/v1",
@@ -1773,6 +2061,9 @@ class ProposalV3Tests(unittest.TestCase):
         self.assertTrue(result["passed"], result["issues"])
         self.assertTrue(result["submission_ready"])
         self.assertEqual(checked.call_count, 1)
+        self.assertEqual(
+            result["validation"]["customer_fit_judgments"]["judgment_count"],
+            3)
         self.assertEqual(receipt["state_hash"], result["validation"]["state_hash"])
         self.assertEqual(
             receipt["report_hash"], result["validation"]["report_hash"])
@@ -1980,6 +2271,22 @@ class ProposalV3Tests(unittest.TestCase):
             item["rule_id"] == "strategy.recall_line.drift"
             for item in checked["diagnostics"]
         ))
+
+    def test_strategy_choice_and_signature_require_real_contrast(self):
+        documents = _lean_documents()
+        page = documents["strategy.json"]["one_page_strategy"]
+        page["selection_record"]["strongest_alternative"] = (
+            page["selection_record"]["selected_thesis"])
+        documents["strategy.json"]["sections"][0]["visible_outputs"][0][
+            "display_role"] = "supporting"
+        with tempfile.TemporaryDirectory() as directory:
+            _make_state(directory, documents)
+            checked = prop_v3.check_canonical(directory, stage="generation")
+
+        rules = {item["rule_id"] for item in checked["diagnostics"]}
+        self.assertFalse(checked["passed"])
+        self.assertIn("strategy.selection.no_contrast", rules)
+        self.assertIn("visible_output.signature_count", rules)
 
     def test_legacy_migration_is_non_destructive_and_conservative(self):
         with tempfile.TemporaryDirectory() as directory:

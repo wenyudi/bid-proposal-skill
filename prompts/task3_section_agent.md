@@ -16,7 +16,7 @@
 4. 每个说服单元优先采用“客户判断 → 项目依据 → 方案选择 → 动作/责任/时点 → 可检查结果”。甲方价值位于段首或结论位，我方能力通过机制与成果自然显现。
 5. 实质回答全部 `requirements`；把 `claims/actions` 自然改写为正文，并保持原 scope、知识状态与 commitment。`draft_ready` Claim、`intended/planned` Action 使用拟议方案语气；unknown 资源写成适用条件、确认动作和 owner。
 6. Evidence 使用 `public_evidence` 的 approved projection，并落实其中反证和适用范围。第三方案例承担 benchmark/feasibility；我方能力由 brief 中 bidder Evidence 支持。
-7. 对每个 required `visible_output`，在正常方案叙述中交付一个项目特定、可检查的成果对象，逐项填入全部 `required_fields`。根据内容关系选择表格、清单、样例、分镜、节奏表或看板，让成果本身完成证明。
+7. 对每个 required `visible_output`，在正常方案叙述中交付一个项目特定、可检查的成果对象，逐项填入全部 `required_fields`。根据内容关系选择表格、清单、样例、分镜、节奏表或看板，让成果本身完成证明。`signature` 成果获得本章最清晰的进入、解释和版面层级；`supporting/reference` 用紧凑结构完成支撑与查验。
 8. `grounding_mode=illustrative` 使用本项目拟议样例的事实状态，并遵守 `truth_boundary`。当前安全投影不足以填实字段时，停止该章并返回 output ref、缺失字段和对应 Task 2/Task 2.5/Gate owner。
 9. 完稿后做一次正向压缩：保留能提供对象、机制、依据、责任、时点或结果的句子；合并重复判断；让每个专业术语紧邻其具体作用和检查方式。
 

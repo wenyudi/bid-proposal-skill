@@ -18,6 +18,15 @@ init-state --state-dir DIR [--mode quick|standard|deep] [--lang LANG]
 
 在不存在 canonical 的目录中创建空 v3 状态、目录布局、source manifest 和 run manifest。已有任一 canonical 时拒绝覆盖。Task 1 正常流程通常使用 `bootstrap-state`，而不是手工填充空状态。
 
+### `scaffold-bootstrap`
+
+```text
+scaffold-bootstrap --output-dir DIR
+                   [--mode quick|standard|deep] [--lang LANG]
+```
+
+在 `DIR/task1.components/` 生成五份确定性 canonical 空骨架，并写 `DIR/task1.bootstrap.json` 索引。Task 1 直接填充这些文件，不再手写整套 schema。任一目标已存在时拒绝覆盖；安装中途失败会回滚本轮 scaffold。
+
 ### `bootstrap-state`
 
 ```text
@@ -68,7 +77,7 @@ promote-research --state-dir DIR
                  --intel-proposal FILE --links-proposal FILE
 ```
 
-校验并提升 Task 2 产物。intel proposal 必须是 `research-evidence/v1`，links proposal 必须是 `research-links/v1`。通过后以 Task 2 ChangeSet 添加 Evidence、EvidenceLink、gap 和 contradiction。
+校验并提升 Task 2 产物。intel proposal 必须是 `research-evidence/v1`，links proposal 必须是 `research-links/v1`。通过后以 Task 2 ChangeSet 添加 Evidence、EvidenceLink、gap 和 contradiction；有 Evidence refs 的 `strategy_signals` 与 `reopen_required` 会写入 research manifest，供 Task 2.5 判断是否重新打开 VP 候选。
 
 ### `apply-auto-state`
 
@@ -132,7 +141,7 @@ customer-fit --state-dir DIR
              [--output FILE]
 ```
 
-生成十维客户适配度内部诊断。默认 checkpoint 是 `strategy`；submission 会检查 realization。可选 judgments 必须为各维度提供有效 level、reason 和 source refs，否则使用确定性锚点或标为 `not_evaluated`。overall 只输出 withheld / fragile / credible / competitive / strong；不输出数字分、权重或区间。
+生成十维客户适配度内部诊断。默认 checkpoint 是 `strategy`；submission 会检查 realization。可选 judgments 必须为各维度提供有效 level、reason 和 source refs，否则使用确定性锚点或标为 `not_evaluated`。filled visible output 证明成果完整，不推断 reading efficiency；阅读判断需要 report-anchored semantic judgment。overall 只输出 withheld / fragile / credible / competitive / strong；不输出数字分、权重或区间。
 
 ### `archive-state`
 
@@ -151,7 +160,7 @@ validate-run --state-dir DIR --report FILE
              [--todo-output FILE] [--validation-output FILE]
 ```
 
-报告级只读终验。一次聚合 compliance、QA、canonical submission、customer-fit、human todo 和 Gate 2，并把结果写为 `run-validation/v1`。没有 resolved Gate 2 attestation 时 `submission_ready=false`；canonical 结果会被 fit/todo 复用，不重复校验。
+报告级只读终验。未显式提供 `--judgments` 时，先从 `STATE/redteam/` 选择当前 snapshot 的 strategy_critic/integrated 输出，只把能在当前 report 定位 exact quote 的 insight、differentiation 和 reading efficiency 观察编译为 judgments；再一次聚合 compliance、QA、canonical submission、customer-fit、human todo 和 Gate 2，并把结果写为 `run-validation/v1`。没有 resolved Gate 2 attestation 时 `submission_ready=false`；canonical 结果会被 fit/todo 复用，不重复校验。
 
 ### `finalize-run`
 

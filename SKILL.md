@@ -1,13 +1,13 @@
 ---
 name: proposal
-description: "政企传媒技术标 v3.2：拆硬要求，先收敛评委可复述的一页纸策略，再以同一主线生成客户亮点与可兑现正文，独立审计、策略批评、红队和一键终验。Use when 用户要写投标方案、应标文件、政企客户提案，提供标书要求出方案，或输入 /proposal。"
+description: "政企传媒技术标 v3.3：拆硬要求，研究后比较策略命题，收敛评委可复述的一页纸与一个主亮点，再以同一主线生成可兑现正文，独立审计、策略批评和一键终验。Use when 用户要写投标方案、应标文件、政企客户提案，提供标书要求出方案，或输入 /proposal。"
 ---
 
-# proposal v3.2
+# proposal v3.3
 
 为广告/传媒公司生成政企技术标。目标是让关键评委记住一个有据的核心主张，并沿同一推导链相信：方案懂客户、亮点值得选、正文有可检查成果、证据可信、交付可验、风险妥帖，同时 mandatory/scoring 零遗漏。每章以独有认知增量共同支撑这条主线。
 
-v3.2 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGACY.md`。错误保持显式，交付名称始终与 receipt 的真实 readiness 一致。
+v3.3 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGACY.md`。错误保持显式，交付名称始终与 receipt 的真实 readiness 一致。
 
 ## 交付与底层状态
 
@@ -23,7 +23,7 @@ v3.2 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGAC
 | `requirements.json` | Requirement、mandatory/scoring、预算与标书交付物 |
 | `customer-value.json` | Role、Need、Criterion、`decision_paths`、VP、Claim、Metric、EvidenceLink |
 | `delivery-plan.json` | DeliveryRole、Action、Resource、Dependency、Acceptance |
-| `strategy.json` | 一页纸策略、narrative、人工决策、Section；DecisionJob、`strategy_role` 与轻量 `visible_outputs` 内嵌在 Section |
+| `strategy.json` | 一页纸策略、命题取舍、唯一主亮点、narrative、人工决策、Section；DecisionJob、`strategy_role` 与轻量 `visible_outputs` 内嵌在 Section |
 | `intel-pool.json` | Evidence 原记录；不拥有“它证明什么” |
 
 主 agent 是 canonical 逻辑单写者。Task/Gate 只产 proposal/ChangeSet；`apply-changeset` 按 base revision 校验五文件并原子提交，stale 或任一硬门失败整组回滚。writer、summary、auditor、redteam 都无 canonical 写权限。
@@ -44,7 +44,7 @@ v3.2 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGAC
 - publishable/committed/confirmed/匿名公开必须有用途、scope、Evidence/Metric 和真实 scoped authority；任意 `GATE-*` 字符串不构成授权。
 - 每个 committed Action 有唯一 accountable、责任、时点、资源、预算 treatment 与 Acceptance；组合不漏算、不超载。
 - 每章一个内嵌 primary DecisionJob、最多一个 secondary；每个 lead VP 至少一个 required customer-visible output。realization valid 需要全部 required fields 填实。
-- `strategy/v5` 写作前必须有 research-informed 一页纸：尖锐洞察、记忆句、推导链、互换测试、落地可信度和逐章 spine；人工只批准一次。`-auto` 可 assumed 生成安全草案，但阻断递交。
+- `strategy/v5` 写作前必须有 research-informed 一页纸：尖锐洞察、记忆句、推导链、最强替代与决定性依据、互换测试、落地可信度和逐章 spine；全部成果只选一个 `signature` 主亮点。人工只批准一次。`-auto` 可 assumed 生成安全草案，但阻断递交。
 - 每章 Requirement + Claim/Action + visible output 由未参与写作的 auditor 独立复核；综述只用 valid 白名单。
 
 这些约束只在底层出现。客户正文使用自然的客户语言，以事实投影、方案语气和明确边界保持真实；模型名、ID、状态、覆盖标签、fit、审计过程和 reserve 候选留在内部状态。
@@ -66,8 +66,13 @@ v3.2 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGAC
 
 ### 1. 摄入、bootstrap 与 Gate 1
 
-1. 建时间戳 `$TMPDIR` 与 `proposals/task1.components/`；保存标书/素材清单。标书是启动所需输入，缺失时向用户索要并等待。
-2. 主 agent 读本文件、`RULES.md`、`TYPES.md`、`DECISIONS.md`。用 `prompts/task1_teardown.md` 派一个高推理 Task 1 agent，逐份写五个组件和小索引 `proposals/task1.bootstrap.json`；一页纸此时只是 candidate，替代命题留在池中。
+1. 建时间戳 `$TMPDIR`，保存标书/素材清单。标书是启动所需输入，缺失时向用户索要并等待。先生成确定性骨架：
+
+```bash
+$PY {TOOLSDIR}/prop_tools.py scaffold-bootstrap --output-dir "$TMPDIR/proposals" --mode <mode> --lang <lang>
+```
+
+2. 主 agent 读本文件、`RULES.md`、`TYPES.md`、`DECISIONS.md`。用 `prompts/task1_teardown.md` 派一个高推理 Task 1 agent，直接填充五个 scaffold 组件和小索引 `proposals/task1.bootstrap.json`；一页纸此时只是 candidate，替代命题留在池中。机械 schema 由工具承担，Task 1 聚焦拆标与策略发散。
 3. 建状态并校验：
 
 ```bash
@@ -88,7 +93,7 @@ schema/ref 失败只把 diagnostics 回给 Task 1 修一次；再次失败就报
 $PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target research
 ```
 
-用 `prompts/task2_intel.md` 派研究 agent，只写 intel/links proposal；抓原文，不用搜索摘要充数，失败写 gap。然后 `promote-research` 原子提升。
+用 `prompts/task2_intel.md` 派研究 agent，只写 intel/links proposal；抓原文，不用搜索摘要充数，失败写 gap。会改变核心命题或价值机制的新证据同时形成 `strategy_signals`；`reopen_required=true` 时允许 Task 2.5 在既有客户路径上重开候选，客户路径本身变化则回 Task 1。然后 `promote-research` 原子提升。
 
 编译 selection brief，派 `prompts/task2b_value_selection.md`：
 
@@ -101,14 +106,14 @@ $PY {TOOLSDIR}/prop_tools.py check-canonical --state-dir "$TMPDIR" --stage gener
 $PY {TOOLSDIR}/prop_tools.py freeze-snapshot --state-dir "$TMPDIR"
 ```
 
-Task 2.5 用短板、Pareto 和组合充分性选 lead/supporting/reserve，不按数量或模板词评分；同时收敛 `one_page_strategy` 与每章 `strategy_role`，为 lead 收敛最小 visible output。它只可写 `approval=pending`，ChangeSet 用 draft gate。
+Task 2.5 用短板、Pareto 和组合充分性选 lead/supporting/reserve，不按数量或模板词评分；先比较最终命题与最强替代，记录决定性 refs、接受的取舍和改选信号，再收敛 `one_page_strategy` 与每章 `strategy_role`。为 lead 收敛最小 visible output，并从中指定唯一 `signature_output_ref`；其余成果为 supporting/reference。它只可写 `approval=pending`，ChangeSet 用 draft gate。
 
-主 agent 从 `strategy-review` 只展示张力、洞察、核心主张/记忆句、推导链、互换测试、落地逻辑、逐章贡献和五维弱项，然后只问一次“是否按这一页进入写作？”确认后用 `producer=human` ChangeSet 写 `approval=approved` 和 reviewer；要求修改则只回 Task 2.5 修根因。`-auto` 在 Task 2.5 后再次运行 `apply-auto-state` 写 `approval=assumed`。随后才运行 generation gate 与 freeze。新增能力/成本/权限边界才回 Gate 1；同一 assumed 不重复开题。
+主 agent 从 `strategy-review` 只展示张力、洞察、核心主张/记忆句、最强替代与取舍、推导链、互换测试、主亮点、落地逻辑、逐章贡献和五维弱项，然后只问一次“是否按这一页进入写作？”确认后用 `producer=human` ChangeSet 写 `approval=approved` 和 reviewer；要求修改则只回 Task 2.5 修根因。`-auto` 在 Task 2.5 后再次运行 `apply-auto-state` 写 `approval=assumed`。随后才运行 generation gate 与 freeze。新增能力/成本/权限边界才回 Gate 1；同一 assumed 不重复开题。
 
 ### 3. 分章、批量独立 audit 与综述
 
 1. 对每个 Section 运行 `compile-context --target section --id <CH-ID>`；brief 始终带已批准一页纸、完整 section spine、本章贡献和前序 canonical 骨架摘要。匹配当前 state/source/run 的 snapshot 会复用，不重复完整 generation 校验。
-2. 用 `prompts/task3_section_agent.md` 并行派 writer。每个 writer 只写自己的 `sections/section-N.md`，引用同一 snapshot；缺文件只重派对应章。
+2. 用 `prompts/task3_section_agent.md` 并行派 writer。每个 writer 只写自己的 `sections/section-N.md`，引用同一 snapshot；signature 成果获得最清晰的进入和版面层级，supporting/reference 保持紧凑。缺文件只重派对应章。
 3. 按 profile 的 `audit_batch_size` 把 2–3 章交给独立于 writer 的 auditor，使用 `prompts/task3c_realization_audit.md`。同一 auditor 可批量读，每章使用自身 brief、正文和独立 semantic 文件。逐章执行：
 
 ```bash
@@ -122,7 +127,7 @@ $PY {TOOLSDIR}/prop_tools.py audit-realization --state-dir "$TMPDIR" --section-r
 ### 4. 装配、适应性红队与 Gate 2
 
 1. `assemble-proposal` 生成预览并从结果重新绑定 `$REPORT/$BUNDLE/$BRIEF`。
-2. 从 `profiles.json` 取角色：quick=`integrated`；standard=`strategy_critic,audit_rival`；deep=`buyer,strategy_critic,audit,rival`。逐角色 `compile-context --target redteam --role <role>`，用 `task4_redteam.md` 并行压力测试。strategy critic 完成一句话复述、推导、名称互换、逐章贡献和通用 exact quote；红队交付合并后的 root diagnostics，正文修订交给对应 owner。
+2. 计算 `REPORT_HASH="sha256:$(sha256sum "$REPORT" | cut -d' ' -f1)"`，再从 `profiles.json` 取角色：quick=`integrated`；standard=`strategy_critic,audit_rival`；deep=`buyer,strategy_critic,audit,rival`。逐角色 `compile-context --target redteam --role <role>`，替换 prompt 的 `{REPORT_HASH}` 后用 `task4_redteam.md` 并行压力测试。strategy critic 完成一句话复述、推导、名称互换、主亮点、阅读效率、逐章贡献和通用 exact quote；红队交付合并后的 root diagnostics，正文修订交给对应 owner。终验只把当前 snapshot、当前 report hash 且能在报告中定位的洞察、差异化和阅读判断编译为 customer-fit judgments；成果填满不再冒充阅读效率。
 3. 硬门问题立即按 owner 修；其余按 `DECISIONS.md` Gate 2 一次处理一个根因。accepted canonical 改动走 ChangeSet，并重做 snapshot-bound 输出、装配和审计。不满意先归入 `strategy_hollow / throughline_break / cliche_style` 一个主失败：前两类回 Task 2.5/Section spine，第三类回 Task 3。经真实反馈确认的好坏对照再沉淀到 `_quality-lessons/`；共享资产使用脱敏、获授权内容。
 4. Gate 2 收口写内部 JSON：
 
@@ -152,4 +157,4 @@ $PY {TOOLSDIR}/prop_tools.py finalize-run --state-dir "$TMPDIR" --report "$REPOR
 delivery status 为 draft-only 时，首句写“已生成草案，不可直接递交”；submission-ready 时按正式方案汇报。
 
 ---
-`proposal skill · 3.2.1 · positive-generation default`
+`proposal skill · 3.3.0 · comparative-strategy default`

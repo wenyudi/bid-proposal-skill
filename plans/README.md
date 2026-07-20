@@ -1,6 +1,6 @@
 # Implementation Plans
 
-由 improve skill 于 2026-07-16 生成,基准 commit `b10506e`(v3.0.0)。审计范围:全仓库(SKILL/RULES/TYPES/DECISIONS、8 个 v3 prompt、tools/ 两个 CLI 逐行、tests、docs 全部、casebase、仓库卫生;`prompts/legacy/` 仅抽查)。2026-07-19 根据首个 deep 真实 shadow run 的“合规但空”结果补充 Plan 008,并把 Plan 006 升级为双标型、必须保存真实 pre-change 基线的质量轨道。执行者:开始前完整读完对应计划,遵守其 STOP conditions,完成后更新本表状态行。
+由 improve skill 于 2026-07-16 生成,基准 commit `b10506e`(v3.0.0)。审计范围:全仓库(SKILL/RULES/TYPES/DECISIONS、8 个 v3 prompt、tools/ 两个 CLI 逐行、tests、docs 全部、casebase、仓库卫生;`prompts/legacy/` 仅抽查)。2026-07-19 根据首个 deep 真实 shadow run 的“合规但空”结果补充 Plan 008,并把 Plan 006 升级为双标型、必须保存真实 pre-change 基线的质量轨道。v3.3 又完成四项轻量增量：report-bound 红队 judgment、研究后重开候选、确定性 Task 1 scaffold、唯一 signature 成果；五份 canonical 与两级 readiness 均未增加。执行者:开始前完整读完对应计划,遵守其 STOP conditions,完成后更新本表状态行。
 
 本次运行为非交互(用户未在线选择),按杠杆默认选出以下计划;取舍记录见文末。
 

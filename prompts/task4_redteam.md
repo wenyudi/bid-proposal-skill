@@ -12,6 +12,7 @@
 
 - 语言：{LANG}。
 - 方案全文：`{REPORT}`，必须读完。
+- 当前报告 SHA-256：`{REPORT_HASH}`；把它原样写入输出，用于终验绑定本次评审与当前报告。
 - 审计 brief：`{BRIEF_PATH}`。它给出 Requirement 原文、canonical gate 摘要和现有 root diagnostics；审查范围以这份安全投影为准。
 - 必读 `references/strategy-rubric.md`、`references/contrast-examples.md` 与 `references/anti-patterns.md`。rubric 提供逐维行为锚点，对照样例帮助识别因果差异，输出 ordinal level、finding 和 next action。
 - brief `status` 或 snapshot 失配时，输出 stale 及实际值/期望值，交主 agent 重编译。
@@ -19,12 +20,13 @@
 ## 审查方法
 
 1. 逐条对照 mandatory/scoring 原文，定位正文中的实质回答和 exact quote；仅有结构映射时记录其语义缺口。
-2. 独立完成策略五测，再与 one-page 自评比较：
+2. 独立完成策略六测，再与 one-page 自评比较：
    - 一句话复述：读完整稿后，只写一句你实际记住的主张；与 approved recall line 不一致时说明漂移位置。
-   - 洞察测试：它是否揭示本项目因果/取舍，还是复述标书与行业常识。
+   - 洞察测试：正文中的项目事实和依据是否支撑该因果/取舍，并让它超越标书复述与行业常识。
    - 推导测试：策略→创意→执行是否为因果关系，逐章是否完成 `section_spine` 的独有贡献。
    - 名称互换：把投标人换成主要竞争对手，标出仍完全成立的 20–80 字原句；通用段落必须 exact quote。
    - 落地测试：核心主张是否由真实动作、责任、资源、时点、验收和正文成果证明。
+   - 阅读效率：评委能否沿标题、段首判断和成果层级快速找到答案；用 1–3 条正文 exact quote 定位最能代表其阅读质量的段落。
 3. 用客户语言指出确定的决策断点：任务理解、可信依据、价值增量、落地能力、风险妥帖和可辩护的选择理由。
 4. 对每个数字、案例、资质、团队能力、KPI/SLA、免费资源和“确保/保证”，核对依据、口径、责任、资源与验收。第三方案例承担 benchmark/feasibility，我方能力对应 bidder Evidence。
 5. 检查 VP/Claim 是否只会自夸、可被对手复制、与真实 Need 无关，或新增管理负担大于价值。
@@ -32,6 +34,7 @@
 7. 检查 intended 被写成 committed、scope 扩大、摘要强于正文、private/内部信息泄露、out_of_scope 回流、销售 CTA、负偏离和政务导向。
 8. 相同根因合并为一条，列全 affected targets。现有 canonical diagnostic 已准确命中时，引用它并补充正文证据。
 9. 专门核验四类兑现风险：流程名词与已填成果的差距、通用空表与项目实值的差距、外部附件与正文证明的差距、illustrative 样例与历史事实的边界。判断依据是 required fields 和客户可检查性。
+10. 核验 `signature_output_ref` 对应成果是否真正承担核心主张的主要证明，并观察 supporting/reference 是否形成清楚层级；把“亮点失焦”和“成果堆叠”归到同一个阅读或主线根因。
 
 每条语义意见标 confidence。低置信度使用 `needs_review`；submission blocker 由明确 mandatory/法律/真实性/预算/授权、canonical-vs-text 冲突或独立审计一致性支持。
 
@@ -44,14 +47,16 @@
   "schema_version": "redteam-diagnostics/v1",
   "role": "{ROLE_KEY}",
   "snapshot_id": "来自brief",
+  "report_hash": "{REPORT_HASH}",
   "overall_verdict": "一句话判断",
   "strategy_tests": {
     "actual_recall_line": "读完后实际记住的一句话",
-    "insight": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": ""},
-    "recallability": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": ""},
-    "deductive_coherence": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": ""},
-    "differentiation": {"level": "deficient|fragile|adequate|strong|distinctive", "name_swap_result": "fails|partial|passes", "finding": ""},
-    "delivery_credibility": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": ""},
+    "insight": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
+    "recallability": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
+    "deductive_coherence": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
+    "differentiation": {"level": "deficient|fragile|adequate|strong|distinctive", "name_swap_result": "fails|partial|passes", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
+    "delivery_credibility": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
+    "reading_efficiency": {"level": "deficient|fragile|adequate|strong|distinctive", "finding": "", "source_quotes": ["正文逐字短引"], "confidence": "high|medium|low"},
     "primary_failure": "strategy_hollow|throughline_break|cliche_style|none"
   },
   "challenges": [

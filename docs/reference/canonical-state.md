@@ -9,10 +9,10 @@ v3 把可修改事实集中在五份 canonical JSON。正文、compiled brief、
 | `requirements.json` | `requirements/v3` | 项目、采购人、预算、mandatory、scoring、deliverables | `mandatory`、`scoring`、`deliverables` |
 | `customer-value.json` | `customer-value/v2` | 客户角色、需求、判断标准、决策路径、价值、Claim、Metric 和证据关系 | `roles`、`needs`、`criteria`、`decision_paths`、`value_propositions`、`claims`、`metrics`、`evidence_links` |
 | `delivery-plan.json` | `delivery-plan/v1` | 投标人交付角色、动作、资源、客户依赖和验收 | `delivery_roles`、`actions`、`resource_envelopes`、`customer_dependencies`、`acceptance_contracts` |
-| `strategy.json` | `strategy/v5` | 一页纸策略、标题、叙事、决策地图和章节主线 | `sections`；DecisionJob、`strategy_role` 与 `visible_outputs` 内嵌章节，另含 `open_questions` |
+| `strategy.json` | additive `strategy/v5` | 一页纸策略、命题取舍、signature 主亮点、标题、叙事、决策地图和章节主线 | `sections`；DecisionJob、`strategy_role` 与 `visible_outputs` 内嵌章节，另含 `open_questions` |
 | `intel-pool.json` | `intel-pool/v3` | 本标 Evidence 原记录、研究 gap 和 research manifest | `evidence`、`gaps`、`research_manifest` |
 
-每份文件都有 `schema_version` 和整数 `revision`。实体 ID 在五份文件之间全局唯一、稳定；引用必须解析到允许的实体类型。只读兼容层仍接受 `customer-value/v1` 与 `strategy/v3/v4`，从旧 link / 顶层 DecisionJob 派生等价视图；新 bootstrap/migration 只写 v2/v5，不静默改写旧 archive。
+每份文件都有 `schema_version` 和整数 `revision`。实体 ID 在五份文件之间全局唯一、稳定；引用必须解析到允许的实体类型。只读兼容层仍接受 `customer-value/v1`、`strategy/v3/v4`，以及缺少 v3.3 additive 字段的历史 `strategy/v5`，从旧 link / 顶层 DecisionJob 派生等价视图；新 bootstrap/migration 只写 v2/v5 并补当前字段，不静默改写旧 archive。
 
 ## 关系主链
 
@@ -33,7 +33,7 @@ Criterion ────┘                ↓
 
 Requirement 轨和客户价值轨并行存在：章节映射到 Requirement 只证明结构覆盖，DecisionPath 只证明 Role × Need × Criterion 连接；submission 还要求正文独立审计为 addressed / entailed，并把 required visible output 的字段判为 filled。visible output 的 grounding 只能引用标书 Requirement 或具有有效客户可见投影的 active Evidence，private/internal Evidence 不能借 semantic sidecar 充当正文依据。
 
-`one_page_strategy` 是研究后策略的单一事实源，包含 client context、客户张力、洞察、core thesis / recall line、逻辑链、互换测试、proof plan、落地可信度、五维自评和人工 approval。每个 Section 自己拥有 `strategy_role.contribution/inherits/hands_off`；编译器据此生成全案 spine，不另存第二份可手改地图。
+`one_page_strategy` 是研究后策略的单一事实源，包含 client context、客户张力、洞察、core thesis / recall line、逻辑链、最终命题与最强替代的 `selection_record`、互换测试、proof plan、`signature_output_ref`、落地可信度、五维自评和人工 approval。每个 Section 自己拥有 `strategy_role.contribution/inherits/hands_off`；编译器据此生成全案 spine，不另存第二份可手改地图。
 
 Section 的 `narrative_role` 使用 `primary`、`secondary:<mode>`、`fixed:logic` 或 `fixed:evidence`。编译器把它与全案 narrative 合并为本章唯一 effective guide；报价、合规、资质章固定为 logic/evidence，secondary 只有 presentation authority。
 
