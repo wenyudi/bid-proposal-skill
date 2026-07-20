@@ -1,177 +1,81 @@
 ---
 name: proposal
-description: "政企传媒技术标 v3.4：拆硬要求，研究后比较策略命题，收敛评委可复述的一页纸与一个主亮点，再以同一主线生成可兑现正文或图片 PPT 结构稿，独立审计、策略批评和一键终验。Use when 用户要写投标方案、应标文件、政企客户提案、PPT 提案结构或图片版演示前置稿，提供标书要求出方案，或输入 /proposal。"
+description: 商业方案与投标方案生成 v4：给材料，拆评分表，收敛制胜一页纸，并行写出成熟正文，缺口虚构补全并登记风险，产出响应对照索引与图片 PPT 结构稿交给下游图片工作流。Use when 用户要写商业方案、投标/应标方案、客户提案、PPT 提案前置稿，给一批材料要出完整方案，或输入 /proposal。
 ---
 
-# proposal v3.4
+# proposal v4 — 商业方案与投标方案
 
-为广告/传媒公司生成政企技术标。目标是让关键评委记住一个有据的核心主张，并沿同一推导链相信：方案懂客户、亮点值得选、正文有可检查成果、证据可信、交付可验、风险妥帖，同时 mandatory/scoring 零遗漏。每章以独有认知增量共同支撑这条主线。
+给一批材料，产出一份成熟、客户可读的方案：全案围绕一句评委/客户能复述的**主张**展开，每章沿同一**主线**推进；有评分表时以**评分表**为骨架，**地板**（客观/mandatory 项）一分不丢、**天花板**（高权重主观项）尽量顶满，用一张**响应对照索引**证明覆盖，并默认产出图片 PPT 结构稿（唯一 **signature** 页承担主张证明）交给下游图片工作流。
 
-v3.4 是默认引擎；`-v3` 是兼容 no-op，显式 `-legacy` 时读取 `LEGACY.md`。错误保持显式，交付名称始终与 receipt 的真实 readiness 一致。
+低仪式、高工艺：五步、一次人工确认、一轮制胜复核循环；没有状态机、没有硬门。素材缺口用具体内容虚构补全，每处**登记**进风险文档待你核实。原政企技术标重型引擎在 git 历史（tag `v3.4.0-heavy`），本流程不再运行它。
 
-## 交付与底层状态
+约定：仓库相对路径从本目录解析；Python 记为 `$PY`（优先 `python3`）；JSON/Markdown 用 UTF-8 无 BOM。主 agent 派子 agent 前赋值 `{LANG}`、`{TMPDIR}`、`{BRIEF_PATH}`，并按评分权重与篇幅给各章 `{PER_SECTION_CHARS}`（上限，非填满目标）。宿主的派发/搜索/交互工具映射见宿主入口 SKILL.md。
 
-- 输入：标书路径或全文；可附资质、报价、团队、案例和品牌资料。沟通/踏勘纪要标 `[notes]`，只作 private 校准。
-- 自动读取 `casebase/` 中非 `_` 开头案例。
-- 客户卷册：`技术方案-完整版.md`、`分册/`。需要图片版演示时另产 `_PPT生产包/outline.md + deck-blueprint.json`，交给下游图片工作流。内部文件：`_内部研判.md`、`_人工待办.md`、`_state/`、`_acceptance-receipt.json`，均不直接递交。
-- 范围只到技术标；投标函、授权书、承诺函和法定报价表按标书模板另行套用。
+## 交付
 
-五份 canonical 是唯一事实源：
+- 输入：标书/方案 brief（必需，缺失则向用户索要并等待）+ 素材（能力、案例、报价、团队、品牌）。`casebase/` 非 `_` 开头案例自动纳入；沟通/踏勘纪要标 `[notes]`，只作内部校准、不入正文、不引原句。
+- 产出（默认）：
 
-| 文件 | 拥有 |
-|:---|:---|
-| `requirements.json` | Requirement、mandatory/scoring、预算与标书交付物 |
-| `customer-value.json` | Role、Need、Criterion、`decision_paths`、VP、Claim、Metric、EvidenceLink |
-| `delivery-plan.json` | DeliveryRole、Action、Resource、Dependency、Acceptance |
-| `strategy.json` | 一页纸策略、命题取舍、唯一主亮点、narrative、人工决策、Section；DecisionJob、`strategy_role` 与轻量 `visible_outputs` 内嵌在 Section |
-| `intel-pool.json` | Evidence 原记录；不拥有“它证明什么” |
+```
+<方案标题>-<时间戳>/
+├── 方案正文.md              客户可读递交稿
+├── 响应对照索引.md          有评分表时；评分项→权重→章节位置→覆盖状态（交付级）
+├── _PPT生产包/              outline.md + deck-blueprint.json + presentation-validation.json
+├── _风险与待核实.md          内部：虚构/假设做实清单（权重×风险排序）
+├── _研判.md                 内部：评分表拆解、一页纸、被否替代、来源
+├── _score-table.json        内部：机器可读评分表（有评分表时）
+└── _sections/               内部：分章工作文件
+```
 
-主 agent 是 canonical 逻辑单写者。Task/Gate 只产 proposal/ChangeSet；`apply-changeset` 按 base revision 校验五文件并原子提交，stale 或任一硬门失败整组回滚。writer、summary、auditor、redteam 都无 canonical 写权限。
+- `_` 前缀一律不递交。直接在用户指定位置（默认当前目录）建目录，无 staging/归档仪式。
+- flags 只有两个：`-no-ppt` 跳过 PPT 结构稿；`-auto` 跳过唯一人工确认（产草案、登记 assumed）。无深度/叙事旋钮——永远尽力做到最好，叙事按标型自动选。
 
-## 两级 readiness
+## 缺口补全与风险登记
 
-- `safe_draft_ready`：允许 selected VP、`draft_ready` Claim、`intended/planned` Action 和 unknown 资源进入安全草案；正文保持拟议/待确认边界。provisional low/high、容量、报价和 authority 使用已确认值，缺失时继续 unknown 并进入待办。
-- `submission_ready`：所有 assumed/open、真实性、授权、资源预算、realization、正文 QA、客户适配与 Gate 2 均闭合。
-
-`-auto` 最多到 safe draft；任何 assumed 都进入待办并阻断直接递交。
-
-## 不可降级的门
-
-详细政策只以 `RULES.md` 为准。以下类别不能被叙事、fit 或红队软意见抵消：
-
-- mandatory/scoring/法律/格式/政务导向、预算上限、负偏离和客户责任转嫁。
-- 资质、业绩、团队、案例、数字与来源真实性；第三方案例承担 benchmark/feasibility，我方能力由 bidder Evidence 支持；private/raw/URL/内部 ID 与策略痕迹保留在内部系统。
-- publishable/committed/confirmed/匿名公开必须有用途、scope、Evidence/Metric 和真实 scoped authority；任意 `GATE-*` 字符串不构成授权。
-- 每个 committed Action 有唯一 accountable、责任、时点、资源、预算 treatment 与 Acceptance；组合不漏算、不超载。
-- 每章一个内嵌 primary DecisionJob、最多一个 secondary；每个 lead VP 至少一个 required customer-visible output。realization valid 需要全部 required fields 填实。
-- `strategy/v5` 写作前必须有 research-informed 一页纸：尖锐洞察、记忆句、推导链、最强替代与决定性依据、互换测试、落地可信度和逐章 spine；全部成果只选一个 `signature` 主亮点。人工只批准一次。`-auto` 可 assumed 生成安全草案，但阻断递交。
-- 每章 Requirement + Claim/Action + visible output 由未参与写作的 auditor 独立复核；综述和 PPT 结构稿只用 valid 白名单。
-
-这些约束只在底层出现。客户正文使用自然的客户语言，以事实投影、方案语气和明确边界保持真实；模型名、ID、状态、覆盖标签、fit、审计过程和 reserve 候选留在内部状态。
-
-## 参数与运行变量
-
-- 深度：`-quick` / standard（默认）/ `-deep`。
-- 叙事：`-logic` / `-story` / `-vision` / `-evidence`；未指定由 Task 1 按 `TYPES.md` 选择，短 guide 从 `narratives.json` 编译。
-- 演示交付：`-ppt` 或用户明确要求 PPT/图片版方案时，在 Gate 2 后生成 `_PPT生产包`；默认流程不增加该阶段。
-- `profiles.json` 决定 token、字数、`redteam_roles` 和 `audit_batch_size`。v3 章节数完全等于 `strategy.sections`；profile 固定章数只用于 legacy。
-- Python 记为 `$PY`；JSON/Markdown 使用 UTF-8 无 BOM。
-
-生成阶段采用正向提示：先给交付目标和依据，再给工作顺序、安全替代动作与输出契约；缺失信息落为 `unknown/gap + owner`。真实性、隐私、授权和 mandatory 保留为少量硬边界。
-
-参考按阶段渐进加载：Task 1 只读 `references/strategy-patterns.md`；Task 2.5 先按策略骨架形成候选，再用 `references/strategy-rubric.md` 复核；writer 只读 `references/writing-patterns.md`；PPT planner 只读 `references/presentation-patterns.md`；策略红队读取 rubric、`references/contrast-examples.md` 与 `references/anti-patterns.md`。反模式只服务独立批评和失败复盘，避免在生成前压缩发散或锚定套话。合成样例只作教学材料。真实失败按 `casebase/_quality-lessons/_template.md` 复盘，人工确认后才提升为共享样例。
-
-派 agent 前由主 agent赋值：`{LANG}`、`{MODE}`、`{TMPDIR}`、`{CURRENT_YEAR}`、`{COUNTRY}`、`{BRIEF_PATH}`。再把 profile 的 `max_chars` 按评分权重、决策复杂度与 required visible output 负担分配为各章 `{PER_SECTION_CHARS}`，全部章节预算之和位于总上限内；它是 ceiling 而非填满目标。auditor 的 `{AUDIT_ITEMS}` 是 2–3 章列表，每项含 section ref、brief/section/semantic output 路径。
+- 素材缺失时用**具体、可信**的内容虚构补全，让方案读起来成熟完整——不留"待确认"空洞、不留占位符、不写空话套话。
+- 每一处虚构或假设都登记进 `_风险与待核实.md`：写清出现在哪、虚构了什么、要核实/替换成什么、不核实的后果。高风险事实（客户案例、资质、报价、KPI）即使虚构也必须登记。
+- 虚构在 writer 写作时**源头申报**（随正文交结构化清单），主 agent 合并成风险文档；复核只抽查漏报，不承担全量侦测。
+- 第三方案例只作参照，不冒充我方能力；正文用自然客户语言，内部来源 URL、状态、ID、登记痕迹留在内部。
 
 ## 主流程
 
-### 1. 摄入、bootstrap 与 Gate 1
+### 1. 摄入、评分表拆解与制胜一页纸
+用 `prompts/task1_strategy.md` 派一个高推理 agent：
+- 读全部材料（含 casebase）。有评分表/标书时先拆出评分项、权重、mandatory 与交付物，分清**地板**（客观、mandatory、格式、交付物）与**天花板**（高权重主观项），落 `_研判.md` + `_score-table.json`。**无评分表**：把 brief 明确诉求整理成 floor 清单落 `_研判.md`，跳过 JSON 与索引。
+- 需要外部证据时抓原文（WebFetch/WebSearch），不用搜索摘要充数；抓不到就虚构补全并申报。
+- 先发散 ≥3 个主张角度，再按短板+差异化收敛一个，被否角度各留一句理由。产出制胜一页纸（落 `_研判.md`）：客户张力 / 尖锐洞察 / 核心主张 + 十秒记忆句 / 推导链（洞察→策略→表达→执行→证明）/ **最强替代命题 + 为何不选** / 互换测试结论（换成对手是否仍成立）/ 拿分打法（地板怎么保、天花板怎么顶）/ 逐章骨架（每章：独有贡献、认领评分项、`{PER_SECTION_CHARS}`、前后交接）/ 唯一 signature 主亮点 / 叙事选择（自 `narratives.json` 按标型自动选）。参考 `references/strategy-patterns.md`。
+- **唯一人工确认**：展示主张与记忆句、最强替代与为何不选、拿分打法、逐章骨架，问"是否按这一页写？"。要改→回本步改根因。`-auto` 跳过并登记 assumed。
+- **完成判据**：一页纸各字段齐全；每个评分项被且仅被一个合理章节认领；互换测试有结论；有评分表时 `_score-table.json` 与拆解一致。
 
-1. 建时间戳 `$TMPDIR`，保存标书/素材清单。标书是启动所需输入，缺失时向用户索要并等待。先生成确定性骨架：
+### 2. 分章写作
+用 `prompts/task2_section.md` 并行派 writer（每个只写自己的 `_sections/section-N.md`）。brief 固定携带：一页纸全文、全案章节骨架、本章独有贡献/认领评分项/`{PER_SECTION_CHARS}`、前后交接、叙事短 guide、`references/writing-patterns.md`。
+- 地板项逐项应答且可定位；高权重项用主张 + 具体证据写深；每章以客户任务/结果开篇、标题含主张、创意配动作/责任/时点，不以我司自夸开篇；套话删整句重写；缺口具体虚构。
+- writer 返回**双产物**：`section-N.md` + 本章虚构申报（结构化：位置 / 虚构了什么 / 应核实或替换为什么 / 风险等级），可在文中标"建议配图点"。
+- 综述章在其余章定稿后用 `prompts/task2b_summary.md` **串行**写，只合成、不新增主张或承诺。
+- **完成判据**：全部章齐；认领评分项都有可定位应答；每章虚构申报随文到位。
 
-```bash
-$PY {TOOLSDIR}/prop_tools.py scaffold-bootstrap --output-dir "$TMPDIR/proposals" --mode <mode> --lang <lang>
-```
+### 3. 制胜复核（循环 ≤3 轮）
+用 `prompts/task3_review.md`，每轮**并行派 3 个独立于 writer 的 agent**：
+- **① 覆盖审计**：逐项对照 `_score-table.json`（或 brief 诉求清单），查应答存在且可定位；漏项/弱项按权重排序返回。
+- **② 对手视角**：只看高权重章，问"换成对手还成立吗？评委凭什么选我们？"，专抓"合规但空"；读 `references/contrast-examples.md` + `anti-patterns.md`。
+- **③ 文风与登记**：主线是否贯穿、套话、递交稿禁项、虚构漏报抽查（对照素材查可疑的具体性）。
+主 agent 合并成根因列表（根因 / 位置 / 权重 / 建议修法）→ 升级弱章（改稿或重派对应 writer）→ 再循环。
+- **通过判据**：无地板缺口、无空心高权重章、无主线断裂、文风与漏报修完。到 3 轮仍有残留→停止循环，残留**如实**进汇报与 `_风险与待核实.md`，不静默通过。
 
-2. 主 agent 读本文件、`RULES.md`、`TYPES.md`、`DECISIONS.md`。用 `prompts/task1_teardown.md` 派一个高推理 Task 1 agent，直接填充五个 scaffold 组件和小索引 `proposals/task1.bootstrap.json`；一页纸此时只是 candidate，替代命题留在池中。机械 schema 由工具承担，Task 1 聚焦拆标与策略发散。
-3. 建状态并校验：
+### 4. 定稿产物编译
+1. 合并全部虚构申报 → `_风险与待核实.md`（按 权重×风险 排序；每条含所在章节/后续页码、虚构内容、应核实项、不核实后果）。
+2. 组装 `方案正文.md`：章序、编号统一、零占位符。
+3. 有评分表→生成 `响应对照索引.md`（评分项 | 权重 | 章节位置=确切标题 | 覆盖状态：完整/部分/虚构补全），再：
+   `$PY tools/prop_tools.py validate-index --index <索引> --doc <正文> --score-table <_score-table.json> --risk <_风险与待核实.md>`
+   失败→修→重跑。顺序固定：复核通过 → 生成索引 → validate-index，不再回模型。
+4. 默认 PPT（`-no-ppt` 跳过）：用 `prompts/task4_blueprint.md`（读 `references/presentation-patterns.md`）从定稿正文生成 `deck-blueprint.json`：core/appendix 双轨、唯一 signature 页（= 下游样张）、结论式标题、准确上屏文案、每页画面任务（主画面/构图/prompt seed/规避元素/比例）、素材三模式、页级虚构标注、全案统一 `visual_system`。**证据图红线**：`generate` 只用于效果图/示意图（对未来方案的想象）；过往案例现场、资质、数据截图等证据图必须 `strict_input` + `needs_user` 真实素材并进风险登记。然后：
+   `$PY tools/prop_tools.py validate-blueprint --blueprint <blueprint> --output-dir <bundle>/_PPT生产包`（校验 + 确定性写 `outline.md`）。
+- **完成判据**：validate-index 与 validate-blueprint 全绿；`_风险与待核实.md` 覆盖全部申报（含页级标注）。
 
-```bash
-$PY {TOOLSDIR}/prop_tools.py bootstrap-state --state-dir "$TMPDIR" --proposal "$TMPDIR/proposals/task1.bootstrap.json" --mode <mode> --lang <lang>
-$PY {TOOLSDIR}/prop_tools.py check-canonical --state-dir "$TMPDIR" --stage draft --write-derived
-```
-
-schema/ref 失败只把 diagnostics 回给 Task 1 修一次；再次失败就报告并停止，不手改、不切 legacy。
-
-4. Gate 1 按 `DECISIONS.md` 一次问当前前沿一题，给推荐与得失。回答后主 agent 写 `producer=gate1` 的 ChangeSet，一次更新 decision 与所有受影响对象，再 `apply-changeset`。用户说“其余按推荐”才可批量。
-5. `-auto` 用 `apply-auto-state`；assumed 只解锁安全草案。
-
-继续旧项目使用 `migrate-state --source-dir <旧目录> --output-dir "$TMPDIR"`，原目录只读。恢复 `_state/` 也复制到新 `$TMPDIR`；路径绑定不跨目录，必须重新 freeze、compile 和独立 audit。
-
-### 2. Evidence 研究与价值选择
-
-```bash
-$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target research
-```
-
-用 `prompts/task2_intel.md` 派研究 agent，只写 intel/links proposal；抓原文，不用搜索摘要充数，失败写 gap。会改变核心命题或价值机制的新证据同时形成 `strategy_signals`；`reopen_required=true` 时允许 Task 2.5 在既有客户路径上重开候选，客户路径本身变化则回 Task 1。然后 `promote-research` 原子提升。
-
-编译 selection brief，派 `prompts/task2b_value_selection.md`：
-
-```bash
-$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target value-selection --token-budget <profile budget × 1.5>
-$PY {TOOLSDIR}/prop_tools.py apply-changeset --state-dir "$TMPDIR" --changeset "$TMPDIR/proposals/task2.5.selection.json"
-$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target strategy-review
-# 人工 approval ChangeSet；-auto 则再次 apply-auto-state
-$PY {TOOLSDIR}/prop_tools.py check-canonical --state-dir "$TMPDIR" --stage generation --write-derived
-$PY {TOOLSDIR}/prop_tools.py freeze-snapshot --state-dir "$TMPDIR"
-```
-
-Task 2.5 用短板、Pareto 和组合充分性选 lead/supporting/reserve，不按数量或模板词评分；先比较最终命题与最强替代，记录决定性 refs、接受的取舍和改选信号，再收敛 `one_page_strategy` 与每章 `strategy_role`。为 lead 收敛最小 visible output，并从中指定唯一 `signature_output_ref`；其余成果为 supporting/reference。它只可写 `approval=pending`，ChangeSet 用 draft gate。
-
-主 agent 从 `strategy-review` 只展示张力、洞察、核心主张/记忆句、最强替代与取舍、推导链、互换测试、主亮点、落地逻辑、逐章贡献和五维弱项，然后只问一次“是否按这一页进入写作？”确认后用 `producer=human` ChangeSet 写 `approval=approved` 和 reviewer；要求修改则只回 Task 2.5 修根因。`-auto` 在 Task 2.5 后再次运行 `apply-auto-state` 写 `approval=assumed`。随后才运行 generation gate 与 freeze。新增能力/成本/权限边界才回 Gate 1；同一 assumed 不重复开题。
-
-### 3. 分章、批量独立 audit 与综述
-
-1. 对每个 Section 运行 `compile-context --target section --id <CH-ID>`；brief 始终带已批准一页纸、完整 section spine、本章贡献和前序 canonical 骨架摘要。匹配当前 state/source/run 的 snapshot 会复用，不重复完整 generation 校验。
-2. 用 `prompts/task3_section_agent.md` 并行派 writer。每个 writer 只写自己的 `sections/section-N.md`，引用同一 snapshot；signature 成果获得最清晰的进入和版面层级，supporting/reference 保持紧凑。缺文件只重派对应章。
-3. 按 profile 的 `audit_batch_size` 把 2–3 章交给独立于 writer 的 auditor，使用 `prompts/task3c_realization_audit.md`。同一 auditor 可批量读，每章使用自身 brief、正文和独立 semantic 文件。逐章执行：
-
-```bash
-$PY {TOOLSDIR}/prop_tools.py audit-realization --state-dir "$TMPDIR" --section-ref <CH-ID> --section <section.md> --brief <brief.json> --semantic <semantic.json>
-```
-
-`--hints` 仅兼容 v3.0 旧运行，新 writer 不生成 sidecar。invalid 按最近 owner 返回：表达/Requirement/成果字段→Task 3，Evidence→Task 2，VP/Claim/Action→Task 2.5，能力/资源/授权→Gate 1。
-
-4. 全部正式章 valid 后 `compile-context --target exec-summary`，用 `task3b_exec_summary.md` 串行写 `section-0.md`，再由独立 auditor 和同一工具复验。任一 canonical 改动使全局 snapshot 失效，所有绑定输出重编译/复验。
-
-### 4. 装配、适应性红队与 Gate 2
-
-1. `assemble-proposal` 生成预览并从结果重新绑定 `$REPORT/$BUNDLE/$BRIEF`。
-2. 计算 `REPORT_HASH="sha256:$(sha256sum "$REPORT" | cut -d' ' -f1)"`，再从 `profiles.json` 取角色：quick=`integrated`；standard=`strategy_critic,audit_rival`；deep=`buyer,strategy_critic,audit,rival`。逐角色 `compile-context --target redteam --role <role>`，替换 prompt 的 `{REPORT_HASH}` 后用 `task4_redteam.md` 并行压力测试。strategy critic 完成一句话复述、推导、名称互换、主亮点、阅读效率、逐章贡献和通用 exact quote；红队交付合并后的 root diagnostics，正文修订交给对应 owner。终验只把当前 snapshot、当前 report hash 且能在报告中定位的洞察、差异化和阅读判断编译为 customer-fit judgments；成果填满不再冒充阅读效率。
-3. 硬门问题立即按 owner 修；其余按 `DECISIONS.md` Gate 2 一次处理一个根因。accepted canonical 改动走 ChangeSet，并重做 snapshot-bound 输出、装配和审计。不满意先归入 `strategy_hollow / throughline_break / cliche_style` 一个主失败：前两类回 Task 2.5/Section spine，第三类回 Task 3。经真实反馈确认的好坏对照再沉淀到 `_quality-lessons/`；共享资产使用脱敏、获授权内容。
-4. Gate 2 收口写内部 JSON：
-
-```json
-{"schema_version":"gate2-decision/v1","status":"resolved","open_root_causes":[]}
-```
-
-全部根因经人工处置后写 `resolved`；其余状态保持 open，`-auto` 保持 draft-only。
-
-### 5. 可选 PPT 结构稿与图片工作流交接
-
-用户要求 PPT、图片版方案或 image2 生产包时，在 Gate 2 根因处理完成并基于最新 canonical/realization 重装配后运行：
-
-```bash
-$PY {TOOLSDIR}/prop_tools.py compile-context --state-dir "$TMPDIR" --target presentation --token-budget <profile context budget>
-# 用 prompts/task3d_presentation_blueprint.md 生成 $TMPDIR/presentation/deck-blueprint.json
-$PY {TOOLSDIR}/prop_tools.py validate-presentation --state-dir "$TMPDIR" --brief "$TMPDIR/derived/briefs/presentation.json" --blueprint "$TMPDIR/presentation/deck-blueprint.json" --output-dir "$BUNDLE/_PPT生产包"
-```
-
-presentation brief 只投影已通过独立审计的 Requirement、VP/Claim/Action、Evidence 与 visible output。planner 把它们压缩为 core/appendix 两条轨：核心轨完成最短说服链，附录轨承接长名单、效果图系列、尺寸材质、预算和风险查验；全案只有一张 signature 页，并将它指定为下游样张页。
-
-`validate-presentation` 绑定当前 snapshot 与 brief，检查连续页码、story arc、required refs、唯一 signature、上屏文案、素材路径和 truth boundary，再确定性生成 `_PPT生产包/outline.md`。结果状态是 `ready_for_outline_review`，不表示图片已生成。
-
-把 `outline.md` 与 `deck-blueprint.json` 交给图片 PPT 工作流；后者继续完成页序确认、视觉风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。参考 PDF/PPT 只作为 `style_reference` 提取可见风格，方案事实仍来自 blueprint。proposal 本身不调用图片模型，避免两个 skill 互相依赖。
-
-### 6. 一键终验、归档与 receipt
-
-最终重装配后只调用聚合入口；它一次完成 compliance、QA、submission canonical、ordinal customer-fit、human todo，并复用同一 checked result：
-
-```bash
-$PY {TOOLSDIR}/prop_tools.py validate-run --state-dir "$TMPDIR" --report "$REPORT" --mode <mode> --lang <lang> --gate2 <gate2.json> --todo-output "$BUNDLE/_人工待办.md"
-$PY {TOOLSDIR}/prop_tools.py finalize-run --state-dir "$TMPDIR" --report "$REPORT" --bundle-dir "$BUNDLE" --mode <mode> --lang <lang> --gate2 <gate2.json> --todo-output "$BUNDLE/_人工待办.md"
-```
-
-明确草案交付给 `finalize-run` 加 `--allow-draft`；fatal/schema/source 损坏仍返回修复诊断。归档原子替换 `_state`，旧状态保留 `_state.last-good`；失败时保留 TMPDIR 和上一成功卷。receipt 绑定 `state_hash + report_hash`，以其 `delivery_status` 作为报告级结论。
-
-把 fit 的十维 ordinal、top gaps、红队/Gate 取舍和 readiness 写入 `_内部研判.md`；递交稿保持客户可读内容。归档成功并读取开始时间后清理 TMPDIR。
-
-## 最终汇报
-
-用用户语言简洁给出：标题/标型/章数/叙事，lead/supporting 的客户结果，mandatory/scoring 与 `submission_ready`，fit rating 和 1–3 个 top gaps（明确不是评委分或中标概率），红队与待办计数，卷册/递交稿/receipt 路径。请求 PPT 时另给结构稿页数、signature/sample 页、`needs_user` 素材数和 `_PPT生产包` 路径。
-
-delivery status 为 draft-only 时，首句写“已生成草案，不可直接递交”；submission-ready 时按正式方案汇报。
+### 5. 汇报
+- 首句（存在虚构或 `-auto`）："已生成草案，含 N 处虚构占位（见 `_风险与待核实.md`），核实前不可直接递交。"
+- 主体：标题 / 核心主张 + 记忆句 / 章数 / 评分覆盖状态（含复核残留，如实）/ top 3 待核实（权重×风险）/ 卷册路径。
+- PPT：页数 / signature 页 / `needs_user` 素材数 / 生产包路径，并给一行下一步："把 `_PPT生产包` 交给 image2 继续样张确认与逐页生成。"
 
 ---
-`proposal skill · 3.4.0 · presentation-ready comparative strategy`
+`proposal skill · 4.0.0 · lightweight commercial & bid proposal`

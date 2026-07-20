@@ -1,0 +1,96 @@
+{
+  "schema_version": "presentation-blueprint/v1",
+  "deck": {
+    "title": "示例文化传播方案",
+    "audience": "评审委员会",
+    "purpose": "技术标现场演示",
+    "aspect_ratio": "16:9",
+    "language": "zh",
+    "core_thesis": "让每一次文化信息，都带着一条可参与、可回访的路径",
+    "signature_slide_ref": "s3",
+    "sample_slide_ref": "s3",
+    "story_arc": [
+      {"beat": "张力", "purpose": "点出真实断点", "slide_refs": ["s1"]},
+      {"beat": "洞察", "purpose": "给出非共识判断", "slide_refs": ["s2"]},
+      {"beat": "主张", "purpose": "signature 制胜一击", "slide_refs": ["s3"]}
+    ],
+    "visual_system": {
+      "concept": "路径与入口",
+      "palette": "暖橙 + 石墨灰",
+      "typography": "无衬线标题 + 宋体正文",
+      "image_language": "纪实摄影 + 信息图",
+      "layout_rhythm": "大图与结构页交替"
+    }
+  },
+  "slides": [
+    {
+      "id": "s1", "n": 1, "track": "core", "role": "context", "emphasis": "standard",
+      "title": "公众看见一次，却难以再回来",
+      "audience_takeaway": "承认真实断点",
+      "render_text": {"title": "公众看见一次，却难以再回来", "key_points": ["活动信息分散", "参与入口割裂"]},
+      "visual": {
+        "main": "市民浏览海报却找不到参与入口的场景",
+        "composition": "中景纪实",
+        "prompt_seed": "citizen looking at a cultural event poster on a street kiosk",
+        "avoid": "杂乱人群、可辨识品牌",
+        "aspect": "16:9",
+        "asset_requests": [
+          {"asset_id": "a1", "role": "场景示意", "mode": "generate", "status": "generate", "evidence": false, "rights_status": "cleared"}
+        ]
+      },
+      "transition": {"hands_off": "既然断点在路径，就把路径接起来"}
+    },
+    {
+      "id": "s2", "n": 2, "track": "core", "role": "insight", "emphasis": "standard",
+      "title": "断点不在发布，而在参与路径",
+      "audience_takeaway": "接受方案方向",
+      "render_text": {"title": "断点不在发布，而在参与路径"},
+      "visual": {
+        "main": "从看见到参与的路径因果图",
+        "composition": "居中信息图",
+        "prompt_seed": "a clean causal path diagram from awareness to participation",
+        "avoid": "文字过密",
+        "aspect": "16:9",
+        "asset_requests": [
+          {"asset_id": "a2", "role": "因果图", "mode": "generate", "status": "generate", "evidence": false, "rights_status": "cleared"}
+        ]
+      },
+      "transition": {"inherits": "承接断点", "hands_off": "落到一条可参与路径"}
+    },
+    {
+      "id": "s3", "n": 3, "track": "core", "role": "signature", "emphasis": "signature",
+      "title": "每一次信息，带一条可参与可回访的路径",
+      "audience_takeaway": "记住核心主张",
+      "render_text": {"title": "每一次信息，带一条可参与可回访的路径", "key_points": ["预约", "导航", "回看"]},
+      "visual": {
+        "main": "signature KV：一条贯穿城市场景的参与路径",
+        "composition": "满版主视觉",
+        "prompt_seed": "a glowing participation path threading through a city scene, warm orange",
+        "avoid": "堆砌 logo、俗套礼花",
+        "aspect": "16:9",
+        "asset_requests": [
+          {"asset_id": "a3", "role": "signature KV", "mode": "generate", "status": "generate", "evidence": false, "rights_status": "cleared"}
+        ]
+      },
+      "unverified_notes": ["KV 为拟议示意，最终以定稿视觉为准"],
+      "transition": {"inherits": "由洞察导出"}
+    },
+    {
+      "id": "s4", "n": 4, "track": "appendix", "role": "compliance", "emphasis": "reference",
+      "title": "资质与业绩对照",
+      "audience_takeaway": "核验合规",
+      "render_text": {"title": "资质与业绩对照"},
+      "visual": {
+        "main": "资质证书与业绩清单",
+        "composition": "网格",
+        "prompt_seed": "",
+        "avoid": "",
+        "aspect": "16:9",
+        "asset_requests": [
+          {"asset_id": "a4", "role": "资质证据", "mode": "strict_input", "status": "needs_user", "evidence": true, "rights_status": "needs_review"}
+        ]
+      },
+      "transition": {}
+    }
+  ]
+}

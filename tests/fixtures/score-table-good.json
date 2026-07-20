@@ -1,0 +1,9 @@
+{
+  "has_score_table": true,
+  "total_weight": 100,
+  "items": [
+    {"id": "S1", "text": "传播策略响应", "weight": 40, "kind": "ceiling"},
+    {"id": "S2", "text": "执行保障", "weight": 30, "kind": "floor"},
+    {"id": "S3", "text": "资质证明", "weight": 30, "kind": "floor"}
+  ]
+}
