@@ -14,8 +14,8 @@
 
 ## 工作顺序
 1. 定 `deck`：title/audience/purpose/aspect_ratio/language、`core_thesis`（= 一页纸记忆句，逐字一致）、`visual_system`（从品牌素材或 style_reference 提取一次，全案统一）、`story_arc`。
-2. 排 `slides`：按 `{DECK_MODE}`——**视觉分镜式（默认）**把每个子部件各拆一页画面（如 BSB 7 道工序 = 1 页总述 + 7 页逐道工序画面；每个案例、每类设备、每名核心角色各一页），页数宁多勿少（core 常 30–60 页）；**演讲式**用最短说服链、一页一判断。core 轨走 客户张力→洞察→选择→signature→机制/行动→证明/保障→收束 + 决定性效果图；appendix 轨接效果图系列、长名单、尺寸材质、预算、风险查验。core 全部在 appendix 之前，页码从 1 连续。
-3. 每页写：结论式 `title`、`audience_takeaway`、`render_text`（**视觉分镜式：结论标题 + 少量关键指标/标签，信息量小、画面是主角；演讲式：最短上屏文案**；其 `title` 与 slide.title 一致）、`visual`（主画面/构图/`prompt_seed`/`avoid` 规避元素/比例）、`asset_requests`、`transition`、页级 `unverified_notes`（本页承载的虚构/待核实点，对应 `_风险与待核实.md`）。
+2. 排 `slides`：按 `{DECK_MODE}`——**视觉分镜式（默认）**把每个子部件各拆一页画面（如 BSB 7 道工序 = 1 页总述 + 7 页逐道工序画面；每个案例、每类设备、每名核心角色各一页），页数宁多勿少（core 常 30–60 页）；**所有可枚举的组（工序/闸门/案例/系列集/角色/设备类）都比照拆页，别厚此薄彼——拆了团队就也拆工序、闸门、系列**；**演讲式**用最短说服链、一页一判断。core 轨走 客户张力→洞察→选择→signature→机制/行动→证明/保障→收束 + 决定性效果图；appendix 轨接效果图系列、长名单、尺寸材质、预算、风险查验。core 全部在 appendix 之前，页码从 1 连续。
+3. 每页写：结论式 `title`、`audience_takeaway`、`render_text`（**视觉分镜式：结论标题 + 少量关键指标/标签，信息量小、画面是主角；演讲式：最短上屏文案**；其 `title` 与 slide.title 一致）、`visual`（主画面/构图/`prompt_seed`/`avoid` 规避元素/比例）、`asset_requests`、`transition`、页级 `unverified_notes`（**只标真正承载虚构/待核实的页，别每页都挂**，对应 `_风险与待核实.md`）。**数据/报价/含精确数字的页：`prompt_seed` 只生成无数字底图，数字一律走 `render_text` 叠排**（图像模型对数字/中文易错、且改数要重出图）。
 4. 唯一一张 `role=signature + emphasis=signature` 的 core 页，同时作为 `sample_slide_ref`。
 5. 素材三模式与**证据图红线**：`generate` 只用于效果图/示意图（对未来方案的想象）。过往案例现场照、资质证书、数据截图等**证据类**素材，`asset_requests[].evidence=true`，且只能 `mode=strict_input` + `status=needs_user`（真实素材），绝不 `generate`；同时在 `_风险与待核实.md` 记一条。
 

@@ -18,7 +18,7 @@ import sys
 
 VALID_MODES = {"generate", "strict_input", "style_reference"}
 VALID_STATUS = {"generate", "available", "needs_user"}
-VALID_COVERAGE = {"完整", "部分", "虚构补全"}
+VALID_COVERAGE = {"完整", "部分", "虚构补全", "待实件"}
 
 # 上屏文案不允许出现的内部痕迹
 URL_RE = re.compile(r"https?://|www\.", re.IGNORECASE)

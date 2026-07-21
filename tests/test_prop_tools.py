@@ -127,6 +127,12 @@ class IndexTests(unittest.TestCase):
         res = prop_tools.validate_index(bad, self.doc, self.score, self.risk)
         self.assertFalse(res["passed"])
 
+    def test_daishijian_coverage_status_passes(self):
+        # "待实件"（文字完整·实件待补）是 v4.2 新增合法覆盖状态
+        idx = self.index.replace("虚构补全", "待实件")
+        res = prop_tools.validate_index(idx, self.doc, self.score, self.risk)
+        self.assertTrue(res["passed"], res["errors"])
+
     def test_no_score_table_passes_trivially(self):
         res = prop_tools.validate_index("", self.doc, {"has_score_table": False}, None)
         self.assertTrue(res["passed"], res["errors"])
