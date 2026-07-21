@@ -18,7 +18,7 @@
 3. **研究补证**：列出会改变主张或需要外部事实的问题，用抓取工具取原文并记来源，不用搜索摘要充数。取不到、又必须写的，可用具体可信内容虚构补全，但要在一页纸标出待核实，最终由 writer 源头申报。
 4. **发散 ≥3 个主张角度**：从 outcome / efficiency / risk / visibility / experience / asset / contrarian 等镜头出发，各写清因果与适用条件。
 5. **收敛一个**：按"关键短板 + 差异化"选最强的一个（不按数量、篇幅、形容词评分）；被否角度各留一句"为何不选"。收敛出的主张必须过**互换测试**（换成竞争对手名称就不成立，才算有差异化）。**创意制胜标：互换测试要考创意 idea 本身**——不能只靠机制过测试、却让创意停在谁都想得出的套路。
-6. **写一页纸与逐章骨架**（见输出契约）：给每章分配认领的评分项和 `{PER_SECTION_CHARS}`（高权重章多、低权重章少，全案之和在总篇幅内）；指定全案唯一 signature 主亮点（**落在制胜轴上：管理制胜=关键成果/机制图，创意制胜=核心创意 KV/大 idea**）；**先按制胜轴、再按标型**从 `narratives.json` 的 key（logic/story/vision/evidence）选叙事（创意制胜别默认 logic）并写理由。
+6. **写一页纸与逐章骨架**（见输出契约）：给每章分配认领的评分项与**深度取向**（高权重/ceiling 章写最深）——**不设字数上限，内容多比少好，把该章评分项和价值写透即可、不注水**；指定全案唯一 signature 主亮点（**落在制胜轴上：管理制胜=关键成果/机制图，创意制胜=核心创意 KV/大 idea**）；**先按制胜轴、再按标型**从 `narratives.json` 的 key（logic/story/vision/evidence）选叙事（创意制胜别默认 logic）并写理由。
 
 ## 输出契约
 写两个文件，返回一个 JSON 索引。
@@ -39,7 +39,7 @@
 - 标型与客户判断（给谁、什么决定、在意什么）
 - 评分表拆解摘要（地板项 / 天花板项，或 floor 诉求清单）
 - **制胜一页纸**：客户张力 · 尖锐洞察及非共识理由 · 核心主张 + 十秒记忆句 · 推导链（洞察→策略→表达→执行→证明）· 最强替代命题 + 为何不选（决定性依据）· 互换测试结论 · 拿分打法（地板怎么保、天花板怎么顶）· 唯一 signature 主亮点 · 叙事选择及理由
-- 逐章骨架表：章号 | 标题（含主张）| 独有贡献 | 认领评分项 id | {PER_SECTION_CHARS} | 承接/交出
+- 逐章骨架表：章号 | 标题（含主张）| 独有贡献 | 认领评分项 id | 深度取向(high/med/low) | 承接/交出
 - 被否主张角度（各一句理由）
 - 来源清单（外部事实 + URL；虚构待核实项）
 
@@ -49,7 +49,7 @@
   "title": "方案标题", "bid_type": "标型", "recall_line": "十秒记忆句",
   "swap_test": "fails|passes 及一句说明", "narrative": "logic|story|vision|evidence",
   "signature": "signature 主亮点一句",
-  "sections": [{"n": 1, "title": "…", "claims_items": ["S1"], "per_section_chars": 1500}],
+  "sections": [{"n": 1, "title": "…", "claims_items": ["S1"], "depth": "high"}],
   "score_table_path": "_score-table.json 或 null", "onepager_path": "_研判.md",
   "open_fabrications": ["需 writer 落实并申报的待核实点"]
 }
