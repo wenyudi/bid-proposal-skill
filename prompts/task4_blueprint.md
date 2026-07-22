@@ -18,6 +18,7 @@
 3. 每页写：结论式 `title`、`audience_takeaway`、`render_text`（**视觉分镜式：结论标题 + 少量关键指标/标签，信息量小、画面是主角；演讲式：最短上屏文案**；其 `title` 与 slide.title 一致）、`visual`（主画面/构图/`prompt_seed`/`avoid` 规避元素/比例）、`asset_requests`、`transition`、页级 `unverified_notes`（**只标真正承载虚构/待核实的页，别每页都挂**，对应 `_风险与待核实.md`）。**数据/报价/含精确数字的页：`prompt_seed` 只生成无数字底图，数字一律走 `render_text` 叠排**（图像模型对数字/中文易错、且改数要重出图）。
 4. 唯一一张 `role=signature + emphasis=signature` 的 core 页，同时作为 `sample_slide_ref`。
 5. 素材三模式与**证据图红线**：`generate` 只用于效果图/示意图（对未来方案的想象）。过往案例现场照、资质证书、数据截图等**证据类**素材，`asset_requests[].evidence=true`，且只能 `mode=strict_input` + `status=needs_user`（真实素材），绝不 `generate`；同时在 `_风险与待核实.md` 记一条。
+6. **完整商业稿**（缺口不上台面）：每页都要立即可渲染成完整页面——含 `needs_user` 证据位的页，同时给一个 `generate` 意向图/图标顶位（`stand_in_for=<该证据 asset_id>`，`avoid` 注明不得仿冒真实照片/证件/公章/截图）；`prompt_seed`/`main` **不写"真实图位置留白/预留/待贴"**，顶位画面把版面做满、真图到位后整图替换；上屏文案**绝不出现"待提供/待补充/请上传/素材缺失/占位"**。缺口信息只进页级 `unverified_notes` 与 outline 素材替换清单。deck 顶层写 `field_contract`：`{"on_screen": ["title","render_text","visual"], "internal_only": ["unverified_notes","truth_boundary","source_refs"], "note": "internal_only 绝不上屏、不进讲稿；素材缺口只走 outline 素材替换清单"}`。
 
 ## 输出契约
 - `{TMPDIR}/presentation/deck-blueprint.json`，`schema_version="presentation-blueprint/v1"`，字段依 `docs/reference/presentation-blueprint.md`（含本版新增可选字段 `visual.avoid`、`slides[].unverified_notes[]`、`asset_requests[].evidence`）。
@@ -26,6 +27,8 @@
 ## 完成判据
 - 页码连续、core 全在 appendix 前、`story_arc` 覆盖每个 core 页恰一次、唯一 signature = sample。
 - 每个 `evidence=true` 素材都是 `strict_input`（不是 generate）。
-- 每页 `render_text.title == title`；上屏文案无 URL / 内部 ID。
+- 每页 `render_text.title == title`；客户面字段（title/render_text/**audience_takeaway**/deck 级文案）无 URL / 内部 ID，**无"待提供/待补充/请上传/素材缺失/占位"，也无草案状态与内部定价规则（"草案/待授权/暂按/补实件/非递交版/按限价X%"）**——takeaway 会进讲稿，同样是客户面。
 - **所有字段**（title、render_text、`audience_takeaway`、truth_boundary、story_arc purpose）都不出现"评委/评分/满分/顶格/多少分"——指读者就用"读者/贵行/甲方"。slide 是给甲方看的。
+- 每个含 `needs_user` 证据位的页有可渲染顶位视觉（generate 意向图/图标或完整 prompt_seed）；画面不为真实素材预留空位；`stand_in_for` 指向同页素材。
+- deck 顶层含 `field_contract` 消费契约。
 - 交给 `validate-blueprint` 前自检以上，减少往返。

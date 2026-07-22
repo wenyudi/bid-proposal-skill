@@ -2,8 +2,8 @@
   "has_score_table": true,
   "total_weight": 100,
   "items": [
-    {"id": "S1", "text": "传播策略响应", "weight": 40, "kind": "ceiling"},
-    {"id": "S2", "text": "执行保障", "weight": 30, "kind": "floor"},
-    {"id": "S3", "text": "资质证明", "weight": 30, "kind": "floor"}
+    {"id": "S1", "text": "传播策略响应", "weight": 40, "kind": "ceiling", "claimed_by_section": "第二章"},
+    {"id": "S2", "text": "执行保障", "weight": 30, "kind": "floor", "claimed_by_section": "第三章"},
+    {"id": "S3", "text": "资质证明", "weight": 30, "kind": "floor", "claimed_by_section": "第三章"}
   ]
 }

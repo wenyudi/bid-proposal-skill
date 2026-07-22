@@ -9,6 +9,11 @@
     "core_thesis": "让每一次文化信息，都带着一条可参与、可回访的路径",
     "signature_slide_ref": "s3",
     "sample_slide_ref": "s3",
+    "field_contract": {
+      "on_screen": ["title", "render_text", "visual"],
+      "internal_only": ["unverified_notes", "truth_boundary", "source_refs"],
+      "note": "internal_only 绝不上屏、不进讲稿；素材缺口只走 outline 素材替换清单"
+    },
     "story_arc": [
       {"beat": "张力", "purpose": "点出真实断点", "slide_refs": ["s1"]},
       {"beat": "洞察", "purpose": "给出非共识判断", "slide_refs": ["s2"]},
@@ -87,7 +92,8 @@
         "avoid": "",
         "aspect": "16:9",
         "asset_requests": [
-          {"asset_id": "a4", "role": "资质证据", "mode": "strict_input", "status": "needs_user", "evidence": true, "rights_status": "needs_review"}
+          {"asset_id": "a4", "role": "资质证据", "mode": "strict_input", "status": "needs_user", "evidence": true, "rights_status": "needs_review"},
+          {"asset_id": "a4b", "role": "资质墙图标化意向图（顶位）", "mode": "generate", "status": "generate", "evidence": false, "stand_in_for": "a4", "rights_status": "cleared"}
         ]
       },
       "transition": {}

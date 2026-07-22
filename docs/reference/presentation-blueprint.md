@@ -3,7 +3,7 @@
 `presentation-blueprint/v1` 是定稿正文与图片 PPT 工作流（image2 等）之间的交接契约。它是正文的派生压缩层，不拥有新的方案事实：proposal v4 生成它、`validate-blueprint` 校验它、下游图片工作流消费它。
 
 ## 版本兼容
-v4 在 v1 上只**新增可选字段**（`visual.avoid`、`slides[].unverified_notes`、`asset_requests[].evidence`），不改动既有字段语义——旧消费者忽略未知字段即可继续工作。v3 曾用于快照绑定的 `generation_snapshot_id`、`brief_hash` 降级为可选，v4 校验器忽略它们。
+v4 在 v1 上只**新增可选字段**（`visual.avoid`、`slides[].unverified_notes`、`asset_requests[].evidence`、`asset_requests[].stand_in_for`、`deck.field_contract`），不改动既有字段语义——旧消费者忽略未知字段即可继续工作。v3 曾用于快照绑定的 `generation_snapshot_id`、`brief_hash` 降级为可选，v4 校验器忽略它们。
 
 ## 顶层字段
 | 字段 | 含义 |
@@ -43,6 +43,7 @@ v4 在 v1 上只**新增可选字段**（`visual.avoid`、`slides[].unverified_n
 | `path` | available 时必须存在（相对 blueprint 目录或 `--assets-root`）|
 | `evidence` | v4 新增布尔；证据类素材（案例现场、资质、数据截图）标 `true` |
 | `rights_status` | `cleared` 或 `needs_review`（后者仅 warning）|
+| `stand_in_for` | v4.3 新增可选；意向图/图标**顶位素材**指向被顶位的证据素材 `asset_id`（完整商业稿：缺真图的页由顶位视觉做满版面，真图到位后整图替换）|
 
 **证据图红线**：`evidence=true` 的素材禁止 `mode=generate`，只能 `strict_input` + `needs_user` 真实素材。生成的假证据图一旦上屏即为直接造假，与可核实替换的虚构文字性质不同。
 
@@ -50,7 +51,10 @@ v4 在 v1 上只**新增可选字段**（`visual.avoid`、`slides[].unverified_n
 ```text
 validate-blueprint --blueprint FILE [--output-dir DIR] [--assets-root DIR]
 ```
-检查：schema 版本；页码连续、track 顺序、story arc、page role；`render_text.title == title`；唯一 signature 与 sample 映射；上屏文案无 URL / 内部 ref；素材字段完整、available 路径存在、证据图红线；`unverified_notes` 格式。通过后确定性写 `outline.md` 与 `presentation-validation.json`（`status=ready_for_outline_review`、`image_generation_started=false`）。
+检查：schema 版本；页码连续、track 顺序、story arc、page role；`render_text.title == title`；唯一 signature 与 sample 映射；上屏文案无 URL / 内部 ref / **索要占位表述**（待提供/待补充/请上传/素材缺失/占位）；画面不为真实素材**预留空位**（位置留白/预留/待贴）；含 `needs_user` 证据位的页有可渲染顶位视觉；`stand_in_for` 指向同页素材；素材字段完整、available 路径存在、证据图红线；`unverified_notes` 格式；缺 `field_contract` 给 warning。通过后确定性写 `outline.md`（末尾含**素材替换清单**）与 `presentation-validation.json`（`status=ready_for_outline_review`、`image_generation_started=false`）。
+
+## 下游消费契约
+`deck.field_contract` 声明：`on_screen`（`title`/`render_text`/`visual` 渲染层——页面上只允许出现这些）与 `internal_only`（`unverified_notes`/`truth_boundary`/`source_refs`——**绝不渲染上屏、绝不写进讲稿/speech**，只服务替换清单与内部核对）。下游图片/成稿/讲稿工作流必须按此契约消费；素材缺口的人工替换动作以 outline 的"素材替换清单"为准。
 
 ## 交接
 把 `outline.md` 与 `deck-blueprint.json` 交给下游图片工作流；后者完成风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。proposal 本身不调用图片模型。正文或素材变化后，重新生成 blueprint 并重跑 `validate-blueprint`。

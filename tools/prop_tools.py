@@ -27,6 +27,18 @@ INTERNAL_MARKER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 完整商业稿：上屏不得向读者索要素材/暴露占位
+BEGGING_RE = re.compile(r"待提供|待补充|待上传|请提供|请上传|素材缺失|资料缺失|待替换|待核实|占位")
+# 客户面不得披露草案状态/内部定价规则
+DRAFT_STATE_RE = re.compile(
+    r"草案|待授权|重新授权|补实件|待实件|非递交版|冻结投标|暂按"
+    r"|按[^，。]{0,6}限价[^，。]{0,6}[%％]|限价的?\s*\d{1,3}(?:\.\d+)?\s*[%％]"
+)
+# 画面不得为"真实素材"预留空位——顶位视觉必须把版面做满
+BLANK_SLOT_RE = re.compile(
+    r"位置留白|留白位|预留(?:位|区|框)|待贴|贴图(?:位|区)|(?:真实|实拍)(?:图|照片|素材)[^，。]{0,6}(?:留白|预留)"
+)
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -51,6 +63,25 @@ def _result(passed, errors, warnings, extra=None):
     if extra:
         out.update(extra)
     return out
+
+
+CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+          "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15}
+
+
+def _chapter_num(text):
+    """从 '第十章'/'第3章'/'十、…'/'10.1 …' 提取章号；解析不出返回 None。"""
+    m = re.search(r"第([一二三四五六七八九十]{1,3}|\d{1,2})章", text)
+    if m:
+        g = m.group(1)
+        return int(g) if g.isdigit() else CN_NUM.get(g)
+    m = re.match(r"\s*(\d{1,2})[\.、]", text)
+    if m:
+        return int(m.group(1))
+    m = re.match(r"\s*([一二三四五六七八九十]{1,3})、", text)
+    if m:
+        return CN_NUM.get(m.group(1))
+    return None
 
 
 def _norm_heading(text):
@@ -107,6 +138,15 @@ def validate_blueprint(bp, blueprint_path, assets_root):
         errors.append("slides 必须为非空数组")
         return _result(False, errors, warnings)
 
+    if not deck.get("field_contract"):
+        warnings.append(
+            "deck 缺 field_contract 消费契约（on_screen/internal_only）；"
+            "下游可能把 unverified_notes/truth_boundary 渲染上屏或写进讲稿"
+        )
+    for chunk in _deck_strings(deck):
+        if DRAFT_STATE_RE.search(chunk) or BEGGING_RE.search(chunk):
+            errors.append(f"deck 级字段含内部披露语（会随每页 prompt 下发）：{chunk[:44]}")
+
     # 页码连续 1..N
     ns = [s.get("n") for s in slides]
     if sorted(ns) != list(range(1, len(slides) + 1)):
@@ -147,22 +187,41 @@ def validate_blueprint(bp, blueprint_path, assets_root):
         if s.get("role") == "signature" and s.get("emphasis") == "signature":
             sig_ids.append(sid)
 
-        # 上屏文案不含 URL / 内部 ref
+        # 上屏文案不含 URL / 内部 ref / 索要占位表述
         for chunk in _onscreen_strings(s):
             if URL_RE.search(chunk):
                 errors.append(f"slide {sid} 上屏文案含 URL：{chunk[:40]}")
             if INTERNAL_MARKER_RE.search(chunk):
                 errors.append(f"slide {sid} 上屏文案含内部 ref：{chunk[:40]}")
+            if BEGGING_RE.search(chunk):
+                errors.append(
+                    f"slide {sid} 上屏文案出现索要/占位表述（完整商业稿：缺口走顶位视觉+替换清单）：{chunk[:40]}"
+                )
+            if DRAFT_STATE_RE.search(chunk):
+                errors.append(
+                    f"slide {sid} 客户面字段披露草案状态/内部定价规则（应改为完整商业表达，内部信息走风险册）：{chunk[:40]}"
+                )
 
         # unverified_notes 必须是列表
         un = s.get("unverified_notes")
         if un is not None and not isinstance(un, list):
             errors.append(f"slide {sid} 的 unverified_notes 必须是数组")
 
-        # 素材请求
+        # 素材请求 + 完整商业稿（缺口页必须有顶位视觉，画面不留真图空位）
         visual = s.get("visual") or {}
+        for field_txt in (visual.get("main") or "", visual.get("prompt_seed") or ""):
+            if BLANK_SLOT_RE.search(field_txt):
+                errors.append(
+                    f"slide {sid} 画面为真实素材预留空位（{field_txt[:36]}…）；"
+                    f"顶位视觉须把版面做满，真图到位后整图替换"
+                )
+        page_asset_ids = []
+        stand_ins = []
+        has_render_source = bool(visual.get("prompt_seed"))
+        evidence_gap = False
         for a in visual.get("asset_requests") or []:
             aid = a.get("asset_id")
+            page_asset_ids.append(aid)
             for field in ("asset_id", "role", "mode", "status"):
                 if not a.get(field):
                     errors.append(f"slide {sid} 素材 {aid} 缺字段 {field}")
@@ -176,6 +235,12 @@ def validate_blueprint(bp, blueprint_path, assets_root):
                     f"slide {sid} 素材 {aid} 是证据图（evidence=true），禁止 generate；"
                     f"只能 strict_input + needs_user 真实素材"
                 )
+            if a.get("mode") == "generate" or a.get("status") == "available":
+                has_render_source = True
+            if a.get("evidence") is True and a.get("status") == "needs_user":
+                evidence_gap = True
+            if a.get("stand_in_for"):
+                stand_ins.append((aid, a.get("stand_in_for")))
             if a.get("status") == "needs_user":
                 needs_user += 1
             if a.get("status") == "available":
@@ -188,6 +253,14 @@ def validate_blueprint(bp, blueprint_path, assets_root):
                         errors.append(f"slide {sid} 素材 {aid} 路径不存在：{path}")
             if a.get("rights_status") == "needs_review":
                 warnings.append(f"slide {sid} 素材 {aid} rights_status=needs_review，生成前需确认")
+        if evidence_gap and not has_render_source:
+            errors.append(
+                f"slide {sid} 证据素材缺位且无顶位视觉（无 generate/available 素材、prompt_seed 为空），"
+                f"页面会露出缺口；按完整商业稿原则加意向图/图标顶位"
+            )
+        for aid, target in stand_ins:
+            if target not in page_asset_ids:
+                errors.append(f"slide {sid} 素材 {aid} 的 stand_in_for 指向本页不存在的素材：{target}")
 
     if len(set(ids)) != len(ids):
         errors.append("slide id 必须全稿唯一")
@@ -224,7 +297,8 @@ def validate_blueprint(bp, blueprint_path, assets_root):
 
 
 def _onscreen_strings(slide):
-    out = [slide.get("title") or ""]
+    """客户面字段：标题、上屏文案、takeaway（takeaway 会进讲稿，同样面向客户）。"""
+    out = [slide.get("title") or "", slide.get("audience_takeaway") or ""]
     rt = slide.get("render_text") or {}
     for v in rt.values():
         if isinstance(v, str):
@@ -232,6 +306,26 @@ def _onscreen_strings(slide):
         elif isinstance(v, list):
             out.extend([x for x in v if isinstance(x, str)])
     return [s for s in out if s]
+
+
+def _deck_strings(deck):
+    """deck 级字符串（随每页 prompt 下发，属客户面）；field_contract 是内部元数据，跳过。"""
+    out = []
+
+    def walk(x):
+        if isinstance(x, str):
+            out.append(x)
+        elif isinstance(x, dict):
+            for k, v in x.items():
+                if k == "field_contract":
+                    continue
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    walk(deck)
+    return out
 
 
 def _write_outline(bp, output_dir):
@@ -256,6 +350,17 @@ def _write_outline(bp, output_dir):
                 f"{s.get('n')}. [{s.get('role')}]{star} {s.get('title')} "
                 f"— {s.get('audience_takeaway', '')}；素材：{amark}{flag}"
             )
+        lines.append("")
+    swaps = []
+    for s in ordered:
+        for a in (s.get("visual") or {}).get("asset_requests") or []:
+            if a.get("status") == "needs_user":
+                swaps.append((s.get("n"), s.get("title"), a.get("asset_id"), a.get("role"), bool(a.get("evidence"))))
+    if swaps:
+        lines.append("## 素材替换清单（递交前逐项换真图；页面已由意向图顶位，不影响先出完整稿）")
+        for n, title, aid, role, ev in swaps:
+            tag = "证据真图" if ev else "真实素材"
+            lines.append(f"- 第{n}页「{title}」：{aid} · {role} · 待换{tag}")
         lines.append("")
     _write_text(os.path.join(output_dir, "outline.md"), "\n".join(lines).rstrip() + "\n")
 
@@ -324,8 +429,14 @@ def validate_index(index_text, doc_text, score_table, risk_text):
         sect = _norm_heading(sect_cell)
         if not any(sect and (sect in h or h in sect) for h in headings):
             errors.append(f"索引引用的章节在正文中不存在：'{sect_cell}'")
+        key_item = next((it for it in items if it.get("id") and _id_in_text(it["id"], item_cell)), None)
+        key_id = key_item.get("id") if key_item else None
+        # 索引位置须与 score-table 的认领章节对账（两侧都能解析出章号时）
+        claimed = (key_item or {}).get("claimed_by_section") or ""
+        cn, sn = _chapter_num(claimed), _chapter_num(sect_cell)
+        if cn is not None and sn is not None and cn != sn:
+            errors.append(f"评分项 {key_id} 索引位置指向第{sn}章，与 score-table 认领章节（{claimed}）不符")
         if cover == "虚构补全" and risk_text is not None:
-            key_id = next((it.get("id") for it in items if it.get("id") and _id_in_text(it["id"], item_cell)), None)
             hit = (key_id and _id_in_text(key_id, risk_text)) or (sect and sect in risk_text)
             if not hit:
                 errors.append(f"覆盖状态为'虚构补全'的行未在 _风险与待核实.md 找到对应登记：{item_cell[:30]}")

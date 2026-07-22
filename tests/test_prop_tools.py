@@ -38,6 +38,8 @@ class BlueprintTests(unittest.TestCase):
             rc = prop_tools.main(["validate-blueprint", "--blueprint", self.path, "--output-dir", d])
             self.assertEqual(rc, 0)
             self.assertTrue(os.path.exists(os.path.join(d, "outline.md")))
+            with open(os.path.join(d, "outline.md"), encoding="utf-8") as of:
+                self.assertIn("素材替换清单", of.read())
             self.assertTrue(os.path.exists(os.path.join(d, "presentation-validation.json")))
             with open(os.path.join(d, "presentation-validation.json"), encoding="utf-8") as vf:
                 val = json.load(vf)
@@ -84,6 +86,65 @@ class BlueprintTests(unittest.TestCase):
         res = prop_tools.validate_blueprint(bp, self.path, None)
         self.assertFalse(res["passed"])
 
+    def test_begging_onscreen_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["slides"][0]["render_text"]["key_points"].append("案例现场照片待提供")
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("索要" in e for e in res["errors"]), res["errors"])
+
+    def test_blank_slot_prompt_seed_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["slides"][3]["visual"]["prompt_seed"] = "证书网格版式，真实设备图位置留白，光大紫配色"
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("预留空位" in e for e in res["errors"]), res["errors"])
+
+    def test_evidence_gap_without_standin_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["slides"][3]["visual"]["asset_requests"] = [
+            a for a in bp["slides"][3]["visual"]["asset_requests"] if a["asset_id"] == "a4"
+        ]
+        bp["slides"][3]["visual"]["prompt_seed"] = ""
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("顶位" in e for e in res["errors"]), res["errors"])
+
+    def test_dangling_stand_in_for_fails(self):
+        bp = copy.deepcopy(self.bp)
+        for a in bp["slides"][3]["visual"]["asset_requests"]:
+            if a["asset_id"] == "a4b":
+                a["stand_in_for"] = "zzz"
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+
+    def test_draft_state_onscreen_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["slides"][0]["render_text"]["key_points"].append("执行价暂按单项限价88%")
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("草案状态/内部定价" in e for e in res["errors"]), res["errors"])
+
+    def test_draft_state_in_takeaway_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["slides"][1]["audience_takeaway"] = "所有单价须由真实底稿待授权后生效"
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+
+    def test_draft_state_in_deck_fields_fails(self):
+        bp = copy.deepcopy(self.bp)
+        bp["deck"]["purpose"] = "技术标现场演示，并明确所有待实件边界"
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("deck 级字段" in e for e in res["errors"]), res["errors"])
+
+    def test_missing_field_contract_warns(self):
+        bp = copy.deepcopy(self.bp)
+        bp["deck"].pop("field_contract", None)
+        res = prop_tools.validate_blueprint(bp, self.path, None)
+        self.assertTrue(res["passed"], res["errors"])
+        self.assertTrue(any("field_contract" in w for w in res["warnings"]))
+
     def test_appendix_before_core_fails(self):
         bp = copy.deepcopy(self.bp)
         # 把 appendix 页排到中间：交换 n
@@ -121,6 +182,13 @@ class IndexTests(unittest.TestCase):
         res = prop_tools.validate_index(self.index, self.doc, self.score, "# 风险\n- 无关条目\n")
         self.assertFalse(res["passed"])
         self.assertTrue(any("虚构补全" in e for e in res["errors"]), res["errors"])
+
+    def test_claimed_section_mismatch_fails(self):
+        score = copy.deepcopy(self.score)
+        score["items"][0]["claimed_by_section"] = "第三章"  # 索引里 S1 在"二、传播策略与大概念"
+        res = prop_tools.validate_index(self.index, self.doc, score, self.risk)
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("认领章节" in e for e in res["errors"]), res["errors"])
 
     def test_bad_coverage_value_fails(self):
         bad = self.index.replace("虚构补全", "瞎写状态")
