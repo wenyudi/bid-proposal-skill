@@ -8,7 +8,7 @@
 把一堆材料变成两件东西：(1) 有评分表时，一张机器可读的评分表 `_score-table.json`；(2) 一版**制胜一页纸**——一句甲方决策者能复述、且换成对手就不成立的主张，加上"怎么既讲清主张又拿满分"的打法和逐章骨架。
 
 ## 依据
-- 必读：`{BRIEF_PATH}` 全文；`{MATERIALS}` 全部素材；`{CASEBASE}` 中非 `_` 开头案例；`references/strategy-patterns.md`（一页纸骨架、标型先验、政府/商业"好"的标准、叙事选型）。
+- 必读：`{BRIEF_PATH}` 全文；素材经 Task 0 摄入时读 `_materials/manifest.md` 与素材卡（`_materials/cards/`），**按需下钻**原文与图片，未经摄入才直接通读 `{MATERIALS}`；`{CASEBASE}` 中非 `_` 开头案例；`references/strategy-patterns.md`（一页纸骨架、标型先验、政府/商业"好"的标准、叙事选型）。
 - `[notes]` 标注的沟通/踏勘纪要只作内部理解，不进正文、不引原句。
 - 先验最多 medium confidence；标书原文、用户素材和公开事实优先。
 

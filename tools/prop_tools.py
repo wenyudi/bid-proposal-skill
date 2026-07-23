@@ -16,6 +16,8 @@ import os
 import re
 import sys
 
+import prop_ingest
+
 VALID_MODES = {"generate", "strict_input", "style_reference"}
 VALID_STATUS = {"generate", "available", "needs_user"}
 VALID_COVERAGE = {"完整", "部分", "虚构补全", "待实件"}
@@ -471,6 +473,14 @@ def main(argv=None):
     i.add_argument("--score-table", required=True)
     i.add_argument("--risk", default=None)
     i.set_defaults(func=cmd_validate_index)
+
+    g = sub.add_parser("ingest", help="Task 0 素材摄入：混合格式转 _materials/（本地解析+OCR 兜底）")
+    g.add_argument("--src", required=True)
+    g.add_argument("--out", required=True)
+    g.add_argument("--ocr", default="auto", choices=["auto", "mineru", "baidu", "off"])
+    g.add_argument("--config", default=None, help=f"OCR 密钥配置，默认 {prop_ingest.DEFAULT_CONFIG}")
+    g.add_argument("--timeout", type=int, default=900)
+    g.set_defaults(func=prop_ingest.cmd_ingest)
 
     args = parser.parse_args(argv)
     res = args.func(args)

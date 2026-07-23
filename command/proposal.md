@@ -10,7 +10,7 @@ skill(name="proposal")
 ```
 
 Parse `$ARGUMENTS`:
-- 标书/brief 输入：本地文件路径（.pdf/.docx/.md/.txt）或粘贴文本（必需，否则向用户索要并等待）
+- 标书/brief 输入：本地文件路径或粘贴文本（必需，否则向用户索要并等待）；素材目录可直接含 .doc/.docx/.ppt/.pptx/.pdf/扫描图片——Task 0 摄入自动转换（OCR 密钥配置见 `~/.config/proposal/ocr.json`）
 - 可选素材：能力/案例/报价/团队/品牌路径；沟通纪要（踏勘/答疑/售前 → 标 `[notes]`，只作内部校准，不进正文）
 - 案例库：`casebase/` 非 `_` 开头案例自动纳入
 - 标志：
@@ -25,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 4.4.0 · lightweight commercial & bid proposal
+proposal skill · 4.5.0 · lightweight commercial & bid proposal
 ```

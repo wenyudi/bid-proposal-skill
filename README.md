@@ -37,6 +37,7 @@
 - `-no-ppt`：只出正文，不产 PPT 结构稿。
 - `-auto`：跳过唯一人工确认，产草案（assumed 决策阻断直接递交）。
 - `casebase/` 中非 `_` 开头案例自动纳入；沟通/踏勘纪要标 `[notes]`。
+- 素材可直接丢原始格式（doc/docx/ppt/pptx/pdf/扫描件）：Task 0 摄入本地解析 + OCR 兜底（MinerU / 百度 PaddleOCR-VL），密钥放 `~/.config/proposal/ocr.json`（仓库外，不入库）；资料多时并行产素材卡，Task 1 按图索骥不通读。
 
 ## 你会得到什么
 
@@ -47,6 +48,7 @@
 ├── _PPT生产包/              outline.md + deck-blueprint.json + presentation-validation.json
 ├── _风险与待核实.md          内部：虚构/假设做实清单（权重×风险排序）
 ├── _封标检查表.md            内部：投标当日封装/递交执行清单（有封标类要求时）
+├── _materials/              内部：素材摄入产物（manifest + 文本 + 素材卡）
 ├── _reviews/                内部：每轮复核 lens 结果
 ├── _研判.md                 内部：评分表拆解、一页纸、来源
 ├── _score-table.json        内部：机器可读评分表

@@ -9,9 +9,11 @@
 
 ```bash
 python3 -m unittest discover -s tests
-python3 -m py_compile tools/prop_tools.py
+python3 -m py_compile tools/prop_tools.py tools/prop_ingest.py
 python3 tools/prop_tools.py --help
 ```
+
+OCR 密钥只放 `~/.config/proposal/ocr.json` 或环境变量（`MINERU_TOKEN` / `PADDLEOCR_VL_TOKEN`），**绝不写进仓库**；tests 离线运行、不打真实 API。
 
 ## 改动归属
 
@@ -22,7 +24,7 @@ python3 tools/prop_tools.py --help
 | 一页纸骨架、标型先验、叙事选型 | `references/strategy-patterns.md`；叙事短 guide 在 `narratives.json` |
 | 复核判据、反模式、好坏对照 | `references/anti-patterns.md`、`references/contrast-examples.md`（只进复核与复盘）|
 | PPT 结构、视觉、证据图红线 | `references/presentation-patterns.md`、`docs/reference/presentation-blueprint.md` |
-| 校验器（blueprint / index）| `tools/prop_tools.py`、`tests/` |
+| 校验器与素材摄入（validate / ingest）| `tools/prop_tools.py`、`tools/prop_ingest.py`、`tests/` |
 | 案例人工事实源 | `casebase/` |
 | 宿主注册 | `../.agents/skills/proposal/SKILL.md`（宿主入口，只指向本仓库）|
 
