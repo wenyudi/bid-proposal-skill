@@ -21,7 +21,9 @@
 6. **完整商业稿**（缺口不上台面）：每页都要立即可渲染成完整页面——含 `needs_user` 证据位的页，同时给一个 `generate` 意向图/图标顶位（`stand_in_for=<该证据 asset_id>`，`avoid` 注明不得仿冒真实照片/证件/公章/截图）；`prompt_seed`/`main` **不写"真实图位置留白/预留/待贴"**，顶位画面把版面做满、真图到位后整图替换；上屏文案**绝不出现"待提供/待补充/请上传/素材缺失/占位"**。缺口信息只进页级 `unverified_notes` 与 outline 素材替换清单。deck 顶层写 `field_contract`：`{"on_screen": ["title","render_text","visual"], "internal_only": ["unverified_notes","truth_boundary","source_refs"], "note": "internal_only 绝不上屏、不进讲稿；素材缺口只走 outline 素材替换清单"}`。
 
 ## 输出契约
-- `{TMPDIR}/presentation/deck-blueprint.json`，`schema_version="presentation-blueprint/v1"`，字段依 `docs/reference/presentation-blueprint.md`（含本版新增可选字段 `visual.avoid`、`slides[].unverified_notes[]`、`asset_requests[].evidence`）。
+- `{TMPDIR}/presentation/deck-blueprint.json`，`schema_version="presentation-blueprint/v1"`，字段依 `docs/reference/presentation-blueprint.md`（含可选字段 `visual.avoid`、`slides[].unverified_notes[]`、`asset_requests[].evidence`、`asset_requests[].stand_in_for`、`deck.field_contract`）。
+- **分批写盘防中断**：先写「deck 元数据 + core 轨」落盘，再读回续写 appendix 轨合并——大 deck 一次性输出易断，断点从已落盘部分续，不整体重来。
+- `{TMPDIR}/presentation/kv-brief.md`：给 /kv-studio 的主视觉交接单——核心主张与记忆句、制胜轴、`visual_system` 摘要、signature 页的 KV 任务描述、需 KV 延展的页清单（页码+画面任务）、参照素材路径（style_reference/available）、真实性边界（证据类不得生成）。
 - 返回 JSON：`{"slides": N, "core": Nc, "appendix": Na, "signature_slide": "id", "needs_user_assets": Nu}`。
 
 ## 完成判据

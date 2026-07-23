@@ -72,4 +72,4 @@
 blueprint 顶层 `deck.field_contract` 声明两类字段：`on_screen`（`title`/`render_text`/`visual` 渲染层——页面上只允许出现这些）与 `internal_only`（`unverified_notes`/`truth_boundary`/`source_refs`——**绝不渲染上屏，也绝不写进讲稿/speech**；它们只服务替换清单与内部核对）。`audience_takeaway` 与 deck 级文案虽不直接上屏，但会进讲稿、随每页 prompt 下发，**同属客户面**——一样干净。下游图片/成稿工作流必须按此契约消费，否则内部披露语会漏进客户稿。
 
 ## 交给图片工作流
-把 `outline.md` 作为页序确认材料，把 `deck-blueprint.json` 的 deck context、每页 local context、上屏文案、构图和素材请求映射为逐页图像任务。图片工作流继续完成视觉风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。
+把 `outline.md` 作为页序确认材料，把 `deck-blueprint.json` 的 deck context、每页 local context、上屏文案、构图和素材请求映射为逐页图像任务。图片工作流继续完成视觉风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。主视觉与效果图延展可把 `kv-brief.md` 交给 kv-studio，以 signature KV 为参照图保证整套一致。

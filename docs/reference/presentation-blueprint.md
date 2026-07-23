@@ -57,4 +57,4 @@ validate-blueprint --blueprint FILE [--output-dir DIR] [--assets-root DIR]
 `deck.field_contract` 声明：`on_screen`（`title`/`render_text`/`visual` 渲染层——页面上只允许出现这些）与 `internal_only`（`unverified_notes`/`truth_boundary`/`source_refs`——**绝不渲染上屏、绝不写进讲稿/speech**，只服务替换清单与内部核对）。下游图片/成稿/讲稿工作流必须按此契约消费；素材缺口的人工替换动作以 outline 的"素材替换清单"为准。
 
 ## 交接
-把 `outline.md` 与 `deck-blueprint.json` 交给下游图片工作流；后者完成风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。proposal 本身不调用图片模型。正文或素材变化后，重新生成 blueprint 并重跑 `validate-blueprint`。
+把 `outline.md` 与 `deck-blueprint.json` 交给下游图片工作流；后者完成风格确认、图像后端确认、signature 样张批准、逐页生成、视觉 QA 和 PPTX 装配。生产包另含 `kv-brief.md`（主视觉交接单），KV/效果图延展工作流（如 kv-studio）可直接使用。proposal 本身不调用图片模型。正文或素材变化后，重新生成 blueprint 并重跑 `validate-blueprint`。
