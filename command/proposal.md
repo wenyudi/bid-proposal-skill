@@ -25,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 4.5.0 · lightweight commercial & bid proposal
+proposal skill · 4.7.0 · lightweight commercial & bid proposal
 ```

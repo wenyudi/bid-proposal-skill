@@ -5,6 +5,7 @@
 
   validate-blueprint  校验 presentation-blueprint/v1 结构稿，通过后确定性写 outline.md
   validate-index      校验响应对照索引：引用章节真实存在、评分项无漏行、虚构行有风险登记
+  lint-doc            递交正文词面兜底：脚手架词/免责外显/接力棒/记忆句超限/修辞密度
 
 只用标准库。JSON/Markdown 一律按 UTF-8 无 BOM 读写。
 每个子命令打印一个 JSON 结果并以 0（passed）/ 1（failed）退出。
@@ -40,6 +41,15 @@ DRAFT_STATE_RE = re.compile(
 BLANK_SLOT_RE = re.compile(
     r"位置留白|留白位|预留(?:位|区|框)|待贴|贴图(?:位|区)|(?:真实|实拍)(?:图|照片|素材)[^，。]{0,6}(?:留白|预留)"
 )
+# 递交正文不得出现的脚手架词与成段免责（语义层问题交 client lens，这里只抓词面铁证）
+SCAFFOLD_LEAK_RE = re.compile(
+    r"拟议示例|不代表历史工单|不代表既往|不作为既往|均为.{0,8}拟议|须确认|须取得|不预填"
+    r"|唯一主亮点|signature\s*页"
+    r"|非真实发布|图中无真实数据|不包含真实投放数据|无真实数据|本方案|这份方案"
+)
+# 接力棒：并行分章的拼缝痕迹（"本章已…下一章将…"）
+RELAY_RE = re.compile(r"下一章|上一章")
+BOLD_RE = re.compile(r"\*\*[^*\n]+?\*\*")
 
 
 # ---------------------------------------------------------------- helpers
@@ -146,7 +156,7 @@ def validate_blueprint(bp, blueprint_path, assets_root):
             "下游可能把 unverified_notes/truth_boundary 渲染上屏或写进讲稿"
         )
     for chunk in _deck_strings(deck):
-        if DRAFT_STATE_RE.search(chunk) or BEGGING_RE.search(chunk):
+        if DRAFT_STATE_RE.search(chunk) or BEGGING_RE.search(chunk) or SCAFFOLD_LEAK_RE.search(chunk):
             errors.append(f"deck 级字段含内部披露语（会随每页 prompt 下发）：{chunk[:44]}")
 
     # 页码连续 1..N
@@ -202,6 +212,10 @@ def validate_blueprint(bp, blueprint_path, assets_root):
             if DRAFT_STATE_RE.search(chunk):
                 errors.append(
                     f"slide {sid} 客户面字段披露草案状态/内部定价规则（应改为完整商业表达，内部信息走风险册）：{chunk[:40]}"
+                )
+            if SCAFFOLD_LEAK_RE.search(chunk):
+                errors.append(
+                    f"slide {sid} 客户面字段含脚手架词/免责外显（拟议示例/须确认/唯一主亮点等属内部口径）：{chunk[:40]}"
                 )
 
         # unverified_notes 必须是列表
@@ -455,6 +469,84 @@ def cmd_validate_index(args):
     )
 
 
+# ---------------------------------------------------------------- lint-doc
+
+def _find_lines(doc_text, regex):
+    """返回 [(行号, 命中片段)]，供错误定位。"""
+    hits = []
+    for i, line in enumerate(doc_text.splitlines(), 1):
+        for m in regex.finditer(line):
+            hits.append((i, m.group(0)))
+    return hits
+
+
+def lint_doc(doc_text, recall=None, max_recall=2):
+    """递交正文词面兜底。errors 挡内部痕迹铁证；warnings 报密度超标（由人/复核判断）。"""
+    errors, warnings = [], []
+
+    for i, frag in _find_lines(doc_text, SCAFFOLD_LEAK_RE):
+        errors.append(f"L{i} 脚手架词/免责外显（属 _风险与待核实.md，不属递交稿）：{frag}")
+    for i, frag in _find_lines(doc_text, RELAY_RE):
+        errors.append(f"L{i} 接力棒痕迹（章尾交接不落成文字）：{frag}")
+    for i, frag in _find_lines(doc_text, DRAFT_STATE_RE):
+        errors.append(f"L{i} 草案状态/内部定价规则：{frag}")
+    for i, frag in _find_lines(doc_text, BEGGING_RE):
+        errors.append(f"L{i} 索要/占位表述：{frag}")
+
+    counts = {}
+    if recall:
+        n = doc_text.count(recall)
+        counts["recall"] = n
+        if n > max_recall:
+            errors.append(f"记忆句出现 {n} 次，超上限 {max_recall}（综述+结尾各一次即可，各章靠内容呼应）")
+
+    # 密度类只告警：交叉引用、拟议 hedge、逐章加粗
+    n_xref = len(re.findall(r"[见详](?:后)?第[一二三四五六七八九十\d]{1,3}章", doc_text))
+    counts["crossref"] = n_xref
+    if n_xref > 10:
+        warnings.append(f"'见第X章'式交叉引用共 {n_xref} 处（导航交给目录与总表，正文每章 ≤2 处）")
+    n_niyi = doc_text.count("拟议")
+    counts["niyi"] = n_niyi
+    if n_niyi > 6:
+        warnings.append(f"'拟议'出现 {n_niyi} 次（待审定事项集中一页，正文保持成品姿态）")
+
+    # 声线：无人称报告腔（没人在说、没说给谁听）与 AI 工具痕迹图注
+    n_we = len(re.findall(r"我们|我方|我司", doc_text))
+    n_you = len(re.findall(r"贵方|贵行|贵司|贵局|贵集团|您", doc_text))
+    counts["we"], counts["you"] = n_we, n_you
+    if n_we == 0:
+        warnings.append("全文没有'我们/我方'——无人称报告腔，正文应是我们对客户说话（见 writing-patterns'有人在说话'）")
+    if n_you == 0:
+        warnings.append("全文没有'贵方/您'式称谓——缺少对读者的方向感（见 writing-patterns'有人在说话'）")
+    n_ai = len(re.findall(r"AI\s*(?:示意|生成|预演图|策略示意)", doc_text))
+    counts["ai_caption"] = n_ai
+    if n_ai > 0:
+        warnings.append(f"'AI 示意'式工具痕迹 {n_ai} 处（图注只说明画面内容与意图，工具与真实边界进风险册）")
+
+    chapter, over_bold = "（前言）", []
+    bold_by_chapter = {}
+    for line in doc_text.splitlines():
+        if line.startswith("## "):
+            chapter = _norm_heading(line)[:18]
+        bold_by_chapter[chapter] = bold_by_chapter.get(chapter, 0) + len(BOLD_RE.findall(line))
+    for ch, n in bold_by_chapter.items():
+        if n > 6:
+            over_bold.append(f"{ch}:{n}")
+    counts["bold_total"] = sum(bold_by_chapter.values())
+    if over_bold:
+        warnings.append(f"加粗密度超标（指南：每章 ≤3 处）：{'、'.join(over_bold)}")
+
+    return _result(True, errors, warnings, {"counts": counts})
+
+
+def cmd_lint_doc(args):
+    return lint_doc(
+        _read_text(args.doc),
+        recall=args.recall,
+        max_recall=args.max_recall,
+    )
+
+
 # ---------------------------------------------------------------- cli
 
 def main(argv=None):
@@ -473,6 +565,12 @@ def main(argv=None):
     i.add_argument("--score-table", required=True)
     i.add_argument("--risk", default=None)
     i.set_defaults(func=cmd_validate_index)
+
+    l = sub.add_parser("lint-doc", help="递交正文词面兜底：脚手架词/免责外显/接力棒/记忆句超限/修辞密度")
+    l.add_argument("--doc", required=True)
+    l.add_argument("--recall", default=None, help="十秒记忆句原句（用于计数）")
+    l.add_argument("--max-recall", type=int, default=2)
+    l.set_defaults(func=cmd_lint_doc)
 
     g = sub.add_parser("ingest", help="Task 0 素材摄入：混合格式转 _materials/（本地解析+OCR 兜底）")
     g.add_argument("--src", required=True)

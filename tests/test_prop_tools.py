@@ -206,5 +206,73 @@ class IndexTests(unittest.TestCase):
         self.assertTrue(res["passed"], res["errors"])
 
 
+class LintDocTests(unittest.TestCase):
+    CLEAN = (
+        "## 一、总览\n\n我们围绕一条主线展开全部工作。**记忆句在此。**\n\n"
+        "## 二、执行\n\n每项任务有责任人与时点，验收按贵行确认的标准执行。\n"
+    )
+
+    def test_clean_doc_passes(self):
+        res = prop_tools.lint_doc(self.CLEAN, recall="记忆句在此。")
+        self.assertTrue(res["passed"], res["errors"])
+        self.assertEqual(res["counts"]["recall"], 1)
+
+    def test_scaffold_leak_fails(self):
+        for bad in (
+            "表内数据均为本项目的拟议示例。",
+            "专家名单须确认。",
+            "全案唯一主亮点是驾驶舱。",
+            "本示意不代表真实发布，图中无真实数据。",
+            "这份方案围绕三条主线展开。",
+        ):
+            res = prop_tools.lint_doc(self.CLEAN + bad)
+            self.assertFalse(res["passed"], bad)
+
+    def test_voiceless_and_ai_caption_warn(self):
+        doc = "## 一、总览\n\n项目按三阶段推进。\n\n> AI 示意·三波节奏。\n"
+        res = prop_tools.lint_doc(doc)
+        self.assertTrue(res["passed"], res["errors"])
+        joined = "".join(res["warnings"])
+        self.assertIn("我们", joined)
+        self.assertIn("贵方", joined)
+        self.assertIn("AI 示意", joined)
+
+    def test_voiced_doc_no_voice_warnings(self):
+        doc = "## 一、总览\n\n我们把审批提前一个月启动，贵方只需在两个节点确认。\n"
+        res = prop_tools.lint_doc(doc)
+        self.assertTrue(res["passed"], res["errors"])
+        self.assertFalse(any("我们" in w or "贵方" in w for w in res["warnings"]), res["warnings"])
+
+    def test_relay_marker_fails(self):
+        res = prop_tools.lint_doc(self.CLEAN + "本章交出执行底稿；下一章将展开风险预案。\n")
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("接力棒" in e for e in res["errors"]), res["errors"])
+
+    def test_recall_over_limit_fails(self):
+        doc = self.CLEAN + "记忆句在此。\n记忆句在此。\n"
+        res = prop_tools.lint_doc(doc, recall="记忆句在此。")
+        self.assertFalse(res["passed"])
+        self.assertTrue(any("记忆句" in e for e in res["errors"]), res["errors"])
+
+    def test_density_only_warns(self):
+        doc = self.CLEAN + "详见第三章。\n" * 12 + "拟议方案A。\n" * 8
+        res = prop_tools.lint_doc(doc)
+        self.assertTrue(res["passed"], res["errors"])
+        self.assertEqual(len(res["warnings"]), 2, res["warnings"])
+
+    def test_bold_density_warns(self):
+        doc = "## 一、总览\n\n" + "**重点** " * 8 + "\n"
+        res = prop_tools.lint_doc(doc)
+        self.assertTrue(res["passed"], res["errors"])
+        self.assertTrue(any("加粗" in w for w in res["warnings"]), res["warnings"])
+
+    def test_cli_wiring(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "doc.md")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(self.CLEAN)
+            self.assertEqual(prop_tools.main(["lint-doc", "--doc", p]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

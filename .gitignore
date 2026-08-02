@@ -2,6 +2,11 @@
 __pycache__/
 *.py[cod]
 
+# 本地 API 密钥与运行配置
+.env
+.env.*
+!.env.example
+
 # OS
 .DS_Store
 Thumbs.db
