@@ -1,5 +1,5 @@
 ---
-description: 商业方案与投标方案 v5 — 拆评分表+真实采集、创意锦标赛、单作者带范例写作、缺口虚构过闸门+风险登记、响应对照索引与默认图片 PPT 结构稿
+description: 商业方案与投标方案 v5 — 客户真话+真实采集、创意锦标赛、单作者带范例写作；创意标作品先行、评分表退到封标核对；缺口虚构过闸门+风险登记、响应对照索引与默认图片 PPT 结构稿
 ---
 
 <command-instruction>
@@ -25,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 5.2.0 · exemplar-driven commercial & bid proposal
+proposal skill · 5.3.0 · exemplar-driven commercial & bid proposal
 ```
