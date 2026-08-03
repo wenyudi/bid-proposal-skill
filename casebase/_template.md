@@ -1,60 +1,10 @@
----
-schema_version: case-record/v2
-case_id: CASE-UNIQUE-ID
-status: draft
-name: 项目名称（客户 + 项目一句话）
-client: 客户全称
-client_type: 政府
-industry: 行业标签
-services: 服务1, 服务2
-start_date: 2026-01
-end_date: 2026-12
-budget: 金额+单位
-bidder_role: unknown
-engagement_scope: 我方实际承担的范围
-visibility: internal_only
-allowed_uses: matching
-client_name_permission: false
-logo_permission: false
-testimonial_permission: false
-numeric_result_permission: false
-qualification_material_available: false
-sensitive_or_disputed: false
----
+# 案例：<年份-客户简称-项目一句话>（文件名同此）
 
-## 背景与客户任务
+1. **客户与项目**：<什么客户、什么标的>｜客户名露出：能 / 匿名 / 不能
+2. **时间与金额区间**：<2025-03 至 2025-06｜XX–XX 万>
+3. **我方角色与实际所做**：<总包/联合体/分包；实际干了什么（别写"全案负责"这类空话，写动作）>
+4. **最值得讲的一个细节**：<踩过的坑、救过的场、客户夸过的点——这是方案里"做过"的指纹>
+5. **可验证的结果**：<有出处的才写（验收件/数据后台/续约/获奖）；没有就删本行>
+6. **实物素材**：<现场照片/成片/验收件存放位置、要用时找谁>
 
-只写可核验事实；不推测客户内部动机。
-
-## 我方实际范围与做法
-
-说明 prime/consortium/subcontract 角色、包含与未承担范围、关键交付。
-
-## 原子证据
-
-```json
-{
-  "schema_version": "case-evidence/v1",
-  "items": [
-    {
-      "id": "CE-UNIQUE-01",
-      "kind": "engagement_fact",
-      "statement": "一条原子、可核验的事实",
-      "scope": "事实适用范围",
-      "period": "YYYY-MM 至 YYYY-MM",
-      "source_material": "合同/验收/截图/证书的具体位置",
-      "verification_status": "material_listed",
-      "visibility": "internal_only",
-      "allowed_uses": ["matching"],
-      "safe_title": "",
-      "approved_wording": "",
-      "publication_authority": "",
-      "limitations": "这条材料不能证明什么"
-    }
-  ]
-}
-```
-
-## 风险、争议与使用限制（内部）
-
-如有敏感、失败、争议、归因不足、过期或授权限制，在这里如实记录。
+<!-- 案例要承担资格证明/公开数字/客户署名时，按 README"重型溯源"为本案例补授权与核验字段 -->

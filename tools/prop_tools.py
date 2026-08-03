@@ -18,6 +18,7 @@ import re
 import sys
 
 import prop_ingest
+import prop_library
 
 VALID_MODES = {"generate", "strict_input", "style_reference"}
 VALID_STATUS = {"generate", "available", "needs_user"}
@@ -502,13 +503,27 @@ def _exemplar_overlaps(doc_text, exemplar_text, n=12):
     return runs
 
 
-def lint_doc(doc_text, recall=None, max_recall=2, exemplars=None):
+IMG_LINK_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def lint_doc(doc_text, recall=None, max_recall=2, exemplars=None, doc_dir=None):
     """递交正文词面兜底。errors 挡内部痕迹铁证；warnings 报密度超标（由人/复核判断）。"""
     errors, warnings = [], []
 
     for path in exemplars or []:
         for run in _exemplar_overlaps(doc_text, _read_text(path)):
             errors.append(f"与范例 {os.path.basename(path)} 连续重合 {len(run)} 字（范例只学质感，禁复用句子）：{run[:30]}…")
+
+    # 配图链接：外链禁用（版权与递交禁项），本地链必须存在（断链＝递交事故）
+    from urllib.parse import unquote
+    for m in IMG_LINK_RE.finditer(doc_text):
+        target = m.group(1).strip()
+        if target.startswith(("http://", "https://")):
+            errors.append(f"配图使用外链（应下载入 配图/ 并署来源授权）：{target[:60]}")
+        elif doc_dir:
+            local = os.path.join(doc_dir, unquote(target))
+            if not os.path.exists(local):
+                errors.append(f"配图断链（文件不存在）：{target[:60]}")
 
     for i, frag in _find_lines(doc_text, SCAFFOLD_LEAK_RE):
         errors.append(f"L{i} 脚手架词/免责外显（属 _风险与待核实.md，不属递交稿）：{frag}")
@@ -571,6 +586,7 @@ def cmd_lint_doc(args):
         recall=args.recall,
         max_recall=args.max_recall,
         exemplars=args.exemplar,
+        doc_dir=os.path.dirname(os.path.abspath(args.doc)),
     )
 
 
@@ -607,6 +623,8 @@ def main(argv=None):
     g.add_argument("--config", default=None, help=f"OCR 密钥配置，默认 {prop_ingest.DEFAULT_CONFIG}")
     g.add_argument("--timeout", type=int, default=900)
     g.set_defaults(func=prop_ingest.cmd_ingest)
+
+    prop_library.register_subcommands(sub)
 
     args = parser.parse_args(argv)
     res = args.func(args)

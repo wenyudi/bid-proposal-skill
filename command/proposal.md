@@ -25,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 5.0.0 · exemplar-driven commercial & bid proposal
+proposal skill · 5.2.0 · exemplar-driven commercial & bid proposal
 ```

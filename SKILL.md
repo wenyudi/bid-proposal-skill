@@ -5,20 +5,22 @@ description: 商业方案与投标方案生成 v5：给材料，拆评分表+真
 
 # proposal v5 — 商业方案与投标方案
 
-给一批材料，产出一份成熟、有人味、客户可读的方案。v5 的三个赌注：**真创意**（创意锦标赛，≥12 个候选对抗淘汰，用户从发展稿里选）、**真素材**（真实采集优先，虚构是最后手段）、**一个作者**（单作者带范例写全文，drafter 只备料）。品味靠 `references/exemplars/` 范例传递，规则只守红线；有评分表时以**评分表**为骨架，**地板**一分不丢、**天花板**顶在创意上，一张**响应对照索引**证明覆盖，默认产出图片 PPT 结构稿（唯一 **signature** 页承担创意证明）交给下游图片工作流。
+给一批材料，产出一份成熟、有人味、客户可读的方案。v5 的三个赌注：**真创意**（创意锦标赛，多镜头发散对抗淘汰，用户从发展稿里选）、**真素材**（真实采集优先，虚构是最后手段）、**一个作者**（单作者带范例写全文，drafter 只备料）。品味靠 `references/exemplars/` 范例传递，规则只守红线；有评分表时以**评分表**为骨架，**地板**一分不丢、**天花板**顶在创意上，一张**响应对照索引**证明覆盖，默认产出图片 PPT 结构稿（唯一 **signature** 页承担创意证明）交给下游图片工作流。
 
 低仪式：五步、一次人工确认（选创意）、≤2 轮复核。素材缺口虚构过四闸门、登记进风险文档待核实。v4 流水线在 tag `v4.7.0`，重引擎在 tag `v3.4.0-heavy`。
 
-约定：仓库相对路径从本目录解析；Python 记为 `$PY`（优先 `python3`）；JSON/Markdown 用 UTF-8 无 BOM。主 agent 派子 agent 前赋值 `{LANG}`、`{TMPDIR}`、`{BRIEF_PATH}`。篇幅由内容与权重决定——不设字数上限，**独有信息量**多比少好；复读、需求回声、同构表、假仿真是注水不是内容。宿主的派发/搜索/交互工具映射见宿主入口 SKILL.md。
+约定：仓库相对路径从本目录解析；Python 记为 `$PY`（优先 `python3`）；JSON/Markdown 用 UTF-8 无 BOM。主 agent 派子 agent 前赋值 `{LANG}`、`{TMPDIR}`、`{BRIEF_PATH}`。篇幅由内容与权重决定——不设字数上限但**长≠深**：创意/传播标以赢标案体量为参照（约 1–1.5 万字常见），深度=成品密度；复读、需求回声、同构表、假仿真、铺满全案的治理装置都是注水不是内容。宿主的派发/搜索/交互工具映射见宿主入口 SKILL.md。
 
 ## 交付
 
 - 输入：标书/方案 brief（必需，缺失则向用户索要并等待）+ 素材（能力、案例、报价、团队、品牌）。`casebase/` 非 `_` 开头案例自动纳入；沟通/踏勘纪要标 `[notes]`，只作内部校准、不入正文、不引原句。
+- **方案库**（可选，配置 `~/.config/proposal/library.json` 后自动启用）：百 GB 级历史方案库先 `library-convert` 批量转 MD 镜像（断点续跑、本地优先、OCR 兜底），config `path` 指向 MD 库后 `library-index` 建索引；按标检索、直接 Read/Grep 正文、渐进编译成**方案卡**（`prompts/task0b_library_card.md`，含关键页码）跨标复用；金级卡可提名晋升 `references/exemplars/`（用户审定）。**视觉层按页取用**：`library-pages --file <path> [--first N --last M]` 把方案页渲染成 PNG（页与 MD"第 N 页"对齐，缓存于 `_proposal_index/pages/`），供编卡、挑范例、KV/舞美风格参照时查看。红线两条：**只偷师结构、打法与内行颗粒，不迁移文案与客户事实；渲染页是第三方版权物料，只作内部参照与生成侧 style_reference，绝不直接进递交稿**。
 - 产出（默认）：
 
 ```
 <方案标题>-<时间戳>/
 ├── 方案正文.md              客户可读递交稿
+├── 配图/                    正文配图（搜索所得实景图，带来源与授权记录）
 ├── 响应对照索引.md          有评分表时；评分项→权重→章节位置→覆盖状态（交付级）
 ├── _PPT生产包/              outline.md + deck-blueprint.json + presentation-validation.json
 ├── _风险与待核实.md          内部：虚构/假设做实清单（权重×风险排序）+ 素材需求清单
@@ -37,7 +39,7 @@ description: 商业方案与投标方案生成 v5：给材料，拆评分表+真
 ## 缺口补全与风险登记
 
 - 先用尽真实：Task 1 采集到的带出处事实优先于一切虚构；素材需求清单随人工确认交给用户，能要来的真素材优于编造。
-- 仍缺的用**具体、可信**内容虚构补全，过**四道闸门**（`writing-patterns.md`）：实名不虚构挂名（资历标准+承诺机制）、可查证事实不硬编精确值、虚构数字参差可信（禁同一折扣率/公式批量生成）、免责不入正文与图注（"拟议示例/须确认"只进风险册或附录审定清单）。
+- 仍缺的用**具体、可信**内容虚构补全，过**四道闸门**（`writing-patterns.md`）：实名不虚构合作状态但推荐候选实名+公开事实是标准做法（全匿名在创意标读作回避）、可查证事实不硬编精确值、虚构数字参差可信（禁同一折扣率/公式批量生成）、免责不入正文与图注（"拟议示例/须确认"只进风险册或附录审定清单）。
 - 每处虚构在写作源头申报（drafter 与作者各自申报），主 agent 合并进 `_风险与待核实.md`：所在位置、虚构内容、应核实项、不核实后果；保留分级与各条具体后果，批量同质条目合一条。复核只抽查漏报。
 - 第三方案例只作参照，不冒充我方能力；内部来源 URL、状态、ID 留在内部。
 
@@ -46,10 +48,11 @@ description: 商业方案与投标方案生成 v5：给材料，拆评分表+真
 ### 1. 摄入、拆解与真实采集
 素材含 doc/ppt/扫描件或数量多时先跑 Task 0：`$PY tools/prop_tools.py ingest --src <素材目录> --out $TMPDIR/_materials`（本地解析 + OCR 兜底，密钥 `~/.config/proposal/ocr.json`，未配置如实降级；文件 >15 份并行派素材卡 readers，`prompts/task0_material_card.md`）。
 用 `prompts/task1_strategy.md` 派高推理 agent：判标型与**制胜轴**；拆评分表落 `_score-table.json`（floor/ceiling 分类，无评分表改 floor 诉求清单）；**真实采集**——穷尽可查证公开事实逐条带出处（WebFetch/WebSearch 取原文，不用摘要充数）；产《素材需求清单》与《内行颗粒清单》。
-- **完成判据**：评分项全部入表；采集成果条条有出处；两张清单具体非空。
+**方案库检索**（已配置时，主 agent 编排）：`$PY tools/prop_tools.py library-search --query "<主板块关键词 客户行业词>" --sector <主板块> --top 8` → 有卡的直接读卡；前 2–3 份无卡候选逐个 `library-extract --file <path>`（缓存复用）后并行派 reader（`prompts/task0b_library_card.md`）编卡落库。产出**参考卡集**（本标可用的卡清单）注入锦标赛与作者 brief。首次使用先 `library-index` 建索引（分钟级，不读内容）。
+- **完成判据**：评分项全部入表；采集成果条条有出处；两张清单具体非空；（有库时）参考卡集就绪、新编卡已落库。
 
 ### 2. 创意锦标赛（唯一人工确认在此）
-用 `prompts/task1b_tournament.md` 按 `{ROLE}` 编排：**发散**（按制胜轴选 6–10 个镜头并行 ideate，≥12 候选）→ **淘汰**（2–3 个 killer 并行过四问：互换/截图/内行/地板，多数决，幸存 ≤3；全灭换镜头再来一轮，仍全灭如实报告不硬凑）→ **发展**（每个幸存创意一页 concept brief，含最强反对理由与所需真实素材）→ **人工确认**：向用户展示评分拆解摘要 + 素材需求清单 + 2–3 份发展稿，问"按哪个写？"（`-auto` 按得分自动选，登记 assumed）→ **onepager** 定稿制胜一页纸（主张/记忆句/拿分打法/逐章骨架含体裁基调/素材分配表/signature/叙事）落 `_研判.md`，回填 `claimed_by_section`。
+用 `prompts/task1b_tournament.md` 按 `{ROLE}` 编排：**发散**（按制胜轴与标的体量定档：常规 4–6 镜头/2 killer，大标 8–10/3；每候选须附一件写完的成品示范 sample）→ **淘汰**（2–3 个 killer 并行过五问：互换/截图/**炫耀**/内行/地板，多数决，幸存 ≤3；全灭换镜头再来一轮，仍全灭如实报告不硬凑）→ **发展**（每个幸存创意一页 concept brief，含最强反对理由与所需真实素材）→ **人工确认**：向用户展示评分拆解摘要 + 素材需求清单 + 2–3 份发展稿，问"按哪个写？"（`-auto` 按得分自动选，登记 assumed）→ **onepager** 定稿制胜一页纸（主张/记忆句/拿分打法/逐章骨架（章数由说服任务定、常规 5–8 章、结构件唯一宿主章）/素材分配表/signature）落 `_研判.md`，回填 `claimed_by_section`。
 - **完成判据**：用户明确选中；一页纸字段齐全；每个评分项被且仅被一个合理章节认领。
 
 ### 3. 单作者写作
@@ -62,19 +65,20 @@ description: 商业方案与投标方案生成 v5：给材料，拆评分表+真
 - **通过判据**：无地板缺口、创意层复评通过、checklist 五组修完。2 轮后残留如实进汇报与风险册，不静默通过。
 
 ### 5. 编译与交付
-1. `_draft.md` 定稿为 `方案正文.md`（编号统一、零占位符、剥离 `<!-- 建议配图点 -->` 等注释；`_draft.md` 保留注释供 blueprint 收割），然后：
+1. `_draft.md` 定稿为 `方案正文.md`（编号统一、零占位符；`<!-- 建议配图点 -->` 注释暂留给配图步消化），然后：
    `$PY tools/prop_tools.py lint-doc --doc <正文> --recall "<记忆句>" [--exemplar <启用的范例>]`
    errors（脚手架词/免责外显/接力棒/记忆句超限/范例重合）必须修——免责挪风险册或附录，不是删字；warnings 按红线收敛。修完重跑至绿。
-2. 有评分表 → 生成 `响应对照索引.md`（覆盖全部评分项+否决/资格项；列：项|权重或类别|章节位置=确切标题|覆盖状态：完整/部分/虚构补全/待实件），再 `$PY tools/prop_tools.py validate-index --index <索引> --doc <正文> --score-table <_score-table.json> --risk <_风险与待核实.md>`，失败修后重跑。
-3. 默认 PPT（`-no-ppt` 跳过）：默认视觉分镜式（有人讲标才用演讲式）。用 `prompts/task4_blueprint.md`（读 `references/presentation-patterns.md`）生成 `deck-blueprint.json`：core/appendix 双轨、唯一 signature 页（=下游样张，落在选中创意上）、结论式标题、每页画面任务、素材三模式、页级虚构标注、统一 `visual_system`。**证据图红线**：`generate` 只用于效果/示意；证据图必须 `strict_input`+`needs_user` 并进风险登记。**完整商业稿**：任何一页不露素材缺口——缺真图用意向图顶位（`stand_in_for`，版面做满），上屏绝不写"待提供"；缺口只进 `unverified_notes`（internal_only，deck `field_contract` 声明）。然后 `$PY tools/prop_tools.py validate-blueprint --blueprint <blueprint> --output-dir <bundle>/_PPT生产包`；客户面字段同样受递交禁项与词面校验，绿后加派轻量 client agent 语义扫描（对象=outline+全部标题/上屏/takeaway），发现即回修并重校验。
-4. 有密封/份数/现场递交类 floor 项 → 生成 `_封标检查表.md`（正副本三方复检、第二台电脑查毒、到场倒排、唱验装袋、封包不补页、多岗签字）。
+2. **配图采集**（`prompts/task2e_images.md`）：正文讲到真实地点/平台/设备/行业场景处配真实图片——**搜索快于生成**。优先用 Task 1 采集的授权图，缺的按授权优先级搜（Wikimedia Commons > 官方发布 > CC0 图库 > 客户公开物料[登记]），下载进 `配图/`，插图加"来源/作者/授权"图注（无 URL，URL 归档风险册备查）。**三分法**：可搜实景本步配齐；示意/效果类注释留给 PPT 流程生成、不阻塞正文；证据类只等真图。配完剥离剩余内部注释（`_draft.md` 保留注释供 blueprint 收割），重跑 lint-doc（校验图链与词面）。
+3. 有评分表 → 生成 `响应对照索引.md`（覆盖全部评分项+否决/资格项；列：项|权重或类别|章节位置=确切标题|覆盖状态：完整/部分/虚构补全/待实件），再 `$PY tools/prop_tools.py validate-index --index <索引> --doc <正文> --score-table <_score-table.json> --risk <_风险与待核实.md>`，失败修后重跑。
+4. 默认 PPT（`-no-ppt` 跳过）：默认视觉分镜式（有人讲标才用演讲式）。用 `prompts/task4_blueprint.md`（读 `references/presentation-patterns.md`）生成 `deck-blueprint.json`：core/appendix 双轨、唯一 signature 页（=下游样张，落在选中创意上）、结论式标题、每页画面任务、素材三模式、页级虚构标注、统一 `visual_system`。**证据图红线**：`generate` 只用于效果/示意；证据图必须 `strict_input`+`needs_user` 并进风险登记。**完整商业稿**：任何一页不露素材缺口——缺真图用意向图顶位（`stand_in_for`，版面做满），上屏绝不写"待提供"；缺口只进 `unverified_notes`（internal_only，deck `field_contract` 声明）。`配图/` 里已采集的授权实景图直接作 `available` 素材复用，能少生成就少生成。然后 `$PY tools/prop_tools.py validate-blueprint --blueprint <blueprint> --output-dir <bundle>/_PPT生产包`；客户面字段同样受递交禁项与词面校验，绿后加派轻量 client agent 语义扫描（对象=outline+全部标题/上屏/takeaway），发现即回修并重校验。
+5. 有密封/份数/现场递交类 floor 项 → 生成 `_封标检查表.md`（正副本三方复检、第二台电脑查毒、到场倒排、唱验装袋、封包不补页、多岗签字）。
 - **完成判据**：lint-doc、validate-index、validate-blueprint 全绿；风险册覆盖全部申报。
 
 ### 6. 汇报
 - 首句（存在虚构或 `-auto`）："已生成草案，含 N 处虚构占位（见 `_风险与待核实.md`），核实前不可直接递交。"
-- 主体：标题 / 选中创意 + 记忆句 / 被否创意一句话清单 / 评分覆盖状态（含复核残留，如实）/ top 3 待核实 / **素材需求清单 top 3（要来真素材可显著抬上限）**/ 范例校准状态（用了哪份或"无范例校准"）/ 卷册路径。
+- 主体：标题 / 选中创意 + 记忆句 / 被否创意一句话清单 / 评分覆盖状态（含复核残留，如实）/ top 3 待核实 / **素材需求清单 top 3（要来真素材可显著抬上限）**/ 范例校准状态（用了哪份或"无范例校准"）/ 方案库使用情况（读了哪些卡、新编了几张；金级卡提名晋升 exemplars 的列出等用户审定）/ 卷册路径。
 - PPT：页数 / signature 页 / `needs_user` 素材数 / 生产包路径 + 一行下一步："把 `_PPT生产包` 交给图片工作流（image2 / kv-studio）；递交前按 outline 素材替换清单换真图。"
 - 末尾固定提示：**开标结果/评委反馈丢回来**——按 `strategy-patterns.md` 模板复盘；**优秀成稿与赢标案沉淀进 `references/exemplars/`（品味）与 `casebase/`（事实）**，校准下一标。
 
 ---
-`proposal skill · 5.0.0 · exemplar-driven commercial & bid proposal`
+`proposal skill · 5.2.0 · exemplar-driven commercial & bid proposal`

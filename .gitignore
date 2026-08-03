@@ -19,3 +19,7 @@ Thumbs.db
 
 # 运行输出卷册（含内部研判/状态，绝不入库）
 /reports/
+
+# 范例库内容：第三方版权文本只留本地，manifest 供重建（见 references/exemplars/README.md）
+references/exemplars/*.md
+!references/exemplars/README.md

@@ -39,6 +39,7 @@ v4 并行流水线在 tag `v4.7.0`；政企技术标重型引擎在 tag `v3.4.0-
 - `-auto`：跳过唯一人工确认，按淘汰赛得分自动选创意，产草案（assumed 决策阻断直接递交）。
 - `casebase/` 中非 `_` 开头案例自动纳入；沟通/踏勘纪要标 `[notes]`。
 - 素材可直接丢原始格式（doc/docx/ppt/pptx/pdf/扫描件）：Task 0 摄入本地解析 + OCR 兜底（MinerU / 百度 PaddleOCR-VL），密钥放 `~/.config/proposal/ocr.json`（仓库外，不入库）；资料多时并行产素材卡，Task 1 按图索骥不通读。
+- **历史方案库**（百 GB 级 PPT/PDF）：推荐先 `library-convert` 整库批量转 **MD 镜像库**（断点续跑；pptx/docx/pdf 文字层本地免费转，老 .ppt/.doc 走 LibreOffice（若装）或 OCR，`--ocr off` 先转完看缺口再决定开 OCR）——百 GB 缩到百 MB 级、全文可 Grep。然后 `~/.config/proposal/library.json` 的 `path` 指向 MD 库，`library-index` 建索引（分钟级），按标 `library-search` 检索，agent 渐进编译成**方案卡**（含关键页码）跨标偷师；金级卡可提名晋升 `references/exemplars/`。**视觉层**：`library-pages` 按需把方案页渲染成 PNG（页与 MD"第 N 页"对齐、缓存复用），供看版面、挑范例、做生成侧风格参照。红线：只学结构与打法，不迁移文案与客户事实；渲染页系第三方版权物料，绝不直接进递交稿。
 
 ## 你会得到什么
 

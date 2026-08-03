@@ -289,6 +289,21 @@ class LintDocTests(unittest.TestCase):
             res = prop_tools.lint_doc(doc, exemplars=[p])
             self.assertFalse(res["passed"], res["errors"])
 
+    def test_image_links(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "配图"))
+            with open(os.path.join(d, "配图", "01-实景.jpg"), "wb") as f:
+                f.write(b"JPG")
+            good = self.CLEAN + "![实景](配图/01-实景.jpg)\n"
+            res = prop_tools.lint_doc(good, doc_dir=d)
+            self.assertTrue(res["passed"], res["errors"])
+            broken = self.CLEAN + "![缺图](配图/02-不存在.jpg)\n"
+            res2 = prop_tools.lint_doc(broken, doc_dir=d)
+            self.assertTrue(any("断链" in e for e in res2["errors"]), res2["errors"])
+            hot = self.CLEAN + "![外链](https://example.com/a.jpg)\n"
+            res3 = prop_tools.lint_doc(hot, doc_dir=d)
+            self.assertTrue(any("外链" in e for e in res3["errors"]), res3["errors"])
+
     def test_cli_wiring(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "doc.md")
