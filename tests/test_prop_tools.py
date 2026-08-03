@@ -266,6 +266,29 @@ class LintDocTests(unittest.TestCase):
         self.assertTrue(res["passed"], res["errors"])
         self.assertTrue(any("加粗" in w for w in res["warnings"]), res["warnings"])
 
+    def test_exemplar_overlap_fails(self):
+        exemplar = "先让江州人坐成日常，再让全国游客坐成风景——这条船先是回家的路。"
+        doc = self.CLEAN + "我们主张：先让江州人坐成日常，再让全国游客坐成风景。\n"
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "ex.md")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(exemplar)
+            res = prop_tools.lint_doc(doc, exemplars=[p])
+            self.assertFalse(res["passed"])
+            self.assertTrue(any("范例" in e for e in res["errors"]), res["errors"])
+            clean = prop_tools.lint_doc(self.CLEAN, exemplars=[p])
+            self.assertTrue(clean["passed"], clean["errors"])
+
+    def test_exemplar_overlap_ignores_whitespace(self):
+        exemplar = "十二个字符的重合检测语句在此处。"
+        doc = self.CLEAN + "十二个字符的重合\n检测语句在此处。\n"
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "ex.md")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(exemplar)
+            res = prop_tools.lint_doc(doc, exemplars=[p])
+            self.assertFalse(res["passed"], res["errors"])
+
     def test_cli_wiring(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "doc.md")

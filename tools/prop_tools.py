@@ -480,9 +480,35 @@ def _find_lines(doc_text, regex):
     return hits
 
 
-def lint_doc(doc_text, recall=None, max_recall=2):
+def _exemplar_overlaps(doc_text, exemplar_text, n=12):
+    """返回 doc 与范例的 >=n 字连续重合片段（合并重叠窗口）。"""
+    def norm(t):
+        return re.sub(r"\s+", "", t)
+
+    doc_n, ex_n = norm(doc_text), norm(exemplar_text)
+    if len(doc_n) < n or len(ex_n) < n:
+        return []
+    grams = {ex_n[i:i + n] for i in range(len(ex_n) - n + 1)}
+    runs, start = [], None
+    for i in range(len(doc_n) - n + 1):
+        if doc_n[i:i + n] in grams:
+            if start is None:
+                start = i
+        elif start is not None:
+            runs.append(doc_n[start:i + n - 1])
+            start = None
+    if start is not None:
+        runs.append(doc_n[start:])
+    return runs
+
+
+def lint_doc(doc_text, recall=None, max_recall=2, exemplars=None):
     """递交正文词面兜底。errors 挡内部痕迹铁证；warnings 报密度超标（由人/复核判断）。"""
     errors, warnings = [], []
+
+    for path in exemplars or []:
+        for run in _exemplar_overlaps(doc_text, _read_text(path)):
+            errors.append(f"与范例 {os.path.basename(path)} 连续重合 {len(run)} 字（范例只学质感，禁复用句子）：{run[:30]}…")
 
     for i, frag in _find_lines(doc_text, SCAFFOLD_LEAK_RE):
         errors.append(f"L{i} 脚手架词/免责外显（属 _风险与待核实.md，不属递交稿）：{frag}")
@@ -544,6 +570,7 @@ def cmd_lint_doc(args):
         _read_text(args.doc),
         recall=args.recall,
         max_recall=args.max_recall,
+        exemplars=args.exemplar,
     )
 
 
@@ -566,10 +593,11 @@ def main(argv=None):
     i.add_argument("--risk", default=None)
     i.set_defaults(func=cmd_validate_index)
 
-    l = sub.add_parser("lint-doc", help="递交正文词面兜底：脚手架词/免责外显/接力棒/记忆句超限/修辞密度")
+    l = sub.add_parser("lint-doc", help="递交正文词面兜底：脚手架词/免责外显/接力棒/记忆句超限/修辞密度/范例重合")
     l.add_argument("--doc", required=True)
     l.add_argument("--recall", default=None, help="十秒记忆句原句（用于计数）")
     l.add_argument("--max-recall", type=int, default=2)
+    l.add_argument("--exemplar", action="append", default=None, help="范例文件路径（可多次；查 12 字以上连续重合）")
     l.set_defaults(func=cmd_lint_doc)
 
     g = sub.add_parser("ingest", help="Task 0 素材摄入：混合格式转 _materials/（本地解析+OCR 兜底）")

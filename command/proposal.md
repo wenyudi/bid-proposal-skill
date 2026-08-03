@@ -1,5 +1,5 @@
 ---
-description: 商业方案与投标方案 v4 — 拆评分表、制胜一页纸、缺口虚构补全+风险登记、响应对照索引与默认图片 PPT 结构稿
+description: 商业方案与投标方案 v5 — 拆评分表+真实采集、创意锦标赛、单作者带范例写作、缺口虚构过闸门+风险登记、响应对照索引与默认图片 PPT 结构稿
 ---
 
 <command-instruction>
@@ -25,5 +25,5 @@ $ARGUMENTS
 
 ---
 ```
-proposal skill · 4.7.0 · lightweight commercial & bid proposal
+proposal skill · 5.0.0 · exemplar-driven commercial & bid proposal
 ```

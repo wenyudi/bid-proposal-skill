@@ -17,7 +17,7 @@
 | 005 | 叙事工艺送达写作 agent(TYPES.md → Task 3/3.5 断链) | P2 | M | 004* | DONE — `narratives.json` 单一事实源，brief 只注入当前短 guide |
 | 008 | 项目化成果与竞争稿就绪门:proof contract → brief → 独立审计 → submission | P1 | L | 004,006***;005* | REJECTED — 原方案过重；由 v3.1 轻量 `visible_outputs` 实现核心效果，不新增 readiness/canonical |
 | 009 | v4 轻量重建:商业方案 + 默认图片 PPT 交接 | P0 | L | — | DONE — 2026-07-20 完成;tag `v3.4.0-heavy` 已建;工具 14 tests 绿;端到端真实运行为验收续项 |
-| 010 | v5 范例驱动 + 创意锦标赛 + 单作者 | P0 | L | v4.7.0 tag | TODO — 2026-08-02 规格定稿(用户拍板:手工金标准+全量重构);STOP-1=金标准范例逐份审定 |
+| 010 | v5 范例驱动 + 创意锦标赛 + 单作者 | P0 | L | v4.7.0 tag | IN PROGRESS — 2026-08-02 主体已实施(锦标赛/单作者/规则删薄/lint范例重合/SKILL v5);范例库空,待用户提供真实案例(合成金标准草稿存 .scratch 未启用);真实标验收未跑 |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 

@@ -38,7 +38,7 @@
 | 图注免责+工具痕迹 | "AI 示意"20 处、"非真实发布/无真实数据"5 处 | 把内部真实边界印在递交稿脸上；图注只说明画面内容，边界进风险册 |
 | 口号变本加厉 | 母命题 13 次（重写前 3 次） | 统一主张 ≠ 复读主张；片名、章标题、引用块、加粗独立段都在数 |
 
-生成侧的对应规矩在 `writing-patterns.md`（全案只讲一次/有人在说话/节奏与感染力/修辞密度红线/虚构闸门）；词面铁证由 `tools/prop_tools.py lint-doc` 兜底，声线终审由 `prompts/task2c_polish.md` 主编收口，这里供 lens 抓语义层残余。
+v5 起：生成侧只留红线与品味一页（`writing-patterns.md`），逐项细则在复核侧 `references/style-checklist.md`；词面铁证由 `tools/prop_tools.py lint-doc` 兜底，声线由单作者架构（`prompts/task2_author.md`）保证。本文件供 lens 校准语义层残余与失败复盘。
 
 ## 三类主失败
 一次不满意只选一个主失败，可附次级标签；先修最上游根因，再看下游问题是否自然消失。
